@@ -1,58 +1,54 @@
+```
 # Dependencies
 node_modules/
+venv/
+.venv/
+__pycache__/
+*.egg-info/
+.Python/
 
 # Build artifacts
 dist/
 build/
-*.js.map
-*.ts.map
-
-# Logs
-*.log
+target/
+.coverage
+coverage/
+htmlcov/
 
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
 
 # Editors
 .vscode/
 .idea/
 *.swp
 *.swo
+*.tmp
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-venv/
-.venv/
-.env
+# Logs
+*.log
 
-# Coverage reports
-coverage/
-htmlcov/
-.coverage
-
-# OS generated files
+# OS
 .DS_Store
 Thumbs.db
 
-# Temporary files
-*.tmp
-*.temp
-
-# Compiled files
-*.o
-*.obj
+# Python specific
+*.pyc
+*.pyo
+*.pyd
 *.so
-*.a
-*.dll
-*.exe
-*.out
-*.class
+*.egg
+*.eggs
+*.manifest
+*.spec
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+.tox/
+.nox/
 
 # Compressed files
 *.zip
@@ -77,13 +73,4 @@ Thumbs.db
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-
-# Cache directories
-.cache/
-.mypy_cache/
-.pytest_cache/
-.gradle/
-target/
-
-# Documentation builds
-docs/_build/
+```
