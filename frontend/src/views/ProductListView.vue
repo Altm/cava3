@@ -8,6 +8,7 @@
         <h3>{{ product.name }}</h3>
         <p>Тип: {{ getProductTypeName(product.product_type_id) }}</p>
         <p>Остаток: {{ product.stock }}</p>
+        <p v-if="product.attributes && product.attributes.glasses_per_bottle">Бокалов в бутылке: {{ product.attributes.glasses_per_bottle }}</p>
         <p>Себестоимость: {{ product.unit_cost }}</p>
         <p v-if="product.is_composite">Составной товар</p>
         <div v-if="Object.keys(product.attributes).length > 0">

@@ -48,12 +48,12 @@ def get_product_types(db: Session = Depends(get_db)):
         attributes = db.query(models.AttributeDefinition).filter(
             models.AttributeDefinition.product_type_id == pt.id
         ).all()
-        result.append({
-            "id": pt.id,
-            "name": pt.name,
-            "is_composite": pt.is_composite,
-            "attributes": attributes
-        })
+        result.append(schemas.ProductType(
+            id=pt.id,
+            name=pt.name,
+            is_composite=pt.is_composite,
+            attributes=attributes
+        ))
     return result
 
 @app.get("/product-types/{product_type_id}", response_model=schemas.ProductType)
@@ -66,12 +66,12 @@ def get_product_type(product_type_id: int, db: Session = Depends(get_db)):
         models.AttributeDefinition.product_type_id == product_type_id
     ).all()
     
-    return {
-        "id": product_type.id,
-        "name": product_type.name,
-        "is_composite": product_type.is_composite,
-        "attributes": attributes
-    }
+    return schemas.ProductType(
+        id=product_type.id,
+        name=product_type.name,
+        is_composite=product_type.is_composite,
+        attributes=attributes
+    )
 
 @app.post("/product-types/", response_model=schemas.ProductType)
 def create_product_type(product_type: schemas.ProductTypeBase, db: Session = Depends(get_db)):
@@ -81,12 +81,12 @@ def create_product_type(product_type: schemas.ProductTypeBase, db: Session = Dep
     db.refresh(db_product_type)
     
     # Return with attributes
-    return {
-        "id": db_product_type.id,
-        "name": db_product_type.name,
-        "is_composite": db_product_type.is_composite,
-        "attributes": []
-    }
+    return schemas.ProductType(
+        id=db_product_type.id,
+        name=db_product_type.name,
+        is_composite=db_product_type.is_composite,
+        attributes=[]
+    )
 
 # --- Attribute Definitions ---
 @app.post("/attribute-definitions/", response_model=schemas.AttributeDefinition)
@@ -160,16 +160,16 @@ def get_products(db: Session = Depends(get_db)):
         # Определяем, является ли товар составным
         is_composite = p.product_type.is_composite if p.product_type else False
         
-        result.append({
-            "id": p.id,
-            "product_type_id": p.product_type_id,
-            "name": p.name,
-            "stock": p.stock,
-            "unit_cost": p.unit_cost,
-            "is_composite": is_composite,
-            "attributes": attrs,
-            "components": comps
-        })
+        result.append(schemas.Product(
+            id=p.id,
+            product_type_id=p.product_type_id,
+            name=p.name,
+            stock=p.stock,
+            unit_cost=p.unit_cost,
+            is_composite=is_composite,
+            attributes=attrs,
+            components=comps
+        ))
     return result
 
 @app.get("/products/{product_id}", response_model=schemas.Product)
@@ -196,16 +196,16 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
     # Определяем, является ли товар составным
     is_composite = product.product_type.is_composite if product.product_type else False
     
-    return {
-        "id": product.id,
-        "product_type_id": product.product_type_id,
-        "name": product.name,
-        "stock": product.stock,
-        "unit_cost": product.unit_cost,
-        "is_composite": is_composite,
-        "attributes": attrs,
-        "components": comps
-    }
+    return schemas.Product(
+        id=product.id,
+        product_type_id=product.product_type_id,
+        name=product.name,
+        stock=product.stock,
+        unit_cost=product.unit_cost,
+        is_composite=is_composite,
+        attributes=attrs,
+        components=comps
+    )
 
 @app.put("/products/{product_id}", response_model=schemas.Product)
 def update_product(product_id: int, product_update: schemas.ProductUpdate, db: Session = Depends(get_db)):
@@ -254,7 +254,32 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, db: S
 
     db.commit()
     db.refresh(product)
-    return product
+    
+    # Получаем обновленные атрибуты
+    attrs = {}
+    for av in product.attributes:
+        defn = av.attribute_definition
+        if defn.data_type == "number":
+            val = av.value_number
+        elif defn.data_type == "boolean":
+            val = av.value_boolean
+        else:
+            val = av.value_string
+        attrs[defn.code] = val
+    
+    # Получаем обновленные компоненты
+    comps = [{"component_product_id": c.component_product_id, "quantity": c.quantity} for c in product.components]
+    
+    return schemas.Product(
+        id=product.id,
+        product_type_id=product.product_type_id,
+        name=product.name,
+        stock=product.stock,
+        unit_cost=product.unit_cost,
+        is_composite=product.product_type.is_composite,
+        attributes=attrs,
+        components=comps
+    )
 
 @app.delete("/products/{product_id}")
 def delete_product(product_id: int, db: Session = Depends(get_db)):
@@ -313,5 +338,45 @@ def sell_product(sale_request: schemas.SaleRequest, db: Session = Depends(get_db
     
     return {
         "message": f"Successfully sold {sale_request.quantity} of {product.name}",
+        "total_cost": total_cost
+    }
+
+# --- Glass Sales Endpoint ---
+@app.post("/glass-sales/")
+def sell_wine_glass(sale_request: schemas.SaleRequest, db: Session = Depends(get_db)):
+    """
+    Endpoint to sell a glass of wine and reduce stock accordingly.
+    It calculates how much of a bottle is consumed based on glasses per bottle attribute.
+    """
+    product = db.query(models.Product).filter(models.Product.id == sale_request.product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    # Get the glasses per bottle attribute
+    glasses_per_bottle = None
+    for attr in product.attributes:
+        if attr.attribute_definition.code == "glasses_per_bottle":
+            glasses_per_bottle = attr.value_number
+            break
+    
+    if not glasses_per_bottle or glasses_per_bottle <= 0:
+        raise HTTPException(status_code=400, detail="This product does not support glass sales (missing glasses_per_bottle attribute)")
+    
+    # Calculate how much of a bottle is being sold
+    bottles_sold = sale_request.quantity / glasses_per_bottle
+    
+    if product.stock < bottles_sold:
+        raise HTTPException(status_code=400, detail="Insufficient stock")
+    
+    # Calculate total cost for the sold items
+    total_cost = product.unit_cost * bottles_sold
+    
+    # Reduce the stock
+    product.stock -= bottles_sold
+    
+    db.commit()
+    
+    return {
+        "message": f"Successfully sold {sale_request.quantity} glasses of {product.name}",
         "total_cost": total_cost
     }

@@ -4,31 +4,19 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# Dependencies
+.Python
 venv/
 .venv/
 .env
 .env.local
 .env.*
 
-# Build artifacts
+# Node.js
+node_modules/
+
+# Vue.js
 dist/
 build/
-target/
-
-# Logs
-*.log
-
-# Coverage
-.coverage
-htmlcov/
-coverage/
 
 # Editors
 .vscode/
@@ -36,11 +24,18 @@ coverage/
 *.swp
 *.swo
 
+# Logs
+*.log
+
+# Temp files
+*.tmp
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
 # OS
 .DS_Store
 Thumbs.db
-
-# Testing
-.pytest_cache/
-.mypy_cache/
 ```

@@ -4,11 +4,19 @@
     <form @submit.prevent="handleSale">
       <div>
         <label>Товар:</label>
-        <select v-model="saleForm.productId" required>
+        <select v-model="saleForm.productId" @change="onProductChange" required>
           <option value="">Выберите товар</option>
           <option v-for="product in products" :key="product.id" :value="product.id">
-            {{ product.name }} (остаток: {{ product.stock }})
+            {{ product.name }} (остаток: {{ product.stock }}) {{ getGlassesPerBottleText(product) }}
           </option>
+        </select>
+      </div>
+
+      <div>
+        <label>Тип продажи:</label>
+        <select v-model="saleForm.saleType" required>
+          <option value="full">Полная продажа</option>
+          <option value="glass" v-if="currentProductHasGlasses">Продажа бокалов</option>
         </select>
       </div>
 
@@ -19,12 +27,15 @@
           type="number" 
           min="0.01" 
           step="0.01" 
-          placeholder="Количество" 
+          :placeholder="getQuantityPlaceholder" 
           required 
         />
+        <small v-if="currentProductHasGlasses && saleForm.saleType === 'glass'">
+          1 бокал = {{ glassesPerBottle ? (1 / glassesPerBottle).toFixed(4) : '?' }} бутылки
+        </small>
       </div>
 
-      <button type="submit" :disabled="!saleForm.productId || saleForm.quantity <= 0">
+      <button type="submit" :disabled="!canSubmit">
         Продать
       </button>
     </form>
@@ -38,13 +49,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { Product } from '@/api/productApi'
 import { productApi } from '@/api/productApi'
 
 interface SaleForm {
   productId: number | null
   quantity: number
+  saleType: 'full' | 'glass'
 }
 
 interface SaleResult {
@@ -54,23 +66,73 @@ interface SaleResult {
 
 const saleForm = ref<SaleForm>({
   productId: null,
-  quantity: 1
+  quantity: 1,
+  saleType: 'full'
 })
 
 const products = ref<Product[]>([])
 const saleResult = ref<SaleResult | null>(null)
+const glassesPerBottle = ref<number | null>(null)
+
+const currentProductHasGlasses = computed(() => {
+  if (!saleForm.value.productId) return false
+  const product = products.value.find(p => p.id === saleForm.value.productId)
+  return product && product.attributes && typeof product.attributes.glasses_per_bottle !== 'undefined' && product.attributes.glasses_per_bottle !== null
+})
+
+const canSubmit = computed(() => {
+  return saleForm.value.productId !== null && 
+         saleForm.value.quantity > 0 &&
+         (!currentProductHasGlasses.value || saleForm.value.saleType !== 'glass' || glassesPerBottle.value !== null)
+})
+
+const getQuantityPlaceholder = computed(() => {
+  if (saleForm.value.saleType === 'glass' && currentProductHasGlasses.value) {
+    return 'Количество бокалов'
+  }
+  return 'Количество'
+})
+
+const getGlassesPerBottleText = (product: Product) => {
+  if (product.attributes && product.attributes.glasses_per_bottle) {
+    return `(бокалов в бутылке: ${product.attributes.glasses_per_bottle})`
+  }
+  return ''
+}
+
+const onProductChange = () => {
+  if (saleForm.value.productId) {
+    const product = products.value.find(p => p.id === saleForm.value.productId)
+    if (product && product.attributes && product.attributes.glasses_per_bottle) {
+      glassesPerBottle.value = product.attributes.glasses_per_bottle
+      if (!currentProductHasGlasses.value) {
+        saleForm.value.saleType = 'full'
+      }
+    } else {
+      glassesPerBottle.value = null
+      saleForm.value.saleType = 'full'
+    }
+  }
+}
 
 const handleSale = async () => {
   try {
-    const response = await fetch('/api/sales/', {
+    let url = '/api/sales/'
+    let requestBody = {
+      product_id: saleForm.value.productId,
+      quantity: saleForm.value.quantity
+    }
+
+    if (saleForm.value.saleType === 'glass') {
+      url = '/api/glass-sales/'
+    }
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        product_id: saleForm.value.productId,
-        quantity: saleForm.value.quantity
-      })
+      body: JSON.stringify(requestBody)
     })
 
     if (!response.ok) {
@@ -83,7 +145,8 @@ const handleSale = async () => {
     // Refresh products list
     loadProducts()
     // Reset form
-    saleForm.value = { productId: null, quantity: 1 }
+    saleForm.value = { productId: null, quantity: 1, saleType: 'full' }
+    glassesPerBottle.value = null
   } catch (error) {
     console.error('Ошибка при продаже:', error)
     alert(error instanceof Error ? error.message : 'Ошибка при продаже товара')
