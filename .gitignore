@@ -5,54 +5,26 @@ node_modules/
 dist/
 build/
 *.js.map
-*.ts.map
+*.css.map
 
-# Logs
+# Logs and temp files
 *.log
+*.tmp
 
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
 
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
 # Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-venv/
-.venv/
-.env
-
-# Coverage reports
-coverage/
-htmlcov/
-.coverage
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Temporary files
-*.tmp
-*.temp
-
-# Compiled files
-*.o
-*.obj
-*.so
-*.a
-*.dll
-*.exe
-*.out
-*.class
 
 # Compressed files
 *.zip
@@ -78,12 +50,35 @@ Thumbs.db
 *.tar.xz
 *.tar.zst
 
-# Cache directories
-.cache/
-.mypy_cache/
-.pytest_cache/
-.gradle/
-target/
+# System files
+.DS_Store
+Thumbs.db
 
-# Documentation builds
-docs/_build/
+# Testing
+coverage/
+htmlcov/
+.coverage
+.pytest_cache/
+.mypy_cache/
+
+# Java/Maven
+target/
+.gradle/
+*.class
+
+# Go
+*.o
+*.a
+*.out
+
+# C/C++
+*.obj
+*.so
+*.dll
+*.exe
+
+# Julia
+julia-*/
+
+# Zig
+zig*/
