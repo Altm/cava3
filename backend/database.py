@@ -3,12 +3,11 @@ from sqlalchemy.orm import sessionmaker
 
 import os
 
-# Using SQLite for local testing
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test_product_catalog.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@db:5432/product_catalog")
 
 SQLALCHEMY_DATABASE_URL = DATABASE_URL
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
