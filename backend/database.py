@@ -11,5 +11,5 @@ engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
-    from backend.models import Base
+    from models import Base
     Base.metadata.create_all(bind=engine)
