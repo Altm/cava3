@@ -38,7 +38,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { productApi, Product, ProductType } from '@/api/productApi'
+import type  { Product, ProductType } from '@/api/productApi'
+import { productApi} from '@/api/productApi'
 
 const router = useRouter()
 const products = ref<Product[]>([])

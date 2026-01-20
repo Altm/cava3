@@ -67,7 +67,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { productApi, ProductType, Product } from '@/api/productApi'
+import type { ProductType, Product } from '@/api/productApi'
+import { productApi } from '@/api/productApi'
 
 const route = useRoute()
 const router = useRouter()
@@ -129,11 +130,11 @@ onMounted(async () => {
   productTypes.value = await productApi.getProductTypes()
   // Load all products to use as components for composite products
   simpleProducts.value = await productApi.getProducts()
-  
+
   if (isEditing.value && productId.value) {
     // Load existing product data for editing
     const productData = await productApi.getProduct(parseInt(productId.value))
-    
+
     form.value = {
       productTypeId: productData.product_type_id,
       name: productData.name,
@@ -151,4 +152,3 @@ onMounted(async () => {
   color: red;
 }
 </style>
-</template>
