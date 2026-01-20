@@ -1,30 +1,43 @@
+```
 # Dependencies
 node_modules/
 
 # Build artifacts
 dist/
 build/
-*.js.map
-*.css.map
-
-# Logs and temp files
-*.log
-*.tmp
-
-# Environment
-.env
-.env.local
-.env.*
-
-# Editors
-.vscode/
-.idea/
+target/
 
 # Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.env
+.env.*
+.env.local
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
 
 # Compressed files
 *.zip
@@ -50,35 +63,15 @@ __pycache__/
 *.tar.xz
 *.tar.zst
 
-# System files
-.DS_Store
-Thumbs.db
+# Gradle
+.gradle/
 
-# Testing
-coverage/
-htmlcov/
-.coverage
-.pytest_cache/
+# MyPy
 .mypy_cache/
 
-# Java/Maven
-target/
-.gradle/
-*.class
+# PyTest
+.pytest_cache/
 
-# Go
-*.o
-*.a
-*.out
-
-# C/C++
-*.obj
-*.so
-*.dll
-*.exe
-
-# Julia
-julia-*/
-
-# Zig
-zig*/
+# Temporary files
+*.tmp
+```

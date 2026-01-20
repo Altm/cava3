@@ -3,19 +3,25 @@ import { RouterLink, RouterView } from 'vue-router'
 </script>
 
 <template>
-  <header>
-    <nav>
-      <RouterLink to="/">Home</RouterLink>
-      <RouterLink to="/product-form">Product Form</RouterLink>
-    </nav>
-  </header>
-  
-  <main>
-    <RouterView />
-  </main>
+  <div id="app">
+    <header>
+      <nav>
+        <RouterLink to="/">Home</RouterLink>
+        <RouterLink to="/product-form">Product Form</RouterLink>
+      </nav>
+    </header>
+    
+    <main>
+      <RouterView />
+    </main>
+  </div>
 </template>
 
 <style scoped>
+#app {
+  min-height: 100vh;
+}
+
 header {
   line-height: 1.5;
   border-bottom: 1px solid #eaeaea;
