@@ -1,0 +1,31 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: product_catalog
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "55444:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+
+  backend:
+    build: ./backend
+    ports:
+      - "8022:8000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/product_catalog
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5174:5173"
+
+volumes:
+  pgdata:
