@@ -60,7 +60,7 @@ class Product(BaseModel):
     stock: float
     unit_cost: float
     is_composite: bool
-    attributes: List[Dict[str, Any]] = []
+    attributes: Dict[str, Any] = {}
     components: List[Dict[str, Any]] = []
 
     class Config:
