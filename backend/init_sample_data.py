@@ -4,35 +4,37 @@ import database
 import schemas
 
 def init_sample_data(db: Session):
+    # Check if data already exists
+    existing_product_types = db.query(models.ProductType).count()
+    if existing_product_types > 0:
+        print("Sample data already exists, skipping initialization")
+        return
+
     # Create units
     liter = models.Unit(symbol="л", name="Литр")
     kg = models.Unit(symbol="кг", name="Килограмм")
     bottle = models.Unit(symbol="шт", name="Штука")
     
-    #db.add(liter)
-    #db.add(kg)
-    #db.add(bottle)
-    #db.commit()
-    
-    # Get the IDs after commit
-    liter = db.query(models.Unit).filter(models.Unit.symbol == "л").first()
-    kg = db.query(models.Unit).filter(models.Unit.symbol == "кг").first()
-    bottle = db.query(models.Unit).filter(models.Unit.symbol == "шт").first()
+    db.add(liter)
+    db.add(kg)
+    db.add(bottle)
+    db.commit()
+    db.refresh(liter)
+    db.refresh(kg)
+    db.refresh(bottle)
     
     # Create product types
     wine_type = models.ProductType(name="Вино", is_composite=False)
     olives_type = models.ProductType(name="Оливки", is_composite=False)
     wine_basket_type = models.ProductType(name="Корзина вин", is_composite=True)
     
-    #db.add(wine_type)
-    #db.add(olives_type)
-    #db.add(wine_basket_type)
-    #db.commit()
-    
-    # Get the IDs after commit
-    wine_type = db.query(models.ProductType).filter(models.ProductType.name == "Вино").first()
-    olives_type = db.query(models.ProductType).filter(models.ProductType.name == "Оливки").first()
-    wine_basket_type = db.query(models.ProductType).filter(models.ProductType.name == "Корзина вин").first()
+    db.add(wine_type)
+    db.add(olives_type)
+    db.add(wine_basket_type)
+    db.commit()
+    db.refresh(wine_type)
+    db.refresh(olives_type)
+    db.refresh(wine_basket_type)
     
     # Create attributes for wine
     volume_attr = models.AttributeDefinition(
@@ -58,10 +60,13 @@ def init_sample_data(db: Session):
         is_required=False
     )
     
-    #db.add(volume_attr)
-    #db.add(strength_attr)
-    #db.add(glasses_per_bottle_attr)
-    #db.commit()
+    db.add(volume_attr)
+    db.add(strength_attr)
+    db.add(glasses_per_bottle_attr)
+    db.commit()
+    db.refresh(volume_attr)
+    db.refresh(strength_attr)
+    db.refresh(glasses_per_bottle_attr)
     
     # Create attributes for olives
     weight_attr = models.AttributeDefinition(
@@ -87,10 +92,13 @@ def init_sample_data(db: Session):
         is_required=True
     )
     
-    #db.add(weight_attr)
-    #db.add(calories_attr)
-    #db.add(has_pit_attr)
-    #db.commit()
+    db.add(weight_attr)
+    db.add(calories_attr)
+    db.add(has_pit_attr)
+    db.commit()
+    db.refresh(weight_attr)
+    db.refresh(calories_attr)
+    db.refresh(has_pit_attr)
     
     # Create some sample products
     wine1 = models.Product(
@@ -112,10 +120,13 @@ def init_sample_data(db: Session):
         unit_cost=200.0
     )
     
-    #db.add(wine1)
-    #db.add(wine2)
-    #db.add(olives1)
-    #db.commit()
+    db.add(wine1)
+    db.add(wine2)
+    db.add(olives1)
+    db.commit()
+    db.refresh(wine1)
+    db.refresh(wine2)
+    db.refresh(olives1)
     
     # Add attributes for wine1
     db.add(models.ProductAttributeValue(
@@ -163,7 +174,7 @@ def init_sample_data(db: Session):
         value_boolean=False
     ))
     
-    #db.commit()
+    db.commit()
     
     print("Sample data initialized successfully!")
 

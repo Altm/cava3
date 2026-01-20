@@ -7,7 +7,8 @@ import { RouterLink, RouterView } from 'vue-router'
     <nav>
       <RouterLink to="/">Главная</RouterLink> |
       <RouterLink to="/product-list">Список товаров</RouterLink> |
-      <RouterLink to="/product-form">Создать товар</RouterLink>
+      <RouterLink to="/product-form">Создать товар</RouterLink> |
+      <RouterLink to="/sales">Продажи</RouterLink>
     </nav>
   </header>
 

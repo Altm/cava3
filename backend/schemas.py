@@ -65,3 +65,8 @@ class Product(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class SaleRequest(BaseModel):
+    product_id: int
+    quantity: float
