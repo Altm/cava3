@@ -9,10 +9,10 @@ def init_sample_data(db: Session):
     kg = models.Unit(symbol="кг", name="Килограмм")
     bottle = models.Unit(symbol="шт", name="Штука")
     
-    db.add(liter)
-    db.add(kg)
-    db.add(bottle)
-    db.commit()
+    #db.add(liter)
+    #db.add(kg)
+    #db.add(bottle)
+    #db.commit()
     
     # Get the IDs after commit
     liter = db.query(models.Unit).filter(models.Unit.symbol == "л").first()
@@ -24,10 +24,10 @@ def init_sample_data(db: Session):
     olives_type = models.ProductType(name="Оливки", is_composite=False)
     wine_basket_type = models.ProductType(name="Корзина вин", is_composite=True)
     
-    db.add(wine_type)
-    db.add(olives_type)
-    db.add(wine_basket_type)
-    db.commit()
+    #db.add(wine_type)
+    #db.add(olives_type)
+    #db.add(wine_basket_type)
+    #db.commit()
     
     # Get the IDs after commit
     wine_type = db.query(models.ProductType).filter(models.ProductType.name == "Вино").first()
@@ -58,10 +58,10 @@ def init_sample_data(db: Session):
         is_required=False
     )
     
-    db.add(volume_attr)
-    db.add(strength_attr)
-    db.add(glasses_per_bottle_attr)
-    db.commit()
+    #db.add(volume_attr)
+    #db.add(strength_attr)
+    #db.add(glasses_per_bottle_attr)
+    #db.commit()
     
     # Create attributes for olives
     weight_attr = models.AttributeDefinition(
@@ -87,10 +87,10 @@ def init_sample_data(db: Session):
         is_required=True
     )
     
-    db.add(weight_attr)
-    db.add(calories_attr)
-    db.add(has_pit_attr)
-    db.commit()
+    #db.add(weight_attr)
+    #db.add(calories_attr)
+    #db.add(has_pit_attr)
+    #db.commit()
     
     # Create some sample products
     wine1 = models.Product(
@@ -112,10 +112,10 @@ def init_sample_data(db: Session):
         unit_cost=200.0
     )
     
-    db.add(wine1)
-    db.add(wine2)
-    db.add(olives1)
-    db.commit()
+    #db.add(wine1)
+    #db.add(wine2)
+    #db.add(olives1)
+    #db.commit()
     
     # Add attributes for wine1
     db.add(models.ProductAttributeValue(
@@ -163,7 +163,7 @@ def init_sample_data(db: Session):
         value_boolean=False
     ))
     
-    db.commit()
+    #db.commit()
     
     print("Sample data initialized successfully!")
 

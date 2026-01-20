@@ -51,7 +51,7 @@ class Product(Base):
 
     product_type = relationship("ProductType")
     attributes = relationship("ProductAttributeValue", back_populates="product")
-    components = relationship("ProductComponent", back_populates="composite_product")
+    components = relationship("ProductComponent", foreign_keys="[ProductComponent.composite_product_id]", back_populates="composite_product")
 
     @hybrid_property
     def is_composite(self) -> bool:

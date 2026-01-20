@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 import models, schemas, database
-import init_sample_data
+from init_sample_data import init_sample_data
 from typing import List
 
 app = FastAPI(title="Product Catalog API")

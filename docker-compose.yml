@@ -11,7 +11,7 @@ services:
     ports:
       - "55444:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
 
   backend:
     build:
@@ -25,14 +25,14 @@ services:
       - DATABASE_URL=postgresql://user:password@db:5432/product_catalog
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  #frontend:
-  #  build:
-  #    context: ./backend
-  #    dockerfile: Dockerfile
-  #  ports:
-  #    - "8080:80"
-  #  depends_on:
-  #    - backend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8088:80"
+    depends_on:
+      - backend
 
 volumes:
   pgdata:
