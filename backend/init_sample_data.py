@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
-from . import models, database, schemas
+import models
+import database
+import schemas
 
 def init_sample_data(db: Session):
     # Create units
