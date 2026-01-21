@@ -15,6 +15,24 @@ depends_on = None
 
 
 def upgrade():
+    rename_map = {
+        "producttype": "product_type",
+        "unitconversion": "unit_conversion",
+        "productcategory": "product_category",
+        "productattribute": "product_attribute",
+        "compositecomponent": "composite_component",
+        "pricelist": "price_list",
+        "saleevent": "sale_event",
+        "saleline": "sale_line",
+        "inventorysnapshot": "inventory_snapshot",
+        "rolepermission": "role_permission",
+        "userrole": "user_role",
+        "auditlog": "audit_log",
+        "requestlog": "request_log",
+    }
+    for old, new in rename_map.items():
+        op.execute(f'ALTER TABLE IF EXISTS "{old}" RENAME TO "{new}"')
+
     op.add_column("product_type", sa.Column("is_composite", sa.Boolean(), nullable=False, server_default=sa.text("false")))
     op.add_column("product", sa.Column("unit_cost", sa.DECIMAL(precision=18, scale=2), nullable=False, server_default="0"))
 

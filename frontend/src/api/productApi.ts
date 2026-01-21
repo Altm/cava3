@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: '/api'
+  baseURL: '/api/v1'
 })
 
 export interface Unit {
@@ -61,14 +61,14 @@ export const productApi = {
     // First, we need to get the attribute definitions to map the values correctly
     const productType = await api.get(`/product-types/${data.productTypeId}`)
     const attributeDefs = productType.data.attributes
-    
+
     // Convert attributes to the expected format
     const attributes = Object.entries(data.attributes).map(([code, value]) => {
       // Only include attributes that have values (not null/undefined)
       if (value === null || value === undefined) {
         return null;
       }
-      
+
       const attrDef = attributeDefs.find((def: AttributeDefinition) => def.code === code)
       if (!attrDef) {
         throw new Error(`Attribute definition not found for code: ${code}`)
@@ -95,14 +95,14 @@ export const productApi = {
     // First, we need to get the attribute definitions to map the values correctly
     const productType = await api.get(`/product-types/${data.productTypeId}`)
     const attributeDefs = productType.data.attributes
-    
+
     // Convert attributes to the expected format
     const attributes = Object.entries(data.attributes).map(([code, value]) => {
       // Only include attributes that have values (not null/undefined)
       if (value === null || value === undefined) {
         return null;
       }
-      
+
       const attrDef = attributeDefs.find((def: AttributeDefinition) => def.code === code)
       if (!attrDef) {
         throw new Error(`Attribute definition not found for code: ${code}`)
