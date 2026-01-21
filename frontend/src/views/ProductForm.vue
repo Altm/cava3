@@ -39,6 +39,7 @@
           v-else-if="attr.dataType === 'boolean'"
           v-model="form.attributes[attr.code]"
           type="checkbox"
+          @change="handleCheckboxChange($event, attr.code)"
         />
       </div>
 
@@ -106,6 +107,11 @@ const addComponent = () => {
 
 const removeComponent = (index: number) => {
   form.value.components.splice(index, 1)
+}
+
+const handleCheckboxChange = (event: Event, code: string) => {
+  const target = event.target as HTMLInputElement;
+  form.value.attributes[code] = target.checked;
 }
 
 const handleSubmit = async () => {

@@ -135,7 +135,36 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
 
     db.commit()
     db.refresh(db_product)
-    return db_product
+    
+    # Return the product with proper attributes mapping
+    # Get attributes
+    attrs = {}
+    for av in db_product.attributes:
+        defn = av.attribute_definition
+        if defn.data_type == "number":
+            val = av.value_number
+        elif defn.data_type == "boolean":
+            val = av.value_boolean
+        else:
+            val = av.value_string
+        attrs[defn.code] = val
+    
+    # Get components
+    comps = [{"component_product_id": c.component_product_id, "quantity": c.quantity} for c in db_product.components]
+    
+    # Determine if product is composite
+    is_composite = db_product.product_type.is_composite if db_product.product_type else False
+    
+    return schemas.Product(
+        id=db_product.id,
+        product_type_id=db_product.product_type_id,
+        name=db_product.name,
+        stock=db_product.stock,
+        unit_cost=db_product.unit_cost,
+        is_composite=is_composite,
+        attributes=attrs,
+        components=comps
+    )
 
 @app.get("/products/", response_model=List[schemas.Product])
 def get_products(db: Session = Depends(get_db)):
@@ -270,13 +299,16 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, db: S
     # Получаем обновленные компоненты
     comps = [{"component_product_id": c.component_product_id, "quantity": c.quantity} for c in product.components]
     
+    # Determine if product is composite
+    is_composite = product.product_type.is_composite if product.product_type else False
+    
     return schemas.Product(
         id=product.id,
         product_type_id=product.product_type_id,
         name=product.name,
         stock=product.stock,
         unit_cost=product.unit_cost,
-        is_composite=product.product_type.is_composite,
+        is_composite=is_composite,
         attributes=attrs,
         components=comps
     )
