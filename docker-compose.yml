@@ -61,4 +61,4 @@ services:
 
 volumes:
   pgdata:
-  #pgdata_simple:
+  pgdata_simple:

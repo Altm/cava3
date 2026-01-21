@@ -62,9 +62,15 @@ class Product(Base):
     base_unit_code: Mapped[str] = mapped_column(ForeignKey("unit.code"), comment="Base unit for stock keeping")
     is_composite: Mapped[bool] = mapped_column(Boolean, default=False, comment="Indicates composite product")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="Soft delete flag")
-    unit_cost: Mapped[Decimal] = mapped_column(DECIMAL(18, 2), default=Decimal("0.00"), comment="Unit cost for catalog")
+    #unit_cost: Mapped[Decimal] = mapped_column(DECIMAL(18, 2), default=Decimal("0.00"), comment="Unit cost for catalog")
     tax_flags: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, comment="Tax or regulatory flags")
+    unit_cost: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True, comment="Cost per unit")
     product_type: Mapped["ProductType"] = relationship()
+    attributes: Mapped[list["ProductAttributeValue"]] = relationship(back_populates="product")
+    components: Mapped[list["CompositeComponent"]] = relationship(
+        foreign_keys="[CompositeComponent.parent_product_id]",
+        back_populates="parent_product"
+    )
 
 
 class ProductCategory(Base):
@@ -102,11 +108,25 @@ class AttributeDefinition(Base):
 class ProductAttributeValue(Base):
     """Typed values for attributes per product."""
 
+    id: Mapped[int] = mapped_column(primary_key=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), primary_key=True, comment="Product reference")
     attribute_definition_id: Mapped[int] = mapped_column(ForeignKey("attribute_definition.id"), primary_key=True, comment="Attribute definition reference")
-    value_number: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(18, 6), nullable=True, comment="Numeric value")
+    value_number: Mapped[Optional[float]] = mapped_column(Numeric(10, 6), nullable=True, comment="Numeric value")
     value_boolean: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, comment="Boolean value")
-    value_string: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="String value")
+    value_string: Mapped[Optional[str]] = mapped_column(String(3000), nullable=True, comment="String value")
+    __table_args__ = (UniqueConstraint("product_id", "attribute_definition_id", name="uq_product_attr_value"),)
+    product: Mapped["Product"] = relationship("Product", back_populates="attributes")
+    attribute_definition: Mapped["AttributeDefinition"] = relationship("AttributeDefinition")
+
+
+class ProductAttribute_(Base):
+    """Flexible attributes for products (legacy approach kept for compatibility)."""
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Product reference")
+    name: Mapped[str] = mapped_column(String(64), comment="Attribute name")
+    value: Mapped[str] = mapped_column(String(255), comment="Attribute value")
+    __table_args__ = (UniqueConstraint("product_id", "name", name="uq_product_attribute"),)
 
 
 class CompositeComponent(Base):
@@ -121,6 +141,15 @@ class CompositeComponent(Base):
     rounding: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, comment="Rounding rule identifier")
     __table_args__ = (
         UniqueConstraint("parent_product_id", "component_product_id", name="uq_component_unique"),
+    )
+    parent_product: Mapped["Product"] = relationship(
+        "Product",
+        foreign_keys=[parent_product_id],
+        back_populates="components"
+    )
+    component_product: Mapped["Product"] = relationship(
+        "Product",
+        foreign_keys=[component_product_id]
     )
 
 
