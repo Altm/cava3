@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.common.logging import setup_logging
 from app.api.v1.routes import auth, products, sales, catalog, users, stock
+from app.api.v1.routes import product_types, attribute_definitions  # Import new routes
 from app.audit.middleware import RequestLoggingMiddleware
 from app.audit.listeners import register_listeners
 from app.infrastructure.db.session import SessionLocal
@@ -35,6 +36,9 @@ def create_app() -> FastAPI:
     app.include_router(catalog.router, prefix="/api/v1")
     app.include_router(users.router, prefix="/api/v1")
     app.include_router(stock.router, prefix="/api/v1")
+    # Include new routes
+    app.include_router(product_types.router, prefix="/api/v1")
+    app.include_router(attribute_definitions.router, prefix="/api/v1")
 
     register_listeners()
 

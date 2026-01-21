@@ -1,54 +1,47 @@
-```gitignore
-# Dependencies
-node_modules/
-
-# Build outputs
-dist/
-build/
-*.js.map
-*.ts.map
-
-# Environment variables
-.env
-.env.local
-*.env.*
-
-# Editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*.tmp
-
-# Logs
-*.log
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Python cache
+```
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.ENV.local
+.env
+.env.local
+.env.*
 
-# Temporary files
+# Alembic
+alembic/
+
+# Dependencies
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
 *.tmp
+*.swp
 *~
-```
+.DS_Store
+Thumbs.db
 
-Wait, let me reconsider the input. The modified files are only TypeScript and Vue files (`frontend/src/api/productApi.ts`, `frontend/src/views/ProductForm.vue`), which are source code files. There are no build artifacts, dependencies, or temporary files in the change list that would require adding new ignore patterns.
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 
-The original .gitignore content appears to be empty based on the prompt structure, and since there are no artifacts to ignore from the change list, no additional rules are needed.
-
-Actually, looking at the example format more carefully, it seems I need to output based on detecting patterns. Since the changes are only `.ts` and `.vue` files (source code), and there are no artifacts like node_modules, build files, etc. mentioned in the changes, I should not add anything for this specific case.
-
-However, since this appears to be a frontend project with TypeScript and Vue files, it's likely to have common frontend artifacts. Let me reconsider - if the change list doesn't show any artifacts yet but shows a frontend project structure, I should consider what would typically need to be ignored for such projects.
-
-But according to rule #6: "If the change list contains ONLY source or config files... and NO build artifacts, dependencies, or temp files — output an EMPTY .gitignore". The changes here are only source files (.ts, .vue), so:
-
-```gitignore
-
+# Build and distribution artifacts
+dist/
+build/
+*.egg-info/
 ```
