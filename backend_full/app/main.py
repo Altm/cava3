@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.common.logging import setup_logging
-from app.api.v1.routes import auth, products, sales, catalog, users, stock
+from app.api.v1.routes import auth, products, sales, catalog, users, stock, simple_catalog
 from app.audit.middleware import RequestLoggingMiddleware
 from app.audit.listeners import register_listeners
 from app.infrastructure.db.session import SessionLocal
@@ -35,6 +35,7 @@ def create_app() -> FastAPI:
     app.include_router(catalog.router, prefix="/api/v1")
     app.include_router(users.router, prefix="/api/v1")
     app.include_router(stock.router, prefix="/api/v1")
+    app.include_router(simple_catalog.router, prefix="/api/v1")
 
     register_listeners()
 
