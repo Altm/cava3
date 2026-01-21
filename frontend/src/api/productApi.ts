@@ -64,6 +64,11 @@ export const productApi = {
     
     // Convert attributes to the expected format
     const attributes = Object.entries(data.attributes).map(([code, value]) => {
+      // Only include attributes that have values (not null/undefined)
+      if (value === null || value === undefined) {
+        return null;
+      }
+      
       const attrDef = attributeDefs.find((def: AttributeDefinition) => def.code === code)
       if (!attrDef) {
         throw new Error(`Attribute definition not found for code: ${code}`)
@@ -72,7 +77,7 @@ export const productApi = {
         attribute_definition_id: attrDef.id,
         value
       }
-    })
+    }).filter(Boolean); // Remove null entries
 
     const payload = {
       product_type_id: data.productTypeId,
@@ -93,6 +98,11 @@ export const productApi = {
     
     // Convert attributes to the expected format
     const attributes = Object.entries(data.attributes).map(([code, value]) => {
+      // Only include attributes that have values (not null/undefined)
+      if (value === null || value === undefined) {
+        return null;
+      }
+      
       const attrDef = attributeDefs.find((def: AttributeDefinition) => def.code === code)
       if (!attrDef) {
         throw new Error(`Attribute definition not found for code: ${code}`)
@@ -101,7 +111,7 @@ export const productApi = {
         attribute_definition_id: attrDef.id,
         value
       }
-    })
+    }).filter(Boolean); // Remove null entries
 
     const payload = {
       product_type_id: data.productTypeId,
