@@ -58,7 +58,7 @@ class Product(Base):
     name: Mapped[str] = mapped_column(String(255), comment="Display name")
     sku: Mapped[str] = mapped_column(String(64), unique=True, comment="SKU code")
     primary_category: Mapped[str] = mapped_column(String(64), comment="Primary category tag")
-    product_type_id: Mapped[int] = mapped_column(ForeignKey("producttype.id"), comment="Product type reference")
+    product_type_id: Mapped[int] = mapped_column(ForeignKey("product_type.id"), comment="Product type reference")
     base_unit_code: Mapped[str] = mapped_column(ForeignKey("unit.code"), comment="Base unit for stock keeping")
     is_composite: Mapped[bool] = mapped_column(Boolean, default=False, comment="Indicates composite product")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="Soft delete flag")
@@ -90,7 +90,7 @@ class AttributeDefinition(Base):
     """Attribute definitions bound to product types with explicit data types."""
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    product_type_id: Mapped[int] = mapped_column(ForeignKey("producttype.id"), comment="Product type reference")
+    product_type_id: Mapped[int] = mapped_column(ForeignKey("product_type.id"), comment="Product type reference")
     name: Mapped[str] = mapped_column(String(128), comment="Display name")
     code: Mapped[str] = mapped_column(String(64), comment="Machine code")
     data_type: Mapped[str] = mapped_column(String(16), comment="number/boolean/string")
@@ -103,7 +103,7 @@ class ProductAttributeValue(Base):
     """Typed values for attributes per product."""
 
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), primary_key=True, comment="Product reference")
-    attribute_definition_id: Mapped[int] = mapped_column(ForeignKey("attributedefinition.id"), primary_key=True, comment="Attribute definition reference")
+    attribute_definition_id: Mapped[int] = mapped_column(ForeignKey("attribute_definition.id"), primary_key=True, comment="Attribute definition reference")
     value_number: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(18, 6), nullable=True, comment="Numeric value")
     value_boolean: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, comment="Boolean value")
     value_string: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="String value")
@@ -189,7 +189,7 @@ class SaleLine(Base):
     """Normalized sale line items for analytics."""
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    sale_event_id: Mapped[int] = mapped_column(ForeignKey("saleevent.id"), comment="Sale event reference")
+    sale_event_id: Mapped[int] = mapped_column(ForeignKey("sale_event.id"), comment="Sale event reference")
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Sold product id")
     quantity: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), comment="Quantity sold in given unit")
     unit_code: Mapped[str] = mapped_column(ForeignKey("unit.code"), comment="Unit code for quantity")

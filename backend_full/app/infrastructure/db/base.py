@@ -1,3 +1,4 @@
+import re
 from sqlalchemy.orm import DeclarativeBase, declared_attr
 
 
@@ -6,7 +7,9 @@ class Base(DeclarativeBase):
 
     @declared_attr.directive
     def __tablename__(cls) -> str:
-        return cls.__name__.lower()
+        name = cls.__name__
+        snake = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+        return snake
 
     @declared_attr.directive
     def __table_args__(cls):

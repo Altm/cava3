@@ -15,13 +15,13 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("producttype", sa.Column("is_composite", sa.Boolean(), nullable=False, server_default=sa.text("false")))
+    op.add_column("product_type", sa.Column("is_composite", sa.Boolean(), nullable=False, server_default=sa.text("false")))
     op.add_column("product", sa.Column("unit_cost", sa.DECIMAL(precision=18, scale=2), nullable=False, server_default="0"))
 
     op.create_table(
-        "attributedefinition",
+        "attribute_definition",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("product_type_id", sa.Integer(), sa.ForeignKey("producttype.id"), nullable=False),
+        sa.Column("product_type_id", sa.Integer(), sa.ForeignKey("product_type.id"), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("code", sa.String(length=64), nullable=False),
         sa.Column("data_type", sa.String(length=16), nullable=False),
@@ -32,9 +32,9 @@ def upgrade():
     )
 
     op.create_table(
-        "productattributevalue",
+        "product_attribute_value",
         sa.Column("product_id", sa.Integer(), sa.ForeignKey("product.id"), primary_key=True),
-        sa.Column("attribute_definition_id", sa.Integer(), sa.ForeignKey("attributedefinition.id"), primary_key=True),
+        sa.Column("attribute_definition_id", sa.Integer(), sa.ForeignKey("attribute_definition.id"), primary_key=True),
         sa.Column("value_number", sa.DECIMAL(18, 6), nullable=True),
         sa.Column("value_boolean", sa.Boolean(), nullable=True),
         sa.Column("value_string", sa.String(length=255), nullable=True),
@@ -43,7 +43,7 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_table("productattributevalue")
-    op.drop_table("attributedefinition")
+    op.drop_table("product_attribute_value")
+    op.drop_table("attribute_definition")
     op.drop_column("product", "unit_cost")
-    op.drop_column("producttype", "is_composite")
+    op.drop_column("product_type", "is_composite")

@@ -24,7 +24,7 @@ def upgrade():
         comment="Unit table",
     )
     op.create_table(
-        "unitconversion",
+        "unit_conversion",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("from_unit", sa.String(length=32), sa.ForeignKey("unit.code")),
         sa.Column("to_unit", sa.String(length=32), sa.ForeignKey("unit.code")),
@@ -33,7 +33,7 @@ def upgrade():
         comment="Unit conversions table",
     )
     op.create_table(
-        "producttype",
+        "product_type",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("name", sa.String(length=100), unique=True),
         sa.Column("description", sa.String(length=255)),
@@ -45,7 +45,7 @@ def upgrade():
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("sku", sa.String(length=64), unique=True),
         sa.Column("primary_category", sa.String(length=64), nullable=False),
-        sa.Column("product_type_id", sa.Integer, sa.ForeignKey("producttype.id")),
+        sa.Column("product_type_id", sa.Integer, sa.ForeignKey("product_type.id")),
         sa.Column("base_unit_code", sa.String(length=32), sa.ForeignKey("unit.code")),
         sa.Column("is_composite", sa.Boolean, nullable=False, server_default=sa.text("false")),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.text("true")),
@@ -53,7 +53,7 @@ def upgrade():
         comment="Product table",
     )
     op.create_table(
-        "productcategory",
+        "product_category",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("product_id", sa.Integer, sa.ForeignKey("product.id")),
         sa.Column("category", sa.String(length=64), nullable=False),
@@ -61,7 +61,7 @@ def upgrade():
         comment="Product categories table",
     )
     op.create_table(
-        "productattribute",
+        "product_attribute",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("product_id", sa.Integer, sa.ForeignKey("product.id")),
         sa.Column("name", sa.String(length=64), nullable=False),
@@ -70,7 +70,7 @@ def upgrade():
         comment="Product attributes table",
     )
     op.create_table(
-        "compositecomponent",
+        "composite_component",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("parent_product_id", sa.Integer, sa.ForeignKey("product.id")),
         sa.Column("component_product_id", sa.Integer, sa.ForeignKey("product.id")),
@@ -102,7 +102,7 @@ def upgrade():
         comment="Stock table",
     )
     op.create_table(
-        "pricelist",
+        "price_list",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("location_id", sa.Integer, sa.ForeignKey("location.id")),
         sa.Column("product_id", sa.Integer, sa.ForeignKey("product.id")),
@@ -122,7 +122,7 @@ def upgrade():
         comment="Terminals table",
     )
     op.create_table(
-        "saleevent",
+        "sale_event",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("event_id", sa.String(length=128), unique=True),
         sa.Column("terminal_id", sa.Integer, sa.ForeignKey("terminal.id")),
@@ -134,9 +134,9 @@ def upgrade():
         comment="Sale events table",
     )
     op.create_table(
-        "saleline",
+        "sale_line",
         sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("sale_event_id", sa.Integer, sa.ForeignKey("saleevent.id")),
+        sa.Column("sale_event_id", sa.Integer, sa.ForeignKey("sale_event.id")),
         sa.Column("product_id", sa.Integer, sa.ForeignKey("product.id")),
         sa.Column("quantity", sa.DECIMAL(18, 6), nullable=False),
         sa.Column("unit_code", sa.String(length=32), sa.ForeignKey("unit.code")),
@@ -167,7 +167,7 @@ def upgrade():
         comment="Transfers table",
     )
     op.create_table(
-        "inventorysnapshot",
+        "inventory_snapshot",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("location_id", sa.Integer, sa.ForeignKey("location.id")),
         sa.Column("taken_at", sa.DateTime, server_default=sa.func.now()),
@@ -199,7 +199,7 @@ def upgrade():
         comment="Permissions table",
     )
     op.create_table(
-        "rolepermission",
+        "role_permission",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("role_id", sa.Integer, sa.ForeignKey("role.id")),
         sa.Column("permission_id", sa.Integer, sa.ForeignKey("permission.id")),
@@ -207,7 +207,7 @@ def upgrade():
         comment="Role permissions table",
     )
     op.create_table(
-        "userrole",
+        "user_role",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("user_id", sa.Integer, sa.ForeignKey("user.id")),
         sa.Column("role_id", sa.Integer, sa.ForeignKey("role.id")),
@@ -215,7 +215,7 @@ def upgrade():
         comment="User roles table",
     )
     op.create_table(
-        "auditlog",
+        "audit_log",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("model", sa.String(length=128)),
         sa.Column("record_id", sa.String(length=128)),
@@ -227,7 +227,7 @@ def upgrade():
         comment="Audit log table",
     )
     op.create_table(
-        "requestlog",
+        "request_log",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("request_id", sa.String(length=128)),
         sa.Column("method", sa.String(length=8)),
@@ -247,24 +247,28 @@ def downgrade():
         "auditlog",
         "userrole",
         "rolepermission",
+        "request_log",
+        "audit_log",
+        "user_role",
+        "role_permission",
         "permission",
         "role",
         "user",
-        "inventorysnapshot",
+        "inventory_snapshot",
         "transfer",
         "adjustment",
-        "saleline",
-        "saleevent",
+        "sale_line",
+        "sale_event",
         "terminal",
-        "pricelist",
+        "price_list",
         "stock",
         "location",
-        "compositecomponent",
-        "productattribute",
-        "productcategory",
+        "composite_component",
+        "product_attribute",
+        "product_category",
         "product",
-        "producttype",
-        "unitconversion",
+        "product_type",
+        "unit_conversion",
         "unit",
     ]
     for table in tables:
