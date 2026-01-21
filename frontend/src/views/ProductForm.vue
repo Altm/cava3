@@ -140,12 +140,12 @@ onMounted(async () => {
   if (isEditing.value && productId.value) {
     // Load existing product data for editing
     const productData = await productApi.getProduct(parseInt(productId.value))
-    
+
     // Find the product type to get its attributes
     const productType = productTypes.value.find(pt => pt.id === productData.product_type_id)
-    
+
     // Initialize form attributes with existing values
-    const initialAttributes = {}
+    const initialAttributes: Record<string, any> = {}
     if (productType && productType.attributes) {
       productType.attributes.forEach(attr => {
         // Set the value from the loaded product data, or default to null/empty
