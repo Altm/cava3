@@ -2,7 +2,32 @@
 version: '3.8'
 
 services:
+
+  backend_full:
+    build:
+      context: ./backend_full
+    environment:
+      DATABASE_URL: postgresql+psycopg2://cavina:cavina@db:5432/cavina
+      JWT_SECRET_KEY: changeme
+      SWAGGER_ENABLED: "true"
+      STRUCTLOG_JSON: "false"
+    depends_on:
+      - db
+    ports:
+      - "8001:8000"
+
   db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: cavina
+      POSTGRES_PASSWORD: cavina
+      POSTGRES_DB: cavina
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+
+  db_simple:
     image: postgres:18
     environment:
       POSTGRES_DB: product_catalog
@@ -11,18 +36,18 @@ services:
     ports:
       - "55444:5432"
     volumes:
-      - pgdata:/var/lib/postgresql
+      - pgdata_simple:/var/lib/postgresql
 
-  backend:
+  backend_simple:
     build:
-      context: ./backend
+      context: ./backend_simple
       dockerfile: Dockerfile
     ports:
       - "8022:8000"
     depends_on:
-      - db
+      - db_simple
     environment:
-      - DATABASE_URL=postgresql://user:password@db:5432/product_catalog
+      - DATABASE_URL=postgresql://user:password@db_simple:5432/product_catalog
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
@@ -32,7 +57,8 @@ services:
     ports:
       - "8088:80"
     depends_on:
-      - backend
+      - backend_simple
 
 volumes:
   pgdata:
+  pgdata_simple:
