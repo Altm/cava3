@@ -21,28 +21,49 @@
       <input v-model.number="form.stock" type="number" placeholder="Остаток" required />
 
       <!-- Атрибуты -->
+      <!--<pre>{{ currentTypeAttributes }}</pre>-->
       <div v-for="attr in currentTypeAttributes" :key="attr.id">
-        <label>{{ attr.name }} <span v-if="attr.isRequired" class="required">*</span></label>
+        <label>
+          {{ attr.name }}
+          <span v-if="attr.isRequired" class="required">*</span>
+        </label>
+
+        <!-- Число -->
         <input
           v-if="attr.dataType === 'number'"
           v-model.number="form.attributes[attr.code]"
           type="number"
-          :placeholder="attr.name"
+          :placeholder="`Введите ${attr.name}`"
+          :required="attr.isRequired"
+          class="attribute-input"
         />
+
+        <!-- Строка -->
         <input
           v-else-if="attr.dataType === 'string'"
           v-model="form.attributes[attr.code]"
           type="text"
-          :placeholder="attr.name"
+          :placeholder="`Введите ${attr.name}`"
+          :required="attr.isRequired"
+          class="attribute-input"
         />
-        <input
-          v-else-if="attr.dataType === 'boolean'"
-          v-model="form.attributes[attr.code]"
-          type="checkbox"
-          @change="handleCheckboxChange($event, attr.code)"
-        />
-      </div>
 
+        <!-- Булево (чекбокс) -->
+        <div v-else-if="attr.dataType === 'boolean'" style="display: flex; align-items: center; gap: 8px;">
+          <input
+            type="checkbox"
+            :id="`attr-${attr.code}`"
+            :checked="!!form.attributes[attr.code]"
+            @change="(e) => form.attributes[attr.code] = (e.target as HTMLInputElement).checked"
+          />
+          <label :for="`attr-${attr.code}`">Да</label>
+        </div>
+
+        <!-- Если тип неизвестный -->
+        <div v-else>
+          <span>Неизвестный тип: {{ attr.dataType }}</span>
+        </div>
+      </div>
       <!-- Компоненты (только для составных) -->
       <div v-if="isComposite">
         <h3>Компоненты</h3>
@@ -133,26 +154,47 @@ const handleSubmit = async () => {
 }
 
 onMounted(async () => {
-  productTypes.value = await productApi.getProductTypes()
-  // Load all products to use as components for composite products
-  simpleProducts.value = await productApi.getProducts()
+  const productTypesRaw = await productApi.getProductTypes()
+  const simpleProductsRaw = await productApi.getProducts()
+//TODO:Заменить на беке START
+  productTypes.value = productTypesRaw.map(type => ({
+    ...type,
+    attributes: type.attributes?.map(attr => ({
+      ...attr,
+      dataType: (attr as any).data_type // ← вот сюда вставили 2-й вариант
+    }))
+  }))
+//TODO:Заменить на беке END
 
   if (isEditing.value && productId.value) {
-    // Load existing product data for editing
+    // Загружаем данные товара
     const productData = await productApi.getProduct(parseInt(productId.value))
 
-    // Find the product type to get its attributes
+    // Находим тип товара
     const productType = productTypes.value.find(pt => pt.id === productData.product_type_id)
 
-    // Initialize form attributes with existing values
+    // Инициализируем атрибуты ТОЛЬКО внутри этого блока
     const initialAttributes: Record<string, any> = {}
-    if (productType && productType.attributes) {
-      productType.attributes.forEach(attr => {
-        // Set the value from the loaded product data, or default to null/empty
-        initialAttributes[attr.code] = productData.attributes[attr.code] ?? null
-      })
+
+    if (productType?.attributes) {
+      for (const attr of productType.attributes) {
+        // Используем данные из API или дефолт
+        const apiValue = productData.attributes?.[attr.code]
+        if (apiValue !== undefined && apiValue !== null) {
+          initialAttributes[attr.code] = apiValue
+        } else {
+          // Дефолтные значения по типу
+          switch (attr.dataType) {
+            case 'number': initialAttributes[attr.code] = 0; break
+            case 'boolean': initialAttributes[attr.code] = false; break
+            case 'string': initialAttributes[attr.code] = ''; break
+            default: initialAttributes[attr.code] = null
+          }
+        }
+      }
     }
 
+    // Устанавливаем форму
     form.value = {
       productTypeId: productData.product_type_id,
       name: productData.name,
@@ -161,6 +203,9 @@ onMounted(async () => {
       attributes: initialAttributes,
       components: productData.components || []
     }
+  } else {
+    // Новый товар
+    form.value.attributes = {}
   }
 })
 </script>
