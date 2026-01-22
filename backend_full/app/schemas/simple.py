@@ -3,20 +3,6 @@ from decimal import Decimal
 from pydantic import BaseModel
 
 
-class LocationBase(BaseModel):
-    id: int
-    name: str
-    kind: str
-
-
-class Location(LocationBase):
-    pass
-
-    class Config:
-        from_attributes = True
-
-
-
 class UnitCreate(BaseModel):
     symbol: str
     name: str
@@ -63,9 +49,7 @@ class ProductType(ProductTypeCreate):
 
 class ProductAttributeValueCreate(BaseModel):
     attribute_definition_id: int
-    value_number: Optional[Decimal] = None
-    value_boolean: Optional[bool] = None
-    value_string: Optional[str] = None
+    value: Union[float, bool, str, Decimal]
 
 
 class ProductComponentCreate(BaseModel):
@@ -95,8 +79,6 @@ class Product(BaseModel):
     unit_cost: Decimal
     stock: Decimal
     is_composite: bool
-    stock_by_location: Optional[Decimal] = None  # ← для фильтрации по location_id
-    locations: List[Location] = []  # ← все локации, где есть продукт
     attributes: List[ProductAttributeValueCreate] = []
     components: List[Dict[str, Any]] = []
 

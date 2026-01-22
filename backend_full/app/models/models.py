@@ -15,8 +15,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship, column_property
-from sqlalchemy import select, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.infrastructure.db.base import Base
 
 class Unit(Base):
@@ -41,22 +40,6 @@ class UnitConversion(Base):
     ratio: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), comment="Multiply by ratio to convert from source to dest")
     __table_args__ = (UniqueConstraint("from_unit", "to_unit", name="uq_unit_conversion"),)
 
-class Stock(Base):
-    """Stock balances by location and product."""
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    location_id: Mapped[int] = mapped_column(ForeignKey("location.id"), comment="Location reference")
-    product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Product reference")
-    quantity: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), default=Decimal("0"), comment="Available quantity")
-    unit_code: Mapped[str] = mapped_column(ForeignKey("unit.code"), comment="Unit in which quantity is stored")
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Last update timestamp")
-    # Связи
-    location = relationship("Location", back_populates="stocks")
-    product = relationship("Product", back_populates="stocks")
-    __table_args__ = (
-        UniqueConstraint("location_id", "product_id", name="uq_stock_location_product"),
-        CheckConstraint("quantity >= 0", name="ck_stock_non_negative"),
-    )
 
 class ProductType(Base):
     """Types of products (wine, olive, etc)."""
@@ -87,17 +70,6 @@ class Product(Base):
         foreign_keys="[CompositeComponent.parent_product_id]",
         back_populates="parent_product"
     )
-    # Связи
-    stocks = relationship("Stock", back_populates="product")
-    locations = relationship("Location", secondary="stock", viewonly=True)
-
-    # Виртуальное поле: общий остаток по всем локациям
-    total_stock = column_property(
-        select(func.coalesce(func.sum(Stock.quantity), 0))
-        .where(Stock.product_id == id)
-        .scalar_subquery()
-    )
-
 
 
 class ProductCategory(Base):
@@ -186,8 +158,21 @@ class Location(Base):
     name: Mapped[str] = mapped_column(String(128), unique=True, comment="Location name")
     kind: Mapped[str] = mapped_column(String(64), comment="Type of location e.g. warehouse, bar")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="Soft delete flag")
-    # Связь с запасами
-    stocks = relationship("Stock", back_populates="location")
+
+
+class Stock(Base):
+    """Stock balances by location and product."""
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    location_id: Mapped[int] = mapped_column(ForeignKey("location.id"), comment="Location reference")
+    product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Product reference")
+    quantity: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), default=Decimal("0"), comment="Available quantity")
+    unit_code: Mapped[str] = mapped_column(ForeignKey("unit.code"), comment="Unit in which quantity is stored")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Last update timestamp")
+    __table_args__ = (
+        UniqueConstraint("location_id", "product_id", name="uq_stock_location_product"),
+        CheckConstraint("quantity >= 0", name="ck_stock_non_negative"),
+    )
 
 
 class PriceList(Base):

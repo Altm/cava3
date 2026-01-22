@@ -7,13 +7,15 @@ from app.api.v1.deps.auth import get_db
 from app.models import models
 from app.schemas import simple as schemas
 
+from app.models.models import AttributeDefinition, ProductAttributeValue
+
 router = APIRouter(prefix="/simple-catalog", tags=["simple-catalog"])
 
 
 def _default_location(db: Session) -> models.Location:
     loc = db.query(models.Location).first()
     if not loc:
-        loc = models.Location(name="Warehouse", kind="default")
+        loc = models.Location(name="Default", kind="default")
         db.add(loc)
         db.flush()
     return loc
@@ -109,46 +111,47 @@ def create_attribute_definition(attr_def: schemas.AttributeDefinitionCreate, db:
 
 
 def _serialize_product(db_product: models.Product, db: Session) -> schemas.Product:
-    attrs = []
-    attr_values = (
-        db.query(models.ProductAttributeValue)
-        .join(models.AttributeDefinition, models.ProductAttributeValue.attribute_definition_id == models.AttributeDefinition.id)
-        .filter(models.ProductAttributeValue.product_id == db_product.id)
-        .all()
-    )
-    for av in attr_values:
-        code = av.attribute_definition.code
-        if av.attribute_definition.data_type == "number":
-            val = av.value_number
-        elif av.attribute_definition.data_type == "boolean":
-            val = av.value_boolean
+    # Собираем атрибуты как список с единым полем "value"
+    attributes = []
+    for attr in db_product.attributes:
+        if attr.value_number is not None:
+            val = attr.value_number
+        elif attr.value_boolean is not None:
+            val = attr.value_boolean
+        elif attr.value_string is not None:
+            val = attr.value_string
         else:
-            val = av.value_string
-        attrs[code] = val
+            val = None
 
-    # Преобразуем компоненты
+        if val is not None:
+            attributes.append(
+                schemas.ProductAttributeValueCreate(
+                    attribute_definition_id=attr.attribute_definition_id,
+                    value=val
+                )
+            )
+
     components = [
         {"component_product_id": c.component_product_id, "quantity": c.quantity}
         for c in db_product.components
     ]
 
-    # Stock is aggregated by default location
+    # Stock logic (оставьте как есть)
     loc = _default_location(db)
-    stock_row = (
-        db.query(models.Stock)
-        .filter(models.Stock.location_id == loc.id, models.Stock.product_id == db_product.id)
-        .first()
-    )
+    stock_row = db.query(models.Stock).filter(
+        models.Stock.location_id == loc.id,
+        models.Stock.product_id == db_product.id
+    ).first()
     stock_qty = stock_row.quantity if stock_row else Decimal("0")
 
     return schemas.Product(
         id=db_product.id,
         product_type_id=db_product.product_type_id,
         name=db_product.name,
-        unit_cost=db_product.unit_cost,
+        unit_cost=db_product.unit_cost or Decimal("0"),
         stock=stock_qty,
         is_composite=db_product.is_composite,
-        attributes=attrs,
+        attributes=attributes,  # ← список объектов с полем "value"
         components=components,
     )
 
@@ -184,13 +187,22 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
     db.flush()
 
     for attr in product.attributes:
-        db_attr = models.ProductAttributeValue(
-            product_id=db_product.id,
-            attribute_definition_id=attr.attribute_definition_id,
-            value_number=Decimal(str(attr.value)) if isinstance(attr.value, (int, float, Decimal)) else None,
-            value_boolean=bool(attr.value) if isinstance(attr.value, bool) else None,
-            value_string=str(attr.value) if isinstance(attr.value, str) else None,
+        attr_def = db.get(AttributeDefinition, attr.attribute_definition_id)
+        if not attr_def:
+            raise ValueError("Invalid attribute definition")
+
+        db_attr = ProductAttributeValue(
+            product_id=product.id,
+            attribute_definition_id=attr.attribute_definition_id
         )
+
+        if attr_def.data_type == "number":
+            db_attr.value_number = attr.value
+        elif attr_def.data_type == "boolean":
+            db_attr.value_boolean = attr.value
+        elif attr_def.data_type == "string":
+            db_attr.value_string = attr.value
+
         db.add(db_attr)
 
     if pt.is_composite:
