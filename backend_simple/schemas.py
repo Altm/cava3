@@ -47,7 +47,7 @@ class ProductCreate(BaseModel):
     name: str
     unit_cost: float
     stock: float = 0.0
-    attributes: List[ProductAttributeValueCreate] = []
+    attributes: List[ProductAttributeValueCreate] = {}
     components: List[Dict[str, float]] = []  # {component_product_id: quantity}
 
 class ProductUpdate(ProductCreate):
@@ -60,7 +60,7 @@ class Product(BaseModel):
     stock: float
     unit_cost: float
     is_composite: bool
-    attributes: Dict[str, Any] = {}
+    attributes: List[ProductAttributeValueCreate] = {}
     components: List[Dict[str, Any]] = []
 
     class Config:

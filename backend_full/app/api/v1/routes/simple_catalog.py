@@ -7,13 +7,13 @@ from app.api.v1.deps.auth import get_db
 from app.models import models
 from app.schemas import simple as schemas
 
-router = APIRouter(prefix="", tags=["simple-catalog"])
+router = APIRouter(prefix="/simple-catalog", tags=["simple-catalog"])
 
 
 def _default_location(db: Session) -> models.Location:
     loc = db.query(models.Location).first()
     if not loc:
-        loc = models.Location(name="Default", kind="default")
+        loc = models.Location(name="Warehouse", kind="default")
         db.add(loc)
         db.flush()
     return loc
@@ -109,7 +109,7 @@ def create_attribute_definition(attr_def: schemas.AttributeDefinitionCreate, db:
 
 
 def _serialize_product(db_product: models.Product, db: Session) -> schemas.Product:
-    attrs = {}
+    attrs = []
     attr_values = (
         db.query(models.ProductAttributeValue)
         .join(models.AttributeDefinition, models.ProductAttributeValue.attribute_definition_id == models.AttributeDefinition.id)
@@ -126,9 +126,12 @@ def _serialize_product(db_product: models.Product, db: Session) -> schemas.Produ
             val = av.value_string
         attrs[code] = val
 
-    comps = [
-        {"component_product_id": c.component_product_id, "quantity": c.quantity} for c in db_product.components
+    # Преобразуем компоненты
+    components = [
+        {"component_product_id": c.component_product_id, "quantity": c.quantity}
+        for c in db_product.components
     ]
+
     # Stock is aggregated by default location
     loc = _default_location(db)
     stock_row = (
@@ -146,7 +149,7 @@ def _serialize_product(db_product: models.Product, db: Session) -> schemas.Produ
         stock=stock_qty,
         is_composite=db_product.is_composite,
         attributes=attrs,
-        components=comps,
+        components=components,
     )
 
 

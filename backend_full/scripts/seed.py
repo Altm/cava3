@@ -46,7 +46,7 @@ def seed(db: Session):
     liter = upsert(db, Unit, code="liter", defaults={"description": "Литр"})
     kg = upsert(db, Unit, code="kg", defaults={"description": "Килограмм"})
     bottle = upsert(db, Unit, code="bottle", defaults={"description": "Бутылка"})
-    glass = upsert(db, Unit, code="glass", defaults={"description": "Стакан", "ratio_to_base": Decimal("0.1667")})
+    glass = upsert(db, Unit, code="glass", defaults={"description": "Бокал", "ratio_to_base": Decimal("0.1667")})
     piece = upsert(db, Unit, code="piece", defaults={"description": "Штука"})
     upsert(db, UnitConversion, from_unit="glass", to_unit="bottle", defaults={"ratio": Decimal("0.1667")})
 
@@ -79,7 +79,7 @@ def seed(db: Session):
         AttributeDefinition,
         product_type_id=wine_type.id,
         code="glasses_per_bottle",
-        defaults={"name": "Стаканов из бутылки", "data_type": "number", "is_required": False},
+        defaults={"name": "Бокалов в бутылке", "data_type": "number", "is_required": False},
     )
     weight_attr = upsert(
         db,
