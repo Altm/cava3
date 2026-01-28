@@ -17,11 +17,24 @@ class SalesService:
         self.db = db
         self.stock_service = StockService(db)
 
+    def _convert_decimal_in_payload(self, obj):
+        """Convert Decimal objects to float for JSON serialization"""
+        if isinstance(obj, Decimal):
+            return float(obj)
+        elif isinstance(obj, list):
+            return [self._convert_decimal_in_payload(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {key: self._convert_decimal_in_payload(value) for key, value in obj.items()}
+        return obj
+
     def ingest_sale(self, event_id: str, terminal_id: int, location_id: int, lines: List[dict]) -> SaleEvent:
         existing = self.db.query(SaleEvent).filter_by(event_id=event_id).first()
         if existing:
             raise IdempotencyError("Event already ingested")
-        payload = {"lines": lines}
+        
+        # Convert Decimal objects in lines for JSON serialization
+        serialized_lines = self._convert_decimal_in_payload(lines)
+        payload = {"lines": serialized_lines}
         sale = SaleEvent(event_id=event_id, terminal_id=terminal_id, location_id=location_id, payload=payload, status="pending")
         self.db.add(sale)
         self.db.flush()

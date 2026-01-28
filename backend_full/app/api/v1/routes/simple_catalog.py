@@ -150,7 +150,7 @@ def _serialize_product(db_product: models.Product, db: Session) -> schemas.Produ
         name=db_product.name,
         unit_cost=db_product.unit_cost or Decimal("0"),
         stock=stock_qty,
-        is_composite=db_product.is_composite,
+        is_composite=db_product.product_type.is_composite,
         attributes=attributes,  # ← список объектов с полем "value"
         components=components,
     )
@@ -182,7 +182,6 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
         primary_category=pt.name,
         base_unit_code=base_unit,
         unit_cost=product.unit_cost,
-        is_composite=product.is_composite,  # Use the product's is_composite flag
         is_active=True,
     )
     db.add(db_product)
@@ -263,7 +262,6 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, db: S
     product.product_type_id = product_update.product_type_id
     product.name = product_update.name
     product.unit_cost = product_update.unit_cost
-    product.is_composite = product_update.is_composite  # Use the product's is_composite flag
     product.base_unit_code = base_unit
 
     db.query(models.ProductAttributeValue).filter(models.ProductAttributeValue.product_id == product.id).delete()
@@ -337,7 +335,7 @@ def sell_product(sale_request: schemas.SaleRequest, db: Session = Depends(get_db
     if not stock or stock.quantity < sale_request.quantity:
         raise HTTPException(status_code=400, detail="Insufficient stock")
 
-    if product.is_composite:
+    if product.product_type.is_composite:
         components = db.query(models.CompositeComponent).filter(models.CompositeComponent.parent_product_id == product.id).all()
         for comp in components:
             comp_stock = (

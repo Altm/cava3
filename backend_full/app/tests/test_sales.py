@@ -18,14 +18,13 @@ def seed_core(db):
     bottle = Unit(code="bottle", description="Bottle")
     glass = Unit(code="glass", description="Glass")
     conv = UnitConversion(from_unit="glass", to_unit="bottle", ratio=Decimal("0.2"))
-    wine_type = ProductType(name="wine")
+    wine_type = ProductType(name="wine", is_composite=False)
     wine = Product(
         name="Red wine",
         sku="WINE01",
         primary_category="wine",
         product_type_id=1,
         base_unit_code="bottle",
-        is_composite=False,
     )
     loc = Location(name="Bar", kind="bar")
     term = Terminal(terminal_id="t1", location_id=1, secret_hash="secret")

@@ -25,7 +25,6 @@ class Product:
     primary_category: str
     product_type: str
     attributes: Dict[str, str] = field(default_factory=dict)
-    is_composite: bool = False
     is_active: bool = True
 
 

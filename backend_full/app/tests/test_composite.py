@@ -16,15 +16,14 @@ def seed_composite(db):
     bottle = Unit(code="bottle", description="Bottle")
     glass = Unit(code="glass", description="Glass")
     conv = UnitConversion(from_unit="glass", to_unit="bottle", ratio=Decimal("0.2"))
-    wine_type = ProductType(name="wine")
-    snack_type = ProductType(name="snack")
+    wine_type = ProductType(name="wine", is_composite=False)
+    snack_type = ProductType(name="snack", is_composite=True)
     wine = Product(
         name="Red wine",
         sku="WINE01",
         primary_category="wine",
         product_type_id=1,
         base_unit_code="bottle",
-        is_composite=False,
     )
     sandwich = Product(
         name="Sandwich",
@@ -32,7 +31,6 @@ def seed_composite(db):
         primary_category="snack",
         product_type_id=2,
         base_unit_code="glass",
-        is_composite=True,
     )
     db.add_all([bottle, glass, conv, wine_type, snack_type, wine, sandwich])
     db.flush()

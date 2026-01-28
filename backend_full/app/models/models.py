@@ -77,7 +77,6 @@ class Product(Base):
     primary_category: Mapped[str] = mapped_column(String(64), comment="Primary category tag")
     product_type_id: Mapped[int] = mapped_column(ForeignKey("product_type.id"), comment="Product type reference")
     base_unit_code: Mapped[str] = mapped_column(ForeignKey("unit.code"), comment="Base unit for stock keeping")
-    is_composite: Mapped[bool] = mapped_column(Boolean, default=False, comment="Indicates composite product")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="Soft delete flag")
     #unit_cost: Mapped[Decimal] = mapped_column(DECIMAL(18, 2), default=Decimal("0.00"), comment="Unit cost for catalog")
     tax_flags: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, comment="Tax or regulatory flags")
@@ -98,6 +97,11 @@ class Product(Base):
         .where(Stock.product_id == id)
         .scalar_subquery()
     )
+
+    @property
+    def is_composite(self) -> bool:
+        """Return is_composite from associated product type"""
+        return self.product_type.is_composite if self.product_type else False
 
 
 
