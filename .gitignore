@@ -1,54 +1,46 @@
-```gitignore
+```
 # Dependencies
+.venv/
+venv/
+__pycache__/
 node_modules/
 
-# Build outputs
+# Build artifacts
 dist/
 build/
-*.js.map
-*.ts.map
+target/
 
-# Environment variables
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+
+# Environment files
 .env
 .env.local
 *.env.*
 
-# Editor files
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-*.tmp
 
-# Logs
-*.log
+# Python specific
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+.Python
+*.so
 
-# Coverage
+# Coverage reports
 coverage/
 htmlcov/
 .coverage
 
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# OS generated files
+.DS_Store
+Thumbs.db
 
-# Temporary files
-*.tmp
-*~
-```
-
-Wait, let me reconsider the input. The modified files are only TypeScript and Vue files (`frontend/src/api/productApi.ts`, `frontend/src/views/ProductForm.vue`), which are source code files. There are no build artifacts, dependencies, or temporary files in the change list that would require adding new ignore patterns.
-
-The original .gitignore content appears to be empty based on the prompt structure, and since there are no artifacts to ignore from the change list, no additional rules are needed.
-
-Actually, looking at the example format more carefully, it seems I need to output based on detecting patterns. Since the changes are only `.ts` and `.vue` files (source code), and there are no artifacts like node_modules, build files, etc. mentioned in the changes, I should not add anything for this specific case.
-
-However, since this appears to be a frontend project with TypeScript and Vue files, it's likely to have common frontend artifacts. Let me reconsider - if the change list doesn't show any artifacts yet but shows a frontend project structure, I should consider what would typically need to be ignored for such projects.
-
-But according to rule #6: "If the change list contains ONLY source or config files... and NO build artifacts, dependencies, or temp files — output an EMPTY .gitignore". The changes here are only source files (.ts, .vue), so:
-
-```gitignore
-
+# MyPy cache
+.mypy_cache/
 ```

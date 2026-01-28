@@ -182,7 +182,7 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
         primary_category=pt.name,
         base_unit_code=base_unit,
         unit_cost=product.unit_cost,
-        is_composite=pt.is_composite,
+        is_composite=product.is_composite,  # Use the product's is_composite flag
         is_active=True,
     )
     db.add(db_product)
@@ -263,7 +263,7 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, db: S
     product.product_type_id = product_update.product_type_id
     product.name = product_update.name
     product.unit_cost = product_update.unit_cost
-    product.is_composite = pt.is_composite
+    product.is_composite = product_update.is_composite  # Use the product's is_composite flag
     product.base_unit_code = base_unit
 
     db.query(models.ProductAttributeValue).filter(models.ProductAttributeValue.product_id == product.id).delete()
