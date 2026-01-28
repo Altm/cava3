@@ -29,10 +29,13 @@ export interface ProductType {
 export interface ProductForm {
   productTypeId: number
   name: string
-  unitCost: number
-  stock: number
+  unitCost: string              // ← строка, не number!
+  stock: string                 // ← строка
   attributes: Record<string, any>
-  components: Array<{ componentProductId: number; quantity: number }>
+  components: Array<{
+    componentProductId: number
+    quantity: number
+  }>
 }
 
 export interface Product {
@@ -91,39 +94,53 @@ export const productApi = {
     return api.post('/products/', payload)
   },
 
-  async updateProduct(id: number, data: ProductForm) {
-    // First, we need to get the attribute definitions to map the values correctly
-    const productType = await api.get(`/product-types/${data.productTypeId}`)
-    const attributeDefs = productType.data.attributes
+async updateProduct(id: number, data: ProductForm) {
+  // 🔒 Валидация: productTypeId должен быть числом > 0
+  if (!data.productTypeId || typeof data.productTypeId !== 'number' || data.productTypeId <= 0) {
+    throw new Error('Invalid productTypeId')
+  }
 
-    // Convert attributes to the expected format
-    const attributes = Object.entries(data.attributes).map(([code, value]) => {
-      // Only include attributes that have values (not null/undefined)
-      if (value === null || value === undefined) {
-        return null;
-      }
+  // Загружаем тип товара для маппинга атрибутов
+  const productType = await api.get(`/product-types/${data.productTypeId}`)
+  const attributeDefs = productType.data.attributes
+
+  // Преобразуем атрибуты
+  const attributes = Object.entries(data.attributes)
+    .map(([code, value]) => {
+      if (value === null || value === undefined || value === '') return null
 
       const attrDef = attributeDefs.find((def: AttributeDefinition) => def.code === code)
       if (!attrDef) {
-        throw new Error(`Attribute definition not found for code: ${code}`)
+        console.warn(`Attribute definition not found for code: ${code}`)
+        return null
       }
+
       return {
         attribute_definition_id: attrDef.id,
-        value
+        value: String(value) // всегда строка!
       }
-    }).filter(Boolean); // Remove null entries
+    })
+    .filter(Boolean) as Array<{ attribute_definition_id: number; value: string }>
 
-    const payload = {
-      product_type_id: data.productTypeId,
-      name: data.name,
-      unit_cost: data.unitCost,
-      stock: data.stock,
-      attributes,
-      components: data.components.map(c => ({ [c.componentProductId]: c.quantity }))
-    }
+  // ✅ Правильный формат компонентов
+  const components = (data.components || [])
+    .filter(c => c.componentProductId > 0 && c.quantity > 0) // фильтруем пустые
+    .map(c => ({
+      component_product_id: c.componentProductId, // ← ключи как в API
+      quantity: c.quantity
+    }))
 
-    return api.put(`/products/${id}`, payload)
-  },
+  const payload = {
+    product_type_id: data.productTypeId,
+    name: data.name,
+    unit_cost: data.unitCost,   // строка, например "33.00"
+    stock: data.stock,          // строка, например "44.000000"
+    attributes,
+    components
+  }
+
+  return api.put(`/products/${id}`, payload)
+},
 
   async deleteProduct(id: number) {
     return api.delete(`/products/${id}`)

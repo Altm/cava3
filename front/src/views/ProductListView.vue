@@ -22,7 +22,9 @@
         <div v-if="product.components && product.components.length > 0">
           <h4>Компоненты:</h4>
           <ul>
+
             <li v-for="comp in product.components" :key="`${product.id}-${comp.componentProductId}`">
+              <pre>{{ comp }}</pre>
               Товар ID: {{ comp.componentProductId }}, Количество: {{ comp.quantity }}
             </li>
           </ul>

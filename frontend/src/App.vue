@@ -1,67 +1,59 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { computed } from 'vue'
+import { useAppStore } from '@/store/modules/app'
+import { ConfigGlobal } from '@/components/ConfigGlobal'
+import { useDesign } from '@/hooks/web/useDesign'
+import { ElNotification } from 'element-plus'
+
+const { getPrefixCls } = useDesign()
+
+const prefixCls = getPrefixCls('app')
+
+const appStore = useAppStore()
+
+const currentSize = computed(() => appStore.getCurrentSize)
+
+const greyMode = computed(() => appStore.getGreyMode)
+
+appStore.initTheme()
+
+ElNotification({
+  title: 'hint',
+  type: 'warning',
+  duration: 0,
+  dangerouslyUseHTMLString: true,
+  message:
+    '<div><p><strong>If you are undecided, please check the FAQ first, and you may be able to find the answer</strong></p><p><a href="http://localhost//guide/fqa.html" target="_blank">Link address</a></p></div>'
+})
 </script>
 
 <template>
-  <header>
-    <nav>
-      <RouterLink to="/">Главная</RouterLink> |
-      <RouterLink to="/product-list">Список товаров</RouterLink> |
-      <RouterLink to="/product-form">Создать товар</RouterLink> |
-      <RouterLink to="/sales">Продажи</RouterLink>
-    </nav>
-  </header>
-
-  <main>
-    <RouterView />
-  </main>
+  <ConfigGlobal :size="currentSize">
+    <RouterView :class="greyMode ? `${prefixCls}-grey-mode` : ''" />
+  </ConfigGlobal>
 </template>
 
-<style scoped>
-header {
-  line-height: 1.5;
-  margin-bottom: 2rem;
-}
+<style lang="less">
+@prefix-cls: ~'@{adminNamespace}-app';
 
-nav {
+.size {
   width: 100%;
-  font-size: 1rem;
-  text-align: left;
-  margin-top: 2rem;
+  height: 100%;
 }
 
-nav a.router-link-exact-active {
-  color: var(--color-text);
-}
+html,
+body {
+  padding: 0 !important;
+  margin: 0;
+  overflow: hidden;
+  .size;
 
-nav a.router-link-exact-active:hover {
-  background-color: transparent;
-}
-
-nav a {
-  display: inline-block;
-  padding: 0 1rem;
-  border-left: 1px solid var(--color-border);
-}
-
-nav a:first-of-type {
-  border: 0;
-}
-
-@media (min-width: 1024px) {
-  header {
-    display: flex;
-    place-items: center;
-    padding-right: calc(var(--section-gap) / 2);
+  #app {
+    .size;
   }
+}
 
-  nav {
-    text-align: left;
-    margin-left: -1rem;
-    font-size: 1rem;
-
-    padding: 1rem 0;
-    margin-top: 0;
-  }
+.@{prefix-cls}-grey-mode {
+  filter: grayscale(100%);
 }
 </style>

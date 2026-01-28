@@ -15,7 +15,7 @@ router = APIRouter(prefix="/simple-catalog", tags=["simple-catalog"])
 def _default_location(db: Session) -> models.Location:
     loc = db.query(models.Location).first()
     if not loc:
-        loc = models.Location(name="Default", kind="default")
+        loc = models.Location(name="Warehouse", kind="warehouse")
         db.add(loc)
         db.flush()
     return loc
@@ -170,9 +170,11 @@ def _ensure_unit(code: str, db: Session) -> models.Unit:
 def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)):
     base_unit = product.base_unit_code or "unit"
     _ensure_unit(base_unit, db)
+
     pt = db.query(models.ProductType).get(product.product_type_id)
     if not pt:
         raise HTTPException(status_code=400, detail="Product type not found")
+
     db_product = models.Product(
         product_type_id=product.product_type_id,
         name=product.name,
@@ -186,13 +188,14 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
     db.add(db_product)
     db.flush()
 
+    # Атрибуты
     for attr in product.attributes:
         attr_def = db.get(AttributeDefinition, attr.attribute_definition_id)
         if not attr_def:
             raise ValueError("Invalid attribute definition")
 
         db_attr = ProductAttributeValue(
-            product_id=product.id,
+            product_id=db_product.id,  # ✅ ПРАВИЛЬНО: используем id сохранённого товара
             attribute_definition_id=attr.attribute_definition_id
         )
 
@@ -205,6 +208,7 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
 
         db.add(db_attr)
 
+    # Компоненты (если составной)
     if pt.is_composite:
         for comp in product.components:
             db_comp = models.CompositeComponent(
@@ -215,14 +219,16 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
             )
             db.add(db_comp)
 
+    # Складской остаток
     loc = _default_location(db)
     stock = models.Stock(
         location_id=loc.id,
-        product_id=db_product.id,
+        product_id=db_product.id,  # ✅ тоже используем db_product.id
         quantity=Decimal(str(product.stock)),
         unit_code=base_unit,
     )
     db.add(stock)
+
     db.commit()
     db.refresh(db_product)
     return _serialize_product(db_product, db)

@@ -1,17 +1,29 @@
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Dict
+
 from sqlalchemy import event, inspect
 from sqlalchemy.orm import Session
+
 from app.models import models as orm
 import structlog
 
 logger = structlog.get_logger()
 
 
+def _json_friendly(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
 def as_dict(obj: Any) -> Dict[str, Any]:
     state = {}
     for attr in inspect(obj).mapper.column_attrs:
         key = attr.key
-        state[key] = getattr(obj, key)
+        state[key] = _json_friendly(getattr(obj, key))
     return state
 
 

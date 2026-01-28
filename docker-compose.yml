@@ -51,23 +51,35 @@ services:
   #    - DATABASE_URL=postgresql://user:password@db_simple:5432/product_catalog
   #  command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    ports:
-      - "8088:4000"
-    depends_on:
-      - backend_full
+  #frontend:
+  #  build:
+  #    context: ./frontend
+  #    dockerfile: Dockerfile.dev
+  #  ports:
+  #    - "8088:4000"
+  #  depends_on:
+  #    - backend_full
+
+  #front:
+  #  build:
+  #    context: ./front
+  #    dockerfile: Dockerfile
+  #  ports:
+  #    - "8090:80"
+  #  depends_on:
+  #    - backend_full
 
   front:
     build:
       context: ./front
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     ports:
-      - "8090:80"
-    depends_on:
-      - backend_full
+      - "8090:5173"
+    volumes:
+      - ./front:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
 
 volumes:
   pgdata:
