@@ -87,8 +87,12 @@ export const productApi = {
       name: data.name,
       unit_cost: data.unitCost,
       stock: data.stock,
+      is_composite: data.isComposite,  // Include the composite flag
       attributes,
-      components: data.components.map(c => ({ [c.componentProductId]: c.quantity }))
+      components: data.components.map(c => ({
+        component_product_id: c.componentProductId,
+        quantity: c.quantity
+      }))
     }
 
     return api.post('/products/', payload)
@@ -135,12 +139,21 @@ async updateProduct(id: number, data: ProductForm) {
     name: data.name,
     unit_cost: data.unitCost,   // строка, например "33.00"
     stock: data.stock,          // строка, например "44.000000"
+    is_composite: data.isComposite,  // Include the composite flag
     attributes,
     components
   }
 
   return api.put(`/products/${id}`, payload)
 },
+
+  async sellProduct(saleRequest: SaleRequest): Promise<SaleResponse> {
+    return api.post('/sales/', saleRequest).then(res => res.data);
+  },
+
+  async sellWineGlass(saleRequest: SaleRequest): Promise<SaleResponse> {
+    return api.post('/glass-sales/', saleRequest).then(res => res.data);
+  },
 
   async deleteProduct(id: number) {
     return api.delete(`/products/${id}`)

@@ -82,8 +82,15 @@ class ProductCreate(BaseModel):
     components: List[ProductComponentCreate] = []
 
 
-class ProductUpdate(ProductCreate):
-    pass
+class ProductUpdate(BaseModel):
+    product_type_id: int
+    name: str
+    sku: Optional[str] = None
+    unit_cost: Decimal
+    stock: Decimal = Decimal("0")
+    base_unit_code: Optional[str] = None
+    attributes: List[ProductAttributeValueCreate] = []
+    components: List[ProductComponentCreate] = []
 
 
 class Product(BaseModel):

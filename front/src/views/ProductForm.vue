@@ -66,8 +66,21 @@
         </div>
       </div>
 
+      <!-- Флаг составного товара -->
+      <div>
+        <label>
+          <input 
+            type="checkbox" 
+            v-model="currentProductTypeIsComposite"
+            @change="onTypeChange"
+            :disabled="isEditing"
+          />
+          Составной товар
+        </label>
+      </div>
+
       <!-- Компоненты (только для составных) -->
-      <div v-if="isComposite">
+      <div v-if="currentProductTypeIsComposite">
         <h3>Компоненты</h3>
         <div v-for="(comp, index) in form.components" :key="index">
           <select v-model="comp.componentProductId">
@@ -76,7 +89,7 @@
               {{ p.name }}
             </option>
           </select>
-          <input v-model.number="comp.quantity" type="number" placeholder="Количество" />
+          <input v-model.number="comp.quantity" type="number" placeholder="Количество" min="0.01" step="0.01"/>
           <button type="button" @click="removeComponent(index)">Удалить</button>
         </div>
         <button type="button" @click="addComponent">+ Добавить компонент</button>
@@ -112,6 +125,7 @@ const form = ref({
   name: '',
   unitCost: 0,
   stock: 0,
+  isComposite: false,  // Add the composite flag to the form
   attributes: {} as Record<string, any>,
   components: [] as Array<{ componentProductId: number; quantity: number }>
 })
@@ -121,7 +135,21 @@ const currentType = computed(() =>
   productTypes.value.find(t => t.id === form.value.productTypeId)
 )
 const currentTypeAttributes = computed(() => currentType.value?.attributes || [])
-const isComposite = computed(() => currentType.value?.isComposite || false)
+
+// Reactive property to manage composite flag separately from product type
+const currentProductTypeIsComposite = computed({
+  get() {
+    return form.value.isComposite;
+  },
+  set(value: boolean) {
+    form.value.isComposite = value;
+    // Clear components if unchecking composite
+    if (!value) {
+      form.value.components = [];
+    }
+  }
+})
+
 const simpleProducts = computed(() =>
   allProducts.value.filter(p => !p.is_composite)
 )
@@ -131,7 +159,7 @@ const cancel = () => router.push('/')
 
 const onTypeChange = () => {
   form.value.attributes = {}
-  if (!isComposite.value) {
+  if (!currentProductTypeIsComposite.value) {
     form.value.components = []
   }
 }
@@ -172,6 +200,7 @@ const handleSubmit = async () => {
       name: form.value.name,
       unit_cost: form.value.unitCost,
       stock: form.value.stock,
+      is_composite: form.value.isComposite,  // Add the composite flag
       attributes: Object.entries(form.value.attributes)
         .map(([code, value]) => {
           const def = currentType.value?.attributes?.find(a => a.code === code)
@@ -182,7 +211,7 @@ const handleSubmit = async () => {
           }
         })
         .filter(Boolean) as ApiAttribute[],
-      components: isComposite.value
+      components: form.value.isComposite  // Use form's isComposite field
         ? form.value.components.map(c => ({
             component_product_id: c.componentProductId,
             quantity: c.quantity
@@ -191,10 +220,18 @@ const handleSubmit = async () => {
     }
 
     if (isEditing.value && productId.value) {
-      await productApi.updateProduct(Number(route.params.id), form.value)
+      // Pass the updated form data with isComposite field
+      await productApi.updateProduct(Number(productId.value), {
+        ...form.value,
+        isComposite: form.value.isComposite
+      })
       alert('Товар обновлён!')
     } else {
-      await productApi.createProduct(form.value)
+      // Pass the form data with isComposite field
+      await productApi.createProduct({
+        ...form.value,
+        isComposite: form.value.isComposite
+      })
       alert('Товар создан!')
     }
     router.push('/')
@@ -276,6 +313,7 @@ onMounted(async () => {
         name: product.name,
         unitCost: product.unit_cost,
         stock: product.stock,
+        isComposite: product.is_composite,  // Set the composite flag from the product
         attributes: initialAttributes,
         components: initialComponents
       }
@@ -286,6 +324,7 @@ onMounted(async () => {
         name: '',
         unitCost: 0,
         stock: 0,
+        isComposite: false,  // Default to non-composite for new products
         attributes: {},
         components: []
       }
