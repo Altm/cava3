@@ -136,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import type { ProductType, AttributeDefinition } from '@/api/productApi'
 import { productApi } from '@/api/productApi'
 
@@ -147,7 +147,7 @@ const dialogVisible = ref(false)
 const editingProductType = ref<ProductType | null>(null)
 
 // Form
-const form = reactive({
+const form = ref({
   id: 0,
   name: '',
   description: '',
@@ -192,13 +192,13 @@ const showCreateDialog = () => {
 
 const editProductType = (productType: ProductType) => {
   editingProductType.value = productType
-  form.id = productType.id
-  form.name = productType.name
-  form.description = productType.description || ''
-  form.isComposite = productType.isComposite
+  form.value.id = productType.id
+  form.value.name = productType.name
+  form.value.description = productType.description || ''
+  form.value.isComposite = productType.isComposite
 
   // Initialize attributes
-  form.attributes = productType.attributes && productType.attributes.length > 0
+  form.value.attributes = productType.attributes && productType.attributes.length > 0
     ? [...productType.attributes.map(attr => ({
         ...attr,
         unitCode: attr.unitId ? String(attr.unitId) : undefined
@@ -224,24 +224,25 @@ const deleteProductType = async (id: number) => {
 }
 
 const addAttribute = () => {
-  form.attributes.push({ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false })
+  form.value.attributes.push({ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false })
 }
 
 const removeAttribute = (index: number) => {
-  form.attributes.splice(index, 1)
+  // Используем Vue.set или прямое присваивание для обеспечения реактивности
+  form.value.attributes.splice(index, 1)
   // Если массив стал пустым, добавим один пустой атрибут для удобства
-  if (form.attributes.length === 0) {
-    form.attributes.push({ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false })
+  if (form.value.attributes.length === 0) {
+    form.value.attributes.push({ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false })
   }
 }
 
 const resetForm = () => {
-  form.id = 0
-  form.name = ''
-  form.description = ''
-  form.isComposite = false
-  form.attributes = []
-  form.unitConversions = []
+  form.value.id = 0
+  form.value.name = ''
+  form.value.description = ''
+  form.value.isComposite = false
+  form.value.attributes = []
+  form.value.unitConversions = []
 }
 
 const saveProductType = async () => {
@@ -249,11 +250,11 @@ const saveProductType = async () => {
     if (editingProductType.value) {
       // Update existing product type
       const payload = {
-        name: form.name,
-        description: form.description,
-        is_composite: form.isComposite,
-        attributes: form.attributes.map(attr => ({
-          product_type_id: form.id,
+        name: form.value.name,
+        description: form.value.description,
+        is_composite: form.value.isComposite,
+        attributes: form.value.attributes.map(attr => ({
+          product_type_id: form.value.id,
           name: attr.name,
           code: attr.code,
           data_type: attr.dataType,
@@ -263,14 +264,14 @@ const saveProductType = async () => {
       }
 
       // Use productApi for consistency
-      await productApi.updateProductType(form.id, payload)
+      await productApi.updateProductType(form.value.id, payload)
     } else {
       // Create new product type
       const payload = {
-        name: form.name,
-        description: form.description,
-        is_composite: form.isComposite,
-        attributes: form.attributes.map(attr => ({
+        name: form.value.name,
+        description: form.value.description,
+        is_composite: form.value.isComposite,
+        attributes: form.value.attributes.map(attr => ({
           product_type_id: 0, // Will be set by backend
           name: attr.name,
           code: attr.code,

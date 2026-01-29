@@ -1,8 +1,40 @@
 import axios from 'axios'
 
+// Helper function to convert snake_case to camelCase
+function snakeToCamel(obj: any): any {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(snakeToCamel);
+  }
+
+  const convertedObj: any = {};
+  for (const key in obj) {
+    if (obj.hasOwnProperty(key)) {
+      // Convert snake_case to camelCase
+      const camelKey = key.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+      convertedObj[camelKey] = snakeToCamel(obj[key]);
+    }
+  }
+  return convertedObj;
+}
+
 const api = axios.create({
   baseURL: '/api/v1/simple-catalog'
-})
+});
+
+// Response interceptor to convert snake_case to camelCase
+api.interceptors.response.use(
+  (response) => {
+    response.data = snakeToCamel(response.data);
+    return response;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
 export interface Unit {
   id: number
@@ -38,14 +70,35 @@ export interface ProductForm {
   }>
 }
 
+export interface ProductAttributeValue {
+  attributeDefinitionId: number;
+  value: string;
+}
+
+export interface SaleRequest {
+  productId: number
+  quantity: number
+}
+
+export interface SaleResponse {
+  message: string
+  totalCost: number
+}
+
+// Define the attribute structure as it comes from the API after snakeToCamel conversion
+export interface ProductAttribute {
+  attributeDefinitionId: number;
+  value: string;
+}
+
 export interface Product {
   id: number
-  product_type_id: number
+  productTypeId: number
   name: string
   stock: number
-  unit_cost: number
-  is_composite: boolean
-  attributes: Record<string, any>
+  unitCost: number
+  isComposite: boolean
+  attributes: ProductAttribute[];
   components: Array<{ componentProductId: number; quantity: number }>
 }
 
@@ -57,14 +110,14 @@ export interface Location {
 
 export interface ProductWithStockByLocation {
   id: number
-  product_type_id: number
+  productTypeId: number
   name: string
   stock: number
-  unit_cost: number
-  is_composite: boolean
+  unitCost: number
+  isComposite: boolean
   attributes: Record<string, any>
   components: Array<{ componentProductId: number; quantity: number }>
-  stock_by_location: Array<{ location_id: number; quantity: number }>
+  stockByLocation: Array<{ locationId: number; quantity: number }>
 }
 
 export const productApi = {
@@ -127,7 +180,7 @@ export const productApi = {
       unit_cost: data.unitCost,
       stock: data.stock,
       is_composite: data.isComposite,  // Include the composite flag
-      attributes,
+      attributes: attributes as Array<{ attribute_definition_id: number; value: string }>,
       components: data.components.map(c => ({
         component_product_id: c.componentProductId,
         quantity: c.quantity
@@ -179,7 +232,7 @@ async updateProduct(id: number, data: ProductForm) {
     unit_cost: data.unitCost,   // строка, например "33.00"
     stock: data.stock,          // строка, например "44.000000"
     is_composite: data.isComposite,  // Include the composite flag
-    attributes,
+    attributes: attributes as Array<{ attribute_definition_id: number; value: string }>,
     components
   }
 

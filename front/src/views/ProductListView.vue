@@ -66,13 +66,13 @@
         <tr v-for="product in products" :key="product.id">
           <td>{{ product.id }}</td>
           <td>{{ product.name }}</td>
-          <td>{{ getProductTypeName(product.product_type_id) }}</td>
+          <td>{{ getProductTypeName(product.productTypeId) }}</td>
           <td>{{ getBaseUnit(product) }}</td>
           <td>{{ product.stock }}</td>
-          <td>{{ product.unit_cost }}</td>
+          <td>{{ product.unitCost }}</td>
           <td>
-            <span :class="{'tag-success': product.is_composite, 'tag-info': !product.is_composite}">
-              {{ product.is_composite ? 'Да' : 'Нет' }}
+            <span :class="{'tag-success': product.isComposite, 'tag-info': !product.isComposite}">
+              {{ product.isComposite ? 'Да' : 'Нет' }}
             </span>
           </td>
           <td>

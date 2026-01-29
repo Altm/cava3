@@ -173,7 +173,7 @@ import { useRouter } from 'vue-router'
 import type {
   ProductType,
   Product,
-  ProductAttributeValue as ApiAttribute,
+  ProductAttribute,
   ProductComponent as ApiComponent
 } from '@/api/productApi'
 import { productApi } from '@/api/productApi'
@@ -215,7 +215,7 @@ const currentProductTypeIsComposite = computed(() => {
 });
 
 const simpleProducts = computed(() =>
-  allProducts.value.filter(p => !p.is_composite)
+  allProducts.value.filter(p => !p.isComposite)
 )
 
 // Действия
@@ -328,7 +328,7 @@ onMounted(async () => {
 
     if (isEditing.value && props.productId) {
       const product = await productApi.getProduct(props.productId)
-      const type = productTypes.value.find(t => t.id === product.product_type_id)
+      const type = productTypes.value.find(t => t.id === product.productTypeId)
 
       if (!type) {
         alert('Тип товара не найден')
@@ -341,7 +341,7 @@ onMounted(async () => {
       if (type.attributes) {
         for (const def of type.attributes) {
           const apiAttr = (product.attributes || []).find(
-            (a: ApiAttribute) => a.attribute_definition_id === def.id
+            (a: ProductAttribute) => a.attributeDefinitionId === def.id
           )
           let value: any = null
           if (apiAttr) {
@@ -368,19 +368,19 @@ onMounted(async () => {
 
       // Преобразуем компоненты
       const initialComponents = (product.components || []).map((comp: ApiComponent) => ({
-        componentProductId: comp.component_product_id,
+        componentProductId: comp.componentProductId,
         quantity: comp.quantity
       }))
 
       // Get the composite flag from the product type
-      const productType = productTypes.value.find(t => t.id === product.product_type_id);
+      const productType = productTypes.value.find(t => t.id === product.productTypeId);
       const isProductTypeComposite = productType ? productType.isComposite : false;
 
       // Устанавливаем форму
       form.value = {
-        productTypeId: Number(product.product_type_id), // ← гарантируем number
+        productTypeId: Number(product.productTypeId), // ← гарантируем number
         name: product.name,
-        unitCost: product.unit_cost,
+        unitCost: product.unitCost,
         stock: product.stock,
         isComposite: isProductTypeComposite,  // Use the composite flag from the product type
         attributes: initialAttributes,
@@ -411,7 +411,7 @@ watch(() => props.productId, async (newId) => {
     // Reload data for the new product ID
     try {
       const product = await productApi.getProduct(newId)
-      const type = productTypes.value.find(t => t.id === product.product_type_id)
+      const type = productTypes.value.find(t => t.id === product.productTypeId)
 
       if (!type) {
         alert('Тип товара не найден')
@@ -424,7 +424,7 @@ watch(() => props.productId, async (newId) => {
       if (type.attributes) {
         for (const def of type.attributes) {
           const apiAttr = (product.attributes || []).find(
-            (a: ApiAttribute) => a.attribute_definition_id === def.id
+            (a: ProductAttribute) => a.attributeDefinitionId === def.id
           )
           let value: any = null
           if (apiAttr) {
@@ -451,19 +451,19 @@ watch(() => props.productId, async (newId) => {
 
       // Преобразуем компоненты
       const initialComponents = (product.components || []).map((comp: ApiComponent) => ({
-        componentProductId: comp.component_product_id,
+        componentProductId: comp.componentProductId,
         quantity: comp.quantity
       }))
 
       // Get the composite flag from the product type
-      const productType = productTypes.value.find(t => t.id === product.product_type_id);
+      const productType = productTypes.value.find(t => t.id === product.productTypeId);
       const isProductTypeComposite = productType ? productType.isComposite : false;
 
       // Устанавливаем форму
       form.value = {
-        productTypeId: Number(product.product_type_id), // ← гарантируем number
+        productTypeId: Number(product.productTypeId), // ← гарантируем number
         name: product.name,
-        unitCost: product.unit_cost,
+        unitCost: product.unitCost,
         stock: product.stock,
         isComposite: isProductTypeComposite,  // Use the composite flag from the product type
         attributes: initialAttributes,

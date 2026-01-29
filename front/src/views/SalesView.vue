@@ -43,7 +43,7 @@
     <div v-if="saleResult" class="result">
       <h3>Результат продажи:</h3>
       <p>{{ saleResult.message }}</p>
-      <p><strong>Общая стоимость:</strong> {{ saleResult.total_cost }}</p>
+      <p><strong>Общая стоимость:</strong> {{ saleResult.totalCost }}</p>
     </div>
   </div>
 </template>
@@ -59,11 +59,6 @@ interface SaleForm {
   saleType: 'full' | 'glass'
 }
 
-interface SaleResult {
-  message: string
-  total_cost: number
-}
-
 const saleForm = ref<SaleForm>({
   productId: null,
   quantity: 1,
@@ -71,14 +66,49 @@ const saleForm = ref<SaleForm>({
 })
 
 const products = ref<Product[]>([])
-const saleResult = ref<SaleResult | null>(null)
+const productTypes = ref<ProductType[]>([])
+const saleResult = ref<SaleResponse | null>(null)
 const glassesPerBottle = ref<number | null>(null)
+
+// Helper to get attribute definitions for a product type
+const productTypeAttributes = computed(() => {
+  if (!saleForm.value.productId) return []
+  const product = products.value.find(p => p.id === saleForm.value.productId)
+  if (!product) return []
+
+  const productType = productTypes.value.find(pt => pt.id === product.productTypeId)
+  return productType ? productType.attributes : []
+})
+
+// Helper function to convert attributes array to object with codes as keys
+const getAttributesAsObject = (productId: number) => {
+  const product = products.value.find(p => p.id === productId);
+  if (!product || !Array.isArray(product.attributes)) {
+    return {};
+  }
+
+  // Need to get the product type to map attribute IDs to codes
+  const productType = productTypes.value.find(pt => pt.id === product.productTypeId);
+  if (!productType || !productType.attributes) {
+    return {};
+  }
+
+  const attrObj: Record<string, any> = {};
+  product.attributes.forEach(attr => {
+    const attrDef = productType.attributes.find(def => def.id === attr.attributeDefinitionId);
+    if (attrDef) {
+      attrObj[attrDef.code] = attr.value;
+    }
+  });
+
+  return attrObj;
+};
 
 const currentProductHasGlasses = computed(() => {
   if (!saleForm.value.productId) return false
-  const product = products.value.find(p => p.id === saleForm.value.productId)
-  return product && product.attributes && typeof product.attributes.glasses_per_bottle !== 'undefined' && product.attributes.glasses_per_bottle !== null
-})
+  const attrObj = getAttributesAsObject(saleForm.value.productId);
+  return attrObj.glassesPerBottle !== undefined && attrObj.glassesPerBottle !== null;
+});
 
 const canSubmit = computed(() => {
   return saleForm.value.productId !== null && 
@@ -94,8 +124,20 @@ const getQuantityPlaceholder = computed(() => {
 })
 
 const getGlassesPerBottleText = (product: Product) => {
-  if (product.attributes && product.attributes.glasses_per_bottle) {
-    return `(бокалов в бутылке: ${product.attributes.glasses_per_bottle})`
+  if (Array.isArray(product.attributes)) {
+    // Need to get the product type to map attribute IDs to codes
+    const productType = productTypes.value.find(pt => pt.id === product.productTypeId);
+    if (!productType || !productType.attributes) {
+      return '';
+    }
+
+    const attrDef = productType.attributes.find(def => def.code === 'glasses_per_bottle');
+    if (attrDef) {
+      const attrValue = product.attributes.find(attr => attr.attributeDefinitionId === attrDef.id);
+      if (attrValue && attrValue.value) {
+        return `(бокалов в бутылке: ${attrValue.value})`;
+      }
+    }
   }
   return ''
 }
@@ -103,44 +145,47 @@ const getGlassesPerBottleText = (product: Product) => {
 const onProductChange = () => {
   if (saleForm.value.productId) {
     const product = products.value.find(p => p.id === saleForm.value.productId)
-    if (product && product.attributes && product.attributes.glasses_per_bottle) {
-      glassesPerBottle.value = product.attributes.glasses_per_bottle
-      if (!currentProductHasGlasses.value) {
-        saleForm.value.saleType = 'full'
+    if (Array.isArray(product.attributes)) {
+      // Need to get the product type to map attribute IDs to codes
+      const productType = productTypes.value.find(pt => pt.id === product.productTypeId);
+      if (!productType || !productType.attributes) {
+        glassesPerBottle.value = null;
+        saleForm.value.saleType = 'full';
+        return;
       }
-    } else {
-      glassesPerBottle.value = null
-      saleForm.value.saleType = 'full'
+
+      const attrDef = productType.attributes.find(def => def.code === 'glasses_per_bottle');
+      if (attrDef) {
+        const attrValue = product.attributes.find(attr => attr.attributeDefinitionId === attrDef.id);
+        if (attrValue && attrValue.value) {
+          glassesPerBottle.value = parseFloat(attrValue.value);
+          if (!currentProductHasGlasses.value) {
+            saleForm.value.saleType = 'full';
+          }
+          return;
+        }
+      }
     }
+
+    glassesPerBottle.value = null;
+    saleForm.value.saleType = 'full';
   }
 }
 
 const handleSale = async () => {
   try {
-    let url = '/api/sales/'
-    let requestBody = {
-      product_id: saleForm.value.productId,
+    const saleRequest: SaleRequest = {
+      productId: saleForm.value.productId!,
       quantity: saleForm.value.quantity
     }
 
+    let result: SaleResponse;
     if (saleForm.value.saleType === 'glass') {
-      url = '/api/glass-sales/'
+      result = await productApi.sellWineGlass(saleRequest)
+    } else {
+      result = await productApi.sellProduct(saleRequest)
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    })
-
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.detail || 'Ошибка при продаже товара')
-    }
-
-    const result = await response.json()
     saleResult.value = result
     // Refresh products list
     loadProducts()
@@ -161,9 +206,20 @@ const loadProducts = async () => {
   }
 }
 
-onMounted(() => {
-  loadProducts()
+onMounted(async () => {
+  await Promise.all([
+    loadProducts(),
+    loadProductTypes()
+  ]);
 })
+
+const loadProductTypes = async () => {
+  try {
+    productTypes.value = await productApi.getProductTypes();
+  } catch (error) {
+    console.error('Ошибка при загрузке типов товаров:', error);
+  }
+}
 </script>
 
 <style scoped>
