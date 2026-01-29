@@ -226,7 +226,7 @@ def seed(db: Session):
     stock_items.append((tasting_set, Decimal("10"), "piece"))
     for prod, qty, unit in stock_items:
         upsert(db, Stock, location_id=default_loc.id, product_id=prod.id, defaults={"quantity": qty, "unit_code": unit})
-        upsert(db, PriceList, location_id=default_loc.id, product_id=prod.id, unit_code=unit, defaults={"currency": "USD", "amount": prod.unit_cost})
+        upsert(db, PriceList, location_id=default_loc.id, product_id=prod.id, unit_code=unit, defaults={"currency": "EUR", "amount": prod.unit_cost})
 
     upsert(db, Terminal, terminal_id="T-1", defaults={"location_id": default_loc.id, "secret_hash": "secret"})
 
@@ -244,7 +244,7 @@ def seed(db: Session):
     upsert(db, InventorySnapshot, location_id=default_loc.id, defaults={"data": {"note": "Initial snapshot", "items": []}})
 
     sale_event = upsert(db, SaleEvent, event_id="seed-sale-1", defaults={"terminal_id": 1, "location_id": default_loc.id, "payload": {"lines": []}, "status": "pending"})
-    upsert(db, SaleLine, sale_event_id=sale_event.id, product_id=wines[0][0].id, defaults={"quantity": Decimal("1"), "unit_code": "bottle", "currency": "USD", "price": Decimal("25")})
+    upsert(db, SaleLine, sale_event_id=sale_event.id, product_id=wines[0][0].id, defaults={"quantity": Decimal("1"), "unit_code": "bottle", "currency": "EUR", "price": Decimal("25")})
 
     db.commit()
 

@@ -26,3 +26,52 @@
 Чистить логи!
 Считать количество
 
+
+## Ошибки
+### В сервисах
+```python
+from app.common.errors import ErrorCodes, NotFoundError, ValidationError
+
+def get_product(product_id: int):
+    product = repo.get(product_id)
+    if not product:
+        raise NotFoundError(
+            ErrorCodes.NOT_FOUND_PRODUCT,
+            details={"product_id": product_id}
+        )
+    return product
+
+def create_user(email: str, password: str):
+    if "@" not in email:
+        raise ValidationError(
+            ErrorCodes.VALIDATION_INVALID_EMAIL,
+            details={"field": "email", "value": email}
+        )
+```
+
+### В FastAPI хендлерах
+```python
+
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from app.common.errors import DomainError
+
+async def domain_error_handler(request: Request, exc: DomainError):
+    error_data = exc.to_dict()
+    
+    # Скрываем детали внутренних ошибок
+    if exc.is_internal:
+        error_data["message"] = "Внутренняя ошибка сервера"
+        error_data["details"] = {}
+        logger.exception(f"Internal error [{exc.error_code.code}]", exc_info=exc)
+    
+    return JSONResponse(
+        status_code=error_data["http_status"],
+        content={"error": error_data},
+    )
+```
+
+### ИЛИ через фабрику
+```python
+raise_error(ErrorCodes.AUTH_PERMISSION_DENIED, details={"user_id": user.id})
+```

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     log_level: str = Field("INFO", env="LOG_LEVEL")
     structlog_json: bool = Field(True, env="STRUCTLOG_JSON")
     hmac_clock_skew_seconds: int = 300
-    default_currency: str = "USD"
+    default_currency: str = "EUR"
     glasses_per_bottle: int = 5
     loaf_fraction: str = "0.1"
     jar_fraction: str = "0.1"

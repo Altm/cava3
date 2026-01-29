@@ -19,6 +19,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, column_property, relationship
 from app.infrastructure.db.base import Base
+from app.common.decorators import deprecated
 
 class Unit(Base):
     """Units of measure with conversion hints."""
@@ -113,7 +114,13 @@ class ProductCategory(Base):
     category: Mapped[str] = mapped_column(String(64), comment="Category tag")
     __table_args__ = (UniqueConstraint("product_id", "category", name="uq_product_category"),)
 
-#@deprecated("Use AttributeDefinition")
+
+@deprecated(
+    reason="Use AttributeDefinition",
+    version="0.1.0",
+    alternative="AttributeDefinition",
+    category=FutureWarning  # Для видимости у конечных пользователей библиотеки
+)
 class ProductAttribute(Base):
     """Flexible attributes for products."""
 
