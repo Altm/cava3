@@ -1,0 +1,456 @@
+<template>
+  <div class="product-type-management">
+    <h2>Управление типами товаров</h2>
+
+    <div class="search-card">
+      <button @click="showCreateDialog" class="btn btn-primary">Создать тип товара</button>
+    </div>
+
+    <div v-if="loading">Загрузка...</div>
+    <table v-else class="product-type-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Название</th>
+          <th>Описание</th>
+          <th>Составной</th>
+          <th>Атрибуты</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="productType in productTypes" :key="productType.id">
+          <td>{{ productType.id }}</td>
+          <td>{{ productType.name }}</td>
+          <td>{{ productType.description }}</td>
+          <td>
+            <span :class="{'tag-success': productType.isComposite, 'tag-info': !productType.isComposite}">
+              {{ productType.isComposite ? 'Да' : 'Нет' }}
+            </span>
+          </td>
+          <td>
+            <span v-for="attr in productType.attributes" :key="attr.id" class="tag">
+              {{ attr.name }}
+            </span>
+          </td>
+          <td>
+            <button @click="editProductType(productType)" class="btn btn-sm">Редактировать</button>
+            <button @click="deleteProductType(productType.id)" class="btn btn-sm btn-danger">Удалить</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Modal for creating/editing product type -->
+    <div v-if="dialogVisible" class="modal-overlay" @click="closeDialog">
+      <div class="modal-content" @click.stop>
+        <h3>{{ editingProductType ? 'Редактировать тип товара' : 'Создать тип товара' }}</h3>
+
+        <form @submit.prevent="saveProductType">
+          <div class="form-group">
+            <label>Название:</label>
+            <input v-model="form.name" placeholder="Введите название типа товара" required />
+          </div>
+
+          <div class="form-group">
+            <label>Описание:</label>
+            <textarea v-model="form.description" placeholder="Введите описание"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>
+              <input type="checkbox" v-model="form.isComposite" />
+              Составной тип
+            </label>
+          </div>
+
+          <h4>Атрибуты</h4>
+          <button type="button" @click="addAttribute" class="btn btn-secondary">Добавить атрибут</button>
+
+          <div v-for="(attr, index) in form.attributes" :key="index" class="attribute-card">
+            <div class="card-header">
+              <span>Атрибут {{ index + 1 }}</span>
+              <button
+                type="button"
+                @click="removeAttribute(index)"
+                :disabled="form.attributes.length <= 1"
+                class="btn btn-sm btn-danger"
+              >
+                Удалить
+              </button>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Название:</label>
+                <input v-model="attr.name" placeholder="Название атрибута" required />
+              </div>
+
+              <div class="form-group">
+                <label>Код:</label>
+                <input v-model="attr.code" placeholder="Код атрибута" required />
+              </div>
+
+              <div class="form-group">
+                <label>Тип данных:</label>
+                <select v-model="attr.dataType" required>
+                  <option value="number">Число</option>
+                  <option value="string">Строка</option>
+                  <option value="boolean">Логический</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Единица измерения:</label>
+                <select v-model="attr.unitCode">
+                  <option value="">Не выбрана</option>
+                  <option
+                    v-for="unit in units"
+                    :key="unit.code"
+                    :value="unit.code"
+                  >
+                    {{ unit.name }} ({{ unit.symbol }})
+                  </option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>
+                  <input type="checkbox" v-model="attr.isRequired" />
+                  Обязательный
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" @click="closeDialog" class="btn">Отмена</button>
+            <button type="submit" class="btn btn-primary">Сохранить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, reactive, onMounted } from 'vue'
+import type { ProductType, AttributeDefinition } from '@/api/productApi'
+import { productApi } from '@/api/productApi'
+import axios from 'axios'
+
+const api = axios.create({
+  baseURL: '/api/v1/simple-catalog'
+})
+
+// State
+const productTypes = ref<ProductType[]>([])
+const loading = ref(false)
+const dialogVisible = ref(false)
+const editingProductType = ref<ProductType | null>(null)
+
+// Form
+const form = reactive({
+  id: 0,
+  name: '',
+  description: '',
+  isComposite: false,
+  attributes: [{ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false }] as AttributeDefinition[],
+  unitConversions: [] as Array<{ fromUnit: string, toUnit: string, ratio: number }>
+})
+
+// Units (will be loaded from API)
+const units = ref<any[]>([])
+
+// Methods
+const loadProductTypes = async () => {
+  try {
+    loading.value = true
+    productTypes.value = await productApi.getProductTypes()
+  } catch (error) {
+    console.error('Error loading product types:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+const loadUnits = async () => {
+  // Note: We'll need to add a units endpoint to the API later
+  // For now, we'll use mock data
+  units.value = [
+    { code: 'unit', name: 'Штука', symbol: 'шт' },
+    { code: 'bottle', name: 'Бутылка', symbol: 'бут' },
+    { code: 'glass', name: 'Бокал', symbol: 'бок' },
+    { code: 'kg', name: 'Килограмм', symbol: 'кг' },
+    { code: 'liter', name: 'Литр', symbol: 'л' },
+    { code: 'box', name: 'Ящик', symbol: 'ящ' }
+  ]
+}
+
+const showCreateDialog = () => {
+  resetForm()
+  editingProductType.value = null
+  dialogVisible.value = true
+}
+
+const editProductType = (productType: ProductType) => {
+  editingProductType.value = productType
+  form.id = productType.id
+  form.name = productType.name
+  form.description = productType.description || ''
+  form.isComposite = productType.isComposite
+
+  // Initialize attributes
+  form.attributes = productType.attributes && productType.attributes.length > 0
+    ? [...productType.attributes.map(attr => ({
+        ...attr,
+        unitCode: attr.unitId ? String(attr.unitId) : undefined
+      }))]
+    : [{ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false }]
+
+  // Initialize unit conversions (currently empty since API doesn't support this yet)
+  form.unitConversions = []
+
+  dialogVisible.value = true
+}
+
+const deleteProductType = async (id: number) => {
+  if (confirm('Вы уверены, что хотите удалить этот тип товара?')) {
+    try {
+      await api.delete(`/product-types/${id}`)
+      await loadProductTypes()
+    } catch (error) {
+      console.error('Error deleting product type:', error)
+      alert('Ошибка при удалении типа товара')
+    }
+  }
+}
+
+const addAttribute = () => {
+  form.attributes.push({ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false })
+}
+
+const removeAttribute = (index: number) => {
+  if (form.attributes.length > 1) {
+    form.attributes.splice(index, 1)
+  }
+}
+
+const resetForm = () => {
+  form.id = 0
+  form.name = ''
+  form.description = ''
+  form.isComposite = false
+  form.attributes = [{ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false }]
+  form.unitConversions = []
+}
+
+const saveProductType = async () => {
+  try {
+    if (editingProductType.value) {
+      // Update existing product type
+      const payload = {
+        name: form.name,
+        description: form.description,
+        is_composite: form.isComposite,
+        attributes: form.attributes.map(attr => ({
+          product_type_id: form.id,
+          name: attr.name,
+          code: attr.code,
+          data_type: attr.dataType,
+          unit_code: attr.unitCode || null,
+          is_required: attr.isRequired
+        }))
+      }
+
+      await api.put(`/product-types/${form.id}`, payload)
+    } else {
+      // Create new product type
+      const payload = {
+        name: form.name,
+        description: form.description,
+        is_composite: form.isComposite,
+        attributes: form.attributes.map(attr => ({
+          product_type_id: 0, // Will be set by backend
+          name: attr.name,
+          code: attr.code,
+          data_type: attr.dataType,
+          unit_code: attr.unitCode || null,
+          is_required: attr.isRequired
+        }))
+      }
+
+      await api.post('/product-types/', payload)
+    }
+
+    closeDialog()
+    await loadProductTypes()
+    resetForm()
+  } catch (error) {
+    console.error('Error saving product type:', error)
+    alert('Ошибка при сохранении типа товара')
+  }
+}
+
+onMounted(async () => {
+  await Promise.all([
+    loadProductTypes(),
+    loadUnits()
+  ])
+})
+
+const closeDialog = () => {
+  dialogVisible.value = false
+}
+</script>
+
+<style scoped>
+.product-type-management {
+  padding: 20px;
+}
+
+.search-card {
+  margin-bottom: 20px;
+}
+
+.btn {
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  background-color: #f5f5f5;
+  margin-right: 5px;
+  margin-bottom: 5px;
+}
+
+.btn-primary {
+  background-color: #007bff;
+  color: white;
+}
+
+.btn-secondary {
+  background-color: #6c757d;
+  color: white;
+}
+
+.btn-sm {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.btn-danger {
+  background-color: #dc3545;
+  color: white;
+}
+
+.product-type-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.product-type-table th,
+.product-type-table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: left;
+}
+
+.product-type-table th {
+  background-color: #f2f2f2;
+}
+
+.tag {
+  background-color: #e9ecef;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 4px;
+}
+
+.tag-success {
+  background-color: #28a745;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.tag-info {
+  background-color: #17a2b8;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  width: 80%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.form-row {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 10px;
+}
+
+.attribute-card {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background-color: #f9f9f9;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-actions {
+  margin-top: 20px;
+  text-align: right;
+}
+</style>
