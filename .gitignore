@@ -1,4 +1,8 @@
-```
+.idea
+frontend/
+front/node_modules
+front/.vscode
+
 # Python
 __pycache__/
 *.pyc
@@ -62,4 +66,3 @@ wheels/
 .Trashes
 ehthumbs.db
 Thumbs.db
-```
