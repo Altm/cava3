@@ -1,28 +1,65 @@
 <template>
-  <div>
+  <div class="product-form-container">
     <h2>{{ isEditing ? 'Редактировать товар' : 'Создать товар' }}</h2>
-    <form @submit.prevent="handleSubmit">
+
+    <form @submit.prevent="handleSubmit" class="product-form">
       <!-- Тип товара -->
-      <label>
-        Тип:
-      <select v-model.number="form.productTypeId" required @change="onTypeChange" :disabled="isEditing">
-        <option :value="null">Выберите тип</option>
-        <option v-for="type in productTypes" :key="type.id" :value="type.id">
-          {{ type.name }}
-        </option>
-      </select>
-      </label>
+      <div class="form-group">
+        <label>Тип товара *</label>
+        <select
+          v-model.number="form.productTypeId"
+          required
+          @change="onTypeChange"
+          :disabled="isEditing"
+          class="form-control"
+        >
+          <option :value="null">Выберите тип</option>
+          <option v-for="type in productTypes" :key="type.id" :value="type.id">
+            {{ type.name }}
+          </option>
+        </select>
+      </div>
 
       <!-- Название -->
-      <input v-model="form.name" placeholder="Название" required />
+      <div class="form-group">
+        <label>Название *</label>
+        <input
+          v-model="form.name"
+          placeholder="Введите название товара"
+          required
+          class="form-control"
+        />
+      </div>
 
       <!-- Себестоимость и остаток -->
-      <input v-model.number="form.unitCost" type="number" placeholder="Себестоимость" required />
-      <input v-model.number="form.stock" type="number" placeholder="Остаток" required />
+      <div class="form-row">
+        <div class="form-group">
+          <label>Себестоимость *</label>
+          <input
+            v-model.number="form.unitCost"
+            type="number"
+            step="0.01"
+            placeholder="Себестоимость"
+            required
+            class="form-control"
+          />
+        </div>
+
+        <div class="form-group">
+          <label>Остаток *</label>
+          <input
+            v-model.number="form.stock"
+            type="number"
+            step="0.01"
+            placeholder="Остаток"
+            required
+            class="form-control"
+          />
+        </div>
+      </div>
 
       <!-- Атрибуты -->
-      <!--<pre>{{ currentTypeAttributes }}</pre>-->
-      <div v-for="attr in currentTypeAttributes" :key="attr.id">
+      <div v-for="attr in currentTypeAttributes" :key="attr.id" class="form-group">
         <label>
           {{ attr.name }}
           <span v-if="attr.isRequired" class="required">*</span>
@@ -36,7 +73,7 @@
           step="0.01"
           :placeholder="`Введите ${attr.name}`"
           :required="attr.isRequired"
-          class="attribute-input"
+          class="form-control"
         />
 
         <!-- Строка -->
@@ -46,57 +83,87 @@
           type="text"
           :placeholder="`Введите ${attr.name}`"
           :required="attr.isRequired"
-          class="attribute-input"
+          class="form-control"
         />
 
         <!-- Булево (чекбокс) -->
-        <div v-else-if="attr.dataType === 'boolean'" style="display: flex; align-items: center; gap: 8px;">
-          <input
-            type="checkbox"
-            :id="`attr-${attr.code}`"
-            :checked="!!form.attributes[attr.code]"
-            @change="(e) => form.attributes[attr.code] = (e.target as HTMLInputElement).checked"
-          />
-          <label :for="`attr-${attr.code}`">Да</label>
+        <div v-else-if="attr.dataType === 'boolean'" class="form-check">
+          <label class="form-check-label">
+            <input
+              type="checkbox"
+              :id="`attr-${attr.code}`"
+              v-model="form.attributes[attr.code]"
+              class="form-check-input"
+            />
+            {{ attr.name }}
+          </label>
         </div>
 
         <!-- Если тип неизвестный -->
-        <div v-else>
-          <span>Неизвестный тип: {{ attr.dataType }}</span>
+        <div v-else class="alert alert-warning">
+          Неизвестный тип: {{ attr.dataType }}
         </div>
       </div>
 
       <!-- Флаг составного товара -->
-      <div>
-        <label>
-          <input 
-            type="checkbox" 
+      <div class="form-group">
+        <label class="form-check-label">
+          <input
+            type="checkbox"
             v-model="currentProductTypeIsComposite"
             @change="onTypeChange"
             :disabled="isEditing"
+            class="form-check-input"
           />
           Составной товар
         </label>
       </div>
 
       <!-- Компоненты (только для составных) -->
-      <div v-if="currentProductTypeIsComposite">
+      <div v-if="currentProductTypeIsComposite" class="components-section">
         <h3>Компоненты</h3>
-        <div v-for="(comp, index) in form.components" :key="index">
-          <select v-model="comp.componentProductId">
-            <option value="">Выберите компонент</option>
-            <option v-for="p in simpleProducts" :key="p.id" :value="p.id">
-              {{ p.name }}
-            </option>
-          </select>
-          <input v-model.number="comp.quantity" type="number" placeholder="Количество" min="0.01" step="0.01"/>
-          <button type="button" @click="removeComponent(index)">Удалить</button>
+        <div v-for="(comp, index) in form.components" :key="index" class="component-item">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Компонент</label>
+              <select
+                v-model="comp.componentProductId"
+                class="form-control"
+              >
+                <option value="">Выберите компонент</option>
+                <option v-for="p in simpleProducts" :key="p.id" :value="p.id">
+                  {{ p.name }}
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Количество</label>
+              <input
+                v-model.number="comp.quantity"
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="Количество"
+                class="form-control"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>&nbsp;</label>
+              <button type="button" @click="removeComponent(index)" class="btn btn-danger btn-sm">Удалить</button>
+            </div>
+          </div>
         </div>
-        <button type="button" @click="addComponent">+ Добавить компонент</button>
+        <button type="button" @click="addComponent" class="btn btn-secondary">+ Добавить компонент</button>
       </div>
 
-      <button type="submit">{{ isEditing ? 'Обновить' : 'Создать' }}</button>
-      <button type="button" @click="cancel">Отмена</button>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">
+          {{ isEditing ? 'Обновить' : 'Создать' }}
+        </button>
+        <button type="button" @click="cancel" class="btn btn-outline">Отмена</button>
+      </div>
     </form>
   </div>
 </template>
@@ -175,11 +242,6 @@ const removeComponent = (index: number) => {
 // Сохранение
 const handleSubmit = async () => {
   try {
-
-    console.log('RAW productTypeId:', form.value.productTypeId)
-    console.log('AFTER Number():', Number(form.value.productTypeId))
-    console.log('typeof RAW:', typeof form.value.productTypeId)
-
     // Валидация типа
     if (form.value.productTypeId <= 0) {
       alert('Пожалуйста, выберите тип товара')
@@ -338,12 +400,126 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.product-form-container {
+  padding: 20px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-row {
+  display: flex;
+  gap: 15px;
+}
+
+.form-row .form-group {
+  flex: 1;
+}
+
+label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.form-control {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.form-check {
+  display: flex;
+  align-items: center;
+}
+
+.form-check-input {
+  margin-right: 8px;
+}
+
+.form-check-label {
+  display: flex;
+  align-items: center;
+}
+
 .required {
   color: red;
 }
-.attribute-input {
-  width: 20%;
-  padding: 4px;
-  margin: 4px 0;
+
+.components-section {
+  margin-top: 20px;
+  padding: 15px;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  background-color: #fafafa;
+}
+
+.component-item {
+  margin-bottom: 10px;
+  padding: 10px;
+  background-color: white;
+  border-radius: 4px;
+  border: 1px solid #eee;
+}
+
+.alert {
+  padding: 10px;
+  border-radius: 4px;
+  margin-top: 5px;
+}
+
+.alert-warning {
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  color: #856404;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 14px;
+  text-align: center;
+  margin-right: 5px;
+}
+
+.btn-primary {
+  background-color: #007bff;
+  color: white;
+}
+
+.btn-secondary {
+  background-color: #6c757d;
+  color: white;
+}
+
+.btn-outline {
+  background-color: transparent;
+  border: 1px solid #6c757d;
+  color: #6c757d;
+}
+
+.btn-danger {
+  background-color: #dc3545;
+  color: white;
+}
+
+.btn-sm {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.form-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
 }
 </style>
