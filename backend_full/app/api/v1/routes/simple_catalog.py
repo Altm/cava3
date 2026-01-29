@@ -199,11 +199,11 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
         )
 
         if attr_def.data_type == "number":
-            db_attr.value_number = attr.value
+            db_attr.value_number = float(attr.value) if attr.value is not None else None
         elif attr_def.data_type == "boolean":
-            db_attr.value_boolean = attr.value
+            db_attr.value_boolean = bool(attr.value) if attr.value is not None else None
         elif attr_def.data_type == "string":
-            db_attr.value_string = attr.value
+            db_attr.value_string = str(attr.value) if attr.value is not None else None
 
         db.add(db_attr)
 
@@ -266,13 +266,22 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, db: S
 
     db.query(models.ProductAttributeValue).filter(models.ProductAttributeValue.product_id == product.id).delete()
     for attr in product_update.attributes:
+        attr_def = db.get(AttributeDefinition, attr.attribute_definition_id)
+        if not attr_def:
+            raise ValueError("Invalid attribute definition")
+
         db_attr = models.ProductAttributeValue(
             product_id=product.id,
-            attribute_definition_id=attr.attribute_definition_id,
-            value_number=Decimal(str(attr.value)) if isinstance(attr.value, (int, float, Decimal)) else None,
-            value_boolean=bool(attr.value) if isinstance(attr.value, bool) else None,
-            value_string=str(attr.value) if isinstance(attr.value, str) else None,
+            attribute_definition_id=attr.attribute_definition_id
         )
+
+        if attr_def.data_type == "number":
+            db_attr.value_number = float(attr.value) if attr.value is not None else None
+        elif attr_def.data_type == "boolean":
+            db_attr.value_boolean = bool(attr.value) if attr.value is not None else None
+        elif attr_def.data_type == "string":
+            db_attr.value_string = str(attr.value) if attr.value is not None else None
+
         db.add(db_attr)
 
     db.query(models.CompositeComponent).filter(models.CompositeComponent.parent_product_id == product.id).delete()
