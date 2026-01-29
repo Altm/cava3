@@ -211,5 +211,19 @@ async updateProduct(id: number, data: ProductForm) {
   async createLocation(locationData: Omit<Location, 'id'>): Promise<Location> {
     const res = await api.post<Location>('/locations/', locationData)
     return res.data
+  },
+
+  async createProductType(productTypeData: any): Promise<any> {
+    const res = await api.post('/product-types/', productTypeData)
+    return res.data
+  },
+
+  async updateProductType(id: number, productTypeData: any): Promise<any> {
+    const res = await api.put(`/product-types/${id}`, productTypeData)
+    return res.data
+  },
+
+  async deleteProductType(id: number): Promise<void> {
+    await api.delete(`/product-types/${id}`)
   }
 }

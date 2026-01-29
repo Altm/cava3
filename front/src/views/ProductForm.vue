@@ -105,17 +105,16 @@
         </div>
       </div>
 
-      <!-- Флаг составного товара -->
+      <!-- Флаг составного товара - отображается на основе типа товара -->
       <div class="form-group">
         <label class="form-check-label">
           <input
             type="checkbox"
-            v-model="currentProductTypeIsComposite"
-            @change="onTypeChange"
-            :disabled="isEditing"
+            :checked="currentProductTypeIsComposite"
+            disabled
             class="form-check-input"
           />
-          Составной товар
+          Составной товар (настраивается в типе товара)
         </label>
       </div>
 
@@ -208,19 +207,12 @@ const currentType = computed(() =>
 )
 const currentTypeAttributes = computed(() => currentType.value?.attributes || [])
 
-// Reactive property to manage composite flag separately from product type
-const currentProductTypeIsComposite = computed({
-  get() {
-    return form.value.isComposite;
-  },
-  set(value: boolean) {
-    form.value.isComposite = value;
-    // Clear components if unchecking composite
-    if (!value) {
-      form.value.components = [];
-    }
-  }
-})
+// Computed property to determine if the current product type is composite
+const currentProductTypeIsComposite = computed(() => {
+  // Get the composite flag from the selected product type, not from the form
+  const selectedType = productTypes.value.find(t => t.id === form.value.productTypeId);
+  return selectedType ? selectedType.isComposite : false;
+});
 
 const simpleProducts = computed(() =>
   allProducts.value.filter(p => !p.is_composite)
@@ -231,7 +223,9 @@ const cancel = () => emit('close')
 
 const onTypeChange = () => {
   form.value.attributes = {}
-  if (!currentProductTypeIsComposite.value) {
+  // Get the composite flag from the selected product type
+  const selectedType = productTypes.value.find(t => t.id === form.value.productTypeId);
+  if (selectedType && !selectedType.isComposite) {
     form.value.components = []
   }
 }
@@ -262,12 +256,16 @@ const handleSubmit = async () => {
     }
 
     // Подготовка payload
+    // Get the composite flag from the selected product type
+    const selectedType = productTypes.value.find(t => t.id === form.value.productTypeId);
+    const isProductTypeComposite = selectedType ? selectedType.isComposite : false;
+
     const payload: any = {
       product_type_id: form.value.productTypeId,
       name: form.value.name,
       unit_cost: form.value.unitCost,
       stock: form.value.stock,
-      is_composite: form.value.isComposite,  // Add the composite flag
+      is_composite: isProductTypeComposite,  // Use the composite flag from the product type
       attributes: Object.entries(form.value.attributes)
         .map(([code, value]) => {
           const def = currentType.value?.attributes?.find(a => a.code === code)
@@ -278,7 +276,7 @@ const handleSubmit = async () => {
           }
         })
         .filter(Boolean) as ApiAttribute[],
-      components: form.value.isComposite  // Use form's isComposite field
+      components: isProductTypeComposite  // Use the composite flag from the product type
         ? form.value.components.map(c => ({
             component_product_id: c.componentProductId,
             quantity: c.quantity
@@ -374,15 +372,19 @@ onMounted(async () => {
         quantity: comp.quantity
       }))
 
+      // Get the composite flag from the product type
+      const productType = productTypes.value.find(t => t.id === product.product_type_id);
+      const isProductTypeComposite = productType ? productType.isComposite : false;
+
       // Устанавливаем форму
       form.value = {
         productTypeId: Number(product.product_type_id), // ← гарантируем number
         name: product.name,
         unitCost: product.unit_cost,
         stock: product.stock,
-        isComposite: product.is_composite,  // Set the composite flag from the product
+        isComposite: isProductTypeComposite,  // Use the composite flag from the product type
         attributes: initialAttributes,
-        components: initialComponents
+        components: isProductTypeComposite ? initialComponents : []  // Only include components if product type is composite
       }
     } else {
       // Новый товар — начальное состояние
@@ -453,15 +455,19 @@ watch(() => props.productId, async (newId) => {
         quantity: comp.quantity
       }))
 
+      // Get the composite flag from the product type
+      const productType = productTypes.value.find(t => t.id === product.product_type_id);
+      const isProductTypeComposite = productType ? productType.isComposite : false;
+
       // Устанавливаем форму
       form.value = {
         productTypeId: Number(product.product_type_id), // ← гарантируем number
         name: product.name,
         unitCost: product.unit_cost,
         stock: product.stock,
-        isComposite: product.is_composite,  // Set the composite flag from the product
+        isComposite: isProductTypeComposite,  // Use the composite flag from the product type
         attributes: initialAttributes,
-        components: initialComponents
+        components: isProductTypeComposite ? initialComponents : []  // Only include components if product type is composite
       }
     } catch (e) {
       console.error('Ошибка загрузки данных:', e)

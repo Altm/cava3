@@ -139,11 +139,6 @@
 import { ref, reactive, onMounted } from 'vue'
 import type { ProductType, AttributeDefinition } from '@/api/productApi'
 import { productApi } from '@/api/productApi'
-import axios from 'axios'
-
-const api = axios.create({
-  baseURL: '/api/v1/simple-catalog'
-})
 
 // State
 const productTypes = ref<ProductType[]>([])
@@ -208,7 +203,7 @@ const editProductType = (productType: ProductType) => {
         ...attr,
         unitCode: attr.unitId ? String(attr.unitId) : undefined
       }))]
-    : [{ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false }]
+    : []
 
   // Initialize unit conversions (currently empty since API doesn't support this yet)
   form.unitConversions = []
@@ -219,7 +214,7 @@ const editProductType = (productType: ProductType) => {
 const deleteProductType = async (id: number) => {
   if (confirm('Вы уверены, что хотите удалить этот тип товара?')) {
     try {
-      await api.delete(`/product-types/${id}`)
+      await productApi.deleteProductType(id)
       await loadProductTypes()
     } catch (error) {
       console.error('Error deleting product type:', error)
@@ -233,8 +228,10 @@ const addAttribute = () => {
 }
 
 const removeAttribute = (index: number) => {
-  if (form.attributes.length > 1) {
-    form.attributes.splice(index, 1)
+  form.attributes.splice(index, 1)
+  // Если массив стал пустым, добавим один пустой атрибут для удобства
+  if (form.attributes.length === 0) {
+    form.attributes.push({ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false })
   }
 }
 
@@ -243,7 +240,7 @@ const resetForm = () => {
   form.name = ''
   form.description = ''
   form.isComposite = false
-  form.attributes = [{ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false }]
+  form.attributes = []
   form.unitConversions = []
 }
 
@@ -265,7 +262,8 @@ const saveProductType = async () => {
         }))
       }
 
-      await api.put(`/product-types/${form.id}`, payload)
+      // Use productApi for consistency
+      await productApi.updateProductType(form.id, payload)
     } else {
       // Create new product type
       const payload = {
@@ -282,7 +280,8 @@ const saveProductType = async () => {
         }))
       }
 
-      await api.post('/product-types/', payload)
+      // Use productApi for consistency
+      await productApi.createProductType(payload)
     }
 
     closeDialog()
