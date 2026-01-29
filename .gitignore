@@ -1,4 +1,7 @@
-```
+.idea
+frontend/
+front/node_modules
+
 # Python
 __pycache__/
 *.pyc
@@ -62,4 +65,3 @@ wheels/
 .Trashes
 ehthumbs.db
 Thumbs.db
-```
