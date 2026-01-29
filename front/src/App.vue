@@ -1,14 +1,28 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
+import { logout, isAuthenticated } from '@/api/authApi'
+
+const handleLogout = () => {
+  logout();
+  // Redirect to login page
+  window.location.href = '/login';
+};
 </script>
 
 <template>
   <header>
     <nav>
-      <RouterLink to="/">Главная</RouterLink> |
-      <RouterLink to="/product-list">Список товаров</RouterLink> |
-      <RouterLink to="/product-form">Создать товар</RouterLink> |
-      <RouterLink to="/sales">Продажи</RouterLink>
+      <template v-if="isAuthenticated()">
+        <RouterLink to="/">Главная</RouterLink> |
+        <RouterLink to="/product-list">Список товаров</RouterLink> |
+        <RouterLink to="/product-form">Создать товар</RouterLink> |
+        <RouterLink to="/product-types">Типы товаров</RouterLink> |
+        <RouterLink to="/sales">Продажи</RouterLink> |
+        <a href="#" @click="handleLogout">Выйти</a>
+      </template>
+      <template v-else>
+        <RouterLink to="/login">Вход</RouterLink>
+      </template>
     </nav>
   </header>
 

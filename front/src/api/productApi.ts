@@ -25,6 +25,20 @@ const api = axios.create({
   baseURL: '/api/v1/simple-catalog'
 });
 
+// Request interceptor to add JWT token to requests
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 // Response interceptor to convert snake_case to camelCase
 api.interceptors.response.use(
   (response) => {
@@ -32,6 +46,12 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
+    // Handle unauthorized access
+    if (error.response && error.response.status === 401) {
+      // Redirect to login page
+      localStorage.removeItem('access_token');
+      window.location.href = '/login';
+    }
     return Promise.reject(error);
   }
 );
