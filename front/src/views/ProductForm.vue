@@ -169,8 +169,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type {
   ProductType,
   Product,
@@ -179,10 +179,15 @@ import type {
 } from '@/api/productApi'
 import { productApi } from '@/api/productApi'
 
-const route = useRoute()
+// Props and emits
+const props = defineProps<{
+  productId?: number | null
+}>()
+
+const emit = defineEmits(['close', 'saved'])
+
 const router = useRouter()
-const productId = computed(() => route.params.id as string | undefined)
-const isEditing = computed(() => !!productId.value)
+const isEditing = computed(() => !!props.productId)
 
 // Состояние
 const productTypes = ref<ProductType[]>([])
@@ -222,7 +227,7 @@ const simpleProducts = computed(() =>
 )
 
 // Действия
-const cancel = () => router.push('/')
+const cancel = () => emit('close')
 
 const onTypeChange = () => {
   form.value.attributes = {}
@@ -281,9 +286,9 @@ const handleSubmit = async () => {
         : []
     }
 
-    if (isEditing.value && productId.value) {
+    if (isEditing.value && props.productId) {
       // Pass the updated form data with isComposite field
-      await productApi.updateProduct(Number(productId.value), {
+      await productApi.updateProduct(props.productId, {
         ...form.value,
         isComposite: form.value.isComposite
       })
@@ -296,7 +301,7 @@ const handleSubmit = async () => {
       })
       alert('Товар создан!')
     }
-    router.push('/')
+    emit('saved')
   } catch (e) {
     console.error('Ошибка сохранения:', e)
     alert('Ошибка при сохранении товара')
@@ -323,13 +328,13 @@ onMounted(async () => {
 
     allProducts.value = productsRes
 
-    if (isEditing.value && productId.value) {
-      const product = await productApi.getProduct(Number(productId.value))
+    if (isEditing.value && props.productId) {
+      const product = await productApi.getProduct(props.productId)
       const type = productTypes.value.find(t => t.id === product.product_type_id)
 
       if (!type) {
         alert('Тип товара не найден')
-        router.push('/')
+        emit('close')
         return
       }
 
@@ -394,7 +399,75 @@ onMounted(async () => {
   } catch (e) {
     console.error('Ошибка загрузки данных:', e)
     alert('Не удалось загрузить данные товара')
-    router.push('/')
+    emit('close')
+  }
+})
+
+// Watch for changes in props.productId to reload data when editing different products
+watch(() => props.productId, async (newId) => {
+  if (newId) {
+    // Reload data for the new product ID
+    try {
+      const product = await productApi.getProduct(newId)
+      const type = productTypes.value.find(t => t.id === product.product_type_id)
+
+      if (!type) {
+        alert('Тип товара не найден')
+        emit('close')
+        return
+      }
+
+      // Преобразуем атрибуты из массива в объект { code: value }
+      const initialAttributes: Record<string, any> = {}
+      if (type.attributes) {
+        for (const def of type.attributes) {
+          const apiAttr = (product.attributes || []).find(
+            (a: ApiAttribute) => a.attribute_definition_id === def.id
+          )
+          let value: any = null
+          if (apiAttr) {
+            switch (def.dataType) {
+              case 'number':
+                value = parseFloat(apiAttr.value) || 0
+                break
+              case 'boolean':
+                value = apiAttr.value === 'true'
+                break
+              case 'string':
+                value = apiAttr.value
+                break
+              default:
+                value = apiAttr.value
+            }
+          } else {
+            // Дефолтные значения
+            value = def.dataType === 'number' ? 0 : def.dataType === 'boolean' ? false : ''
+          }
+          initialAttributes[def.code] = value
+        }
+      }
+
+      // Преобразуем компоненты
+      const initialComponents = (product.components || []).map((comp: ApiComponent) => ({
+        componentProductId: comp.component_product_id,
+        quantity: comp.quantity
+      }))
+
+      // Устанавливаем форму
+      form.value = {
+        productTypeId: Number(product.product_type_id), // ← гарантируем number
+        name: product.name,
+        unitCost: product.unit_cost,
+        stock: product.stock,
+        isComposite: product.is_composite,  // Set the composite flag from the product
+        attributes: initialAttributes,
+        components: initialComponents
+      }
+    } catch (e) {
+      console.error('Ошибка загрузки данных:', e)
+      alert('Не удалось загрузить данные товара')
+      emit('close')
+    }
   }
 })
 </script>
