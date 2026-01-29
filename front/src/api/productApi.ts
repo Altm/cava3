@@ -49,15 +49,54 @@ export interface Product {
   components: Array<{ componentProductId: number; quantity: number }>
 }
 
+export interface Location {
+  id: number
+  name: string
+  kind: string
+}
+
+export interface ProductWithStockByLocation {
+  id: number
+  product_type_id: number
+  name: string
+  stock: number
+  unit_cost: number
+  is_composite: boolean
+  attributes: Record<string, any>
+  components: Array<{ componentProductId: number; quantity: number }>
+  stock_by_location: Array<{ location_id: number; quantity: number }>
+}
+
 export const productApi = {
   async getProductTypes(): Promise<ProductType[]> {
     const res = await api.get<ProductType[]>('/product-types/')
     return res.data
   },
 
-  async getProducts(): Promise<Product[]> {
-    const res = await api.get<Product[]>('/products/')
-    return res.data
+  async getProducts(params?: { locationId?: number; productTypeId?: number; skip?: number; limit?: number }): Promise<Product[]> {
+    const queryParams = new URLSearchParams();
+    if (params?.locationId) queryParams.append('location_id', params.locationId.toString());
+    if (params?.productTypeId) queryParams.append('product_type_id', params.productTypeId.toString());
+    if (params?.skip !== undefined) queryParams.append('skip', params.skip.toString());
+    if (params?.limit !== undefined) queryParams.append('limit', params.limit.toString());
+
+    const queryString = queryParams.toString();
+    const url = queryString ? `/products/?${queryString}` : '/products/';
+
+    const res = await api.get<Product[]>(url);
+    return res.data;
+  },
+
+  async getProductsCount(params?: { locationId?: number; productTypeId?: number }): Promise<number> {
+    const queryParams = new URLSearchParams();
+    if (params?.locationId) queryParams.append('location_id', params.locationId.toString());
+    if (params?.productTypeId) queryParams.append('product_type_id', params.productTypeId.toString());
+
+    const queryString = queryParams.toString();
+    const url = queryString ? `/products-count/?${queryString}` : '/products-count/';
+
+    const res = await api.get<{ count: number }>(url);
+    return res.data.count;
   },
 
   async createProduct(data: ProductForm) {
@@ -161,6 +200,16 @@ async updateProduct(id: number, data: ProductForm) {
 
   async getProduct(id: number): Promise<Product> {
     const res = await api.get<Product>(`/products/${id}`)
+    return res.data
+  },
+
+  async getLocations(): Promise<Location[]> {
+    const res = await api.get<Location[]>('/locations/')
+    return res.data
+  },
+
+  async createLocation(locationData: Omit<Location, 'id'>): Promise<Location> {
+    const res = await api.post<Location>('/locations/', locationData)
     return res.data
   }
 }

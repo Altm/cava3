@@ -1,13 +1,14 @@
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.api.v1.deps.auth import get_db
 from app.models import models
 from app.schemas import simple as schemas
 
-from app.models.models import AttributeDefinition, ProductAttributeValue
+from app.models.models import AttributeDefinition, ProductAttributeValue, Location
 
 router = APIRouter(prefix="/simple-catalog", tags=["simple-catalog"])
 
@@ -88,9 +89,109 @@ def get_product_type(product_type_id: int, db: Session = Depends(get_db)):
 def create_product_type(payload: schemas.ProductTypeCreate, db: Session = Depends(get_db)):
     t = models.ProductType(name=payload.name, description=payload.description, is_composite=payload.is_composite)
     db.add(t)
+    db.flush()  # Get the ID before committing
+
+    # Create attributes if provided
+    created_attributes = []
+    if hasattr(payload, 'attributes') and payload.attributes:
+        for attr_data in payload.attributes:
+            attr = models.AttributeDefinition(
+                product_type_id=t.id,
+                name=attr_data.name,
+                code=attr_data.code,
+                data_type=attr_data.data_type,
+                unit_code=attr_data.unit_code,
+                is_required=attr_data.is_required
+            )
+            db.add(attr)
+            db.flush()
+            created_attributes.append(attr)
+
     db.commit()
     db.refresh(t)
-    return schemas.ProductType(id=t.id, name=t.name, description=t.description, is_composite=t.is_composite, attributes=[])
+
+    # Refresh attributes
+    for attr in created_attributes:
+        db.refresh(attr)
+
+    # Get all attributes for this product type
+    attrs = db.query(models.AttributeDefinition).filter(models.AttributeDefinition.product_type_id == t.id).all()
+
+    return schemas.ProductType(
+        id=t.id,
+        name=t.name,
+        description=t.description,
+        is_composite=t.is_composite,
+        attributes=attrs
+    )
+
+
+@router.put("/product-types/{product_type_id}", response_model=schemas.ProductType)
+def update_product_type(product_type_id: int, payload: schemas.ProductTypeUpdate, db: Session = Depends(get_db)):
+    t = db.query(models.ProductType).get(product_type_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Product type not found")
+
+    # Update basic fields
+    t.name = payload.name
+    t.description = payload.description
+    t.is_composite = payload.is_composite
+
+    # Delete existing attributes
+    db.query(models.AttributeDefinition).filter(
+        models.AttributeDefinition.product_type_id == product_type_id
+    ).delete()
+
+    # Create new attributes
+    created_attributes = []
+    if hasattr(payload, 'attributes') and payload.attributes:
+        for attr_data in payload.attributes:
+            attr = models.AttributeDefinition(
+                product_type_id=product_type_id,
+                name=attr_data.name,
+                code=attr_data.code,
+                data_type=attr_data.data_type,
+                unit_code=attr_data.unit_code,
+                is_required=attr_data.is_required
+            )
+            db.add(attr)
+            db.flush()
+            created_attributes.append(attr)
+
+    db.commit()
+    db.refresh(t)
+
+    # Refresh attributes
+    for attr in created_attributes:
+        db.refresh(attr)
+
+    # Get all attributes for this product type
+    attrs = db.query(models.AttributeDefinition).filter(models.AttributeDefinition.product_type_id == t.id).all()
+
+    return schemas.ProductType(
+        id=t.id,
+        name=t.name,
+        description=t.description,
+        is_composite=t.is_composite,
+        attributes=attrs
+    )
+
+
+@router.delete("/product-types/{product_type_id}")
+def delete_product_type(product_type_id: int, db: Session = Depends(get_db)):
+    t = db.query(models.ProductType).get(product_type_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Product type not found")
+
+    # Delete associated attributes
+    db.query(models.AttributeDefinition).filter(
+        models.AttributeDefinition.product_type_id == product_type_id
+    ).delete()
+
+    # Delete the product type
+    db.delete(t)
+    db.commit()
+    return {"message": "Product type deleted successfully"}
 
 
 # Attribute definitions
@@ -136,20 +237,20 @@ def _serialize_product(db_product: models.Product, db: Session) -> schemas.Produ
         for c in db_product.components
     ]
 
-    # Stock logic (оставьте как есть)
-    loc = _default_location(db)
-    stock_row = db.query(models.Stock).filter(
-        models.Stock.location_id == loc.id,
-        models.Stock.product_id == db_product.id
-    ).first()
-    stock_qty = stock_row.quantity if stock_row else Decimal("0")
+    # Calculate total stock across all locations for this product
+    total_stock_result = (
+        db.query(func.coalesce(func.sum(models.Stock.quantity), Decimal("0")))
+        .filter(models.Stock.product_id == db_product.id)
+        .scalar()
+    )
+    total_stock = total_stock_result if total_stock_result is not None else Decimal("0")
 
     return schemas.Product(
         id=db_product.id,
         product_type_id=db_product.product_type_id,
         name=db_product.name,
         unit_cost=db_product.unit_cost or Decimal("0"),
-        stock=stock_qty,
+        stock=total_stock,
         is_composite=db_product.product_type.is_composite,
         attributes=attributes,  # ← список объектов с полем "value"
         components=components,
@@ -234,9 +335,54 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
 
 
 @router.get("/products/", response_model=List[schemas.Product])
-def get_products(db: Session = Depends(get_db)):
-    products = db.query(models.Product).all()
+def get_products(
+    location_id: Optional[int] = None,
+    product_type_id: Optional[int] = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Product)
+
+    if product_type_id:
+        query = query.filter(models.Product.product_type_id == product_type_id)
+
+    # Apply location filter if specified
+    if location_id:
+        # Subquery to get product IDs that have stock at the specified location
+        subquery = (
+            db.query(models.Stock.product_id)
+            .filter(models.Stock.location_id == location_id)
+            .distinct()
+        )
+        query = query.filter(models.Product.id.in_(subquery))
+
+    products = query.offset(skip).limit(limit).all()
     return [_serialize_product(p, db) for p in products]
+
+
+@router.get("/products-count/")
+def get_products_count(
+    location_id: Optional[int] = None,
+    product_type_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Product)
+
+    if product_type_id:
+        query = query.filter(models.Product.product_type_id == product_type_id)
+
+    if location_id:
+        # Subquery to get product IDs that have stock at the specified location
+        subquery = (
+            db.query(models.Stock.product_id)
+            .filter(models.Stock.location_id == location_id)
+            .distinct()
+        )
+        query = query.filter(models.Product.id.in_(subquery))
+
+    count = query.count()
+    return {"count": count}
 
 
 @router.get("/products/{product_id}", response_model=schemas.Product)
@@ -327,6 +473,84 @@ def delete_product(product_id: int, db: Session = Depends(get_db)):
     db.delete(product)
     db.commit()
     return {"message": "Product deleted successfully"}
+
+
+# Unit Conversions
+@router.get("/unit-conversions/", response_model=List[schemas.UnitConversionSchema])
+def get_unit_conversions(db: Session = Depends(get_db)):
+    conversions = db.query(models.UnitConversion).all()
+    return [
+        schemas.UnitConversionSchema(
+            id=c.id,
+            from_unit=c.from_unit,
+            to_unit=c.to_unit,
+            ratio=c.ratio,
+        )
+        for c in conversions
+    ]
+
+
+@router.post("/unit-conversions/", response_model=schemas.UnitConversionSchema)
+def create_unit_conversion(conversion: schemas.UnitConversionSchema, db: Session = Depends(get_db)):
+    # Validate that units exist
+    from_unit_exists = db.query(models.Unit).filter(models.Unit.code == conversion.from_unit).first()
+    to_unit_exists = db.query(models.Unit).filter(models.Unit.code == conversion.to_unit).first()
+
+    if not from_unit_exists:
+        # Create the from unit if it doesn't exist
+        new_from_unit = models.Unit(code=conversion.from_unit, description=conversion.from_unit)
+        db.add(new_from_unit)
+        db.flush()
+
+    if not to_unit_exists:
+        # Create the to unit if it doesn't exist
+        new_to_unit = models.Unit(code=conversion.to_unit, description=conversion.to_unit)
+        db.add(new_to_unit)
+        db.flush()
+
+    # Create the conversion
+    db_conversion = models.UnitConversion(
+        from_unit=conversion.from_unit,
+        to_unit=conversion.to_unit,
+        ratio=conversion.ratio
+    )
+    db.add(db_conversion)
+    db.commit()
+    db.refresh(db_conversion)
+
+    return schemas.UnitConversionSchema(
+        id=db_conversion.id,
+        from_unit=db_conversion.from_unit,
+        to_unit=db_conversion.to_unit,
+        ratio=db_conversion.ratio,
+    )
+
+
+# Locations
+@router.get("/locations/", response_model=List[schemas.Location])
+def get_locations(db: Session = Depends(get_db)):
+    locations = db.query(models.Location).all()
+    return [
+        schemas.Location(
+            id=l.id,
+            name=l.name,
+            kind=l.kind,
+        )
+        for l in locations
+    ]
+
+
+@router.post("/locations/", response_model=schemas.Location)
+def create_location(location: schemas.LocationBase, db: Session = Depends(get_db)):
+    db_location = models.Location(name=location.name, kind=location.kind)
+    db.add(db_location)
+    db.commit()
+    db.refresh(db_location)
+    return schemas.Location(
+        id=db_location.id,
+        name=db_location.name,
+        kind=db_location.kind,
+    )
 
 
 @router.post("/sales/")

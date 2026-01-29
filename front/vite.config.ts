@@ -3,7 +3,6 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [
     vue(),
@@ -15,7 +14,7 @@ export default defineConfig({
     },
   },
   server: {
-    host: '0.0.0.0',     // ← Слушать все интерфейсы (обязательно для Docker)
+    host: '0.0.0.0',
     port: 5173,
     strictPort: true,
     hmr: {
@@ -27,7 +26,7 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://backend_full:8000',
-        // ИЛИ target: 'http://127.0.0.1:8001',     // если запускаете фронт локально
+        // ИЛИ target: 'http://127.0.0.1:8001', если запускаете фронт локально
         changeOrigin: true,
         secure: false,
       },

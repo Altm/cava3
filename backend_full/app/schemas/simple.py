@@ -24,6 +24,16 @@ class UnitCreate(BaseModel):
     conversion_factor: Optional[Decimal] = None
 
 
+class UnitConversionSchema(BaseModel):
+    id: int
+    from_unit: str
+    to_unit: str
+    ratio: Decimal
+
+    class Config:
+        from_attributes = True
+
+
 class Unit(UnitCreate):
     code: str
 
@@ -51,6 +61,14 @@ class ProductTypeCreate(BaseModel):
     name: str
     description: Optional[str] = None
     is_composite: bool = False
+    attributes: List[AttributeDefinitionCreate] = []
+
+
+class ProductTypeUpdate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_composite: bool = False
+    attributes: List[AttributeDefinitionCreate] = []
 
 
 class ProductType(ProductTypeCreate):

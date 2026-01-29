@@ -1796,7 +1796,7 @@ INSERT INTO public.unit (code, description, ratio_to_base, discrete_step) VALUES
 INSERT INTO public.unit (code, description, ratio_to_base, discrete_step) VALUES ('liter', 'Литр', 1.000000, NULL);
 INSERT INTO public.unit (code, description, ratio_to_base, discrete_step) VALUES ('kg', 'Килограмм', 1.000000, NULL);
 INSERT INTO public.unit (code, description, ratio_to_base, discrete_step) VALUES ('bottle', 'Бутылка', 1.000000, NULL);
-INSERT INTO public.unit (code, description, ratio_to_base, discrete_step) VALUES ('glass', 'Стакан', 0.166700, NULL);
+INSERT INTO public.unit (code, description, ratio_to_base, discrete_step) VALUES ('glass', 'Бокал', 0.166700, NULL);
 INSERT INTO public.unit (code, description, ratio_to_base, discrete_step) VALUES ('piece', 'Штука', 1.000000, NULL);
 
 

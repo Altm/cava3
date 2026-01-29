@@ -1,58 +1,158 @@
 <template>
-  <div>
+  <div class="product-list-container">
     <h2>Список товаров</h2>
-    <router-link to="/product-form">Создать товар</router-link>
-    <div v-if="loading">Загрузка...</div>
-    <div v-else>
-      <div v-for="product in products" :key="product.id" class="product-item">
-        <h3>{{ product.name }}</h3>
-        <p>Тип: {{ getProductTypeName(product.product_type_id) }}</p>
-        <p>Остаток: {{ product.stock }}</p>
-        <p v-if="product.attributes && product.attributes.glasses_per_bottle">Бокалов в бутылке: {{ product.attributes.glasses_per_bottle }}</p>
-        <p>Себестоимость: {{ product.unit_cost }}</p>
-        <p v-if="product.is_composite">Составной товар</p>
-        <div v-if="Object.keys(product.attributes).length > 0">
-          <h4>Атрибуты:</h4>
-          <ul>
-            <li v-for="(value, key) in product.attributes" :key="key">
-              {{ key }}: {{ value }}
-            </li>
-          </ul>
-        </div>
-        <div v-if="product.components && product.components.length > 0">
-          <h4>Компоненты:</h4>
-          <ul>
+    <div class="actions">
+      <button @click="createProduct" class="btn btn-primary">Создать товар</button>
+      <router-link to="/product-types" class="btn btn-secondary">Управление типами</router-link>
+    </div>
 
-            <li v-for="comp in product.components" :key="`${product.id}-${comp.componentProductId}`">
-              <pre>{{ comp }}</pre>
-              Товар ID: {{ comp.componentProductId }}, Количество: {{ comp.quantity }}
-            </li>
-          </ul>
+    <!-- Filters -->
+    <div class="filter-card">
+      <form>
+        <div class="form-group">
+          <label>Локация:</label>
+          <select
+            v-model="filters.locationId"
+            @change="loadProducts"
+          >
+            <option value="">Все локации</option>
+            <option
+              v-for="location in locations"
+              :key="location.id"
+              :value="location.id"
+            >
+              {{ location.name }}
+            </option>
+          </select>
         </div>
-        <div>
-          <button @click="editProduct(product.id)">Редактировать</button>
-          <button @click="deleteProduct(product.id)">Удалить</button>
+
+        <div class="form-group">
+          <label>Тип товара:</label>
+          <select
+            v-model="filters.productTypeId"
+            @change="loadProducts"
+          >
+            <option value="">Все типы</option>
+            <option
+              v-for="type in productTypes"
+              :key="type.id"
+              :value="type.id"
+            >
+              {{ type.name }}
+            </option>
+          </select>
         </div>
+
+        <button @click="resetFilters" type="button">Сбросить</button>
+      </form>
+    </div>
+
+    <!-- Table -->
+    <div v-if="loading">Загрузка...</div>
+    <table v-else class="product-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Название</th>
+          <th>Тип товара</th>
+          <th>Основная единица</th>
+          <th>Остаток</th>
+          <th>Себестоимость</th>
+          <th>Составной</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="product in products" :key="product.id">
+          <td>{{ product.id }}</td>
+          <td>{{ product.name }}</td>
+          <td>{{ getProductTypeName(product.product_type_id) }}</td>
+          <td>{{ getBaseUnit(product) }}</td>
+          <td>{{ product.stock }}</td>
+          <td>{{ product.unit_cost }}</td>
+          <td>
+            <span :class="{'tag-success': product.is_composite, 'tag-info': !product.is_composite}">
+              {{ product.is_composite ? 'Да' : 'Нет' }}
+            </span>
+          </td>
+          <td>
+            <button @click="editProduct(product.id)" class="btn btn-sm">Редактировать</button>
+            <button @click="deleteProduct(product.id)" class="btn btn-sm btn-danger">Удалить</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Pagination -->
+    <div class="pagination" v-if="!loading">
+      <div class="pagination-info">
+        Показано {{ Math.min(pagination.pageSize, products.length) }} из {{ pagination.total }}
+      </div>
+      <div class="pagination-controls">
+        <button
+          @click="handleCurrentChange(pagination.currentPage - 1)"
+          :disabled="pagination.currentPage <= 1"
+        >
+          Предыдущая
+        </button>
+        <span>{{ pagination.currentPage }} из {{ Math.ceil(pagination.total / pagination.pageSize) }}</span>
+        <button
+          @click="handleCurrentChange(pagination.currentPage + 1)"
+          :disabled="pagination.currentPage >= Math.ceil(pagination.total / pagination.pageSize)"
+        >
+          Следующая
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import type  { Product, ProductType } from '@/api/productApi'
-import { productApi} from '@/api/productApi'
+import type { Product, ProductType, Location } from '@/api/productApi'
+import { productApi } from '@/api/productApi'
 
 const router = useRouter()
 const products = ref<Product[]>([])
 const productTypes = ref<ProductType[]>([])
+const locations = ref<Location[]>([])
 const loading = ref(true)
 
+// Filters
+const filters = ref({
+  locationId: null as number | null,
+  productTypeId: null as number | null,
+})
+
+// Pagination
+const pagination = ref({
+  currentPage: 1,
+  pageSize: 20,
+  total: 0
+})
+
+// Load products with pagination and filters
 const loadProducts = async () => {
   try {
     loading.value = true
-    products.value = await productApi.getProducts()
+
+    // Calculate skip based on current page and page size
+    const skip = (pagination.value.currentPage - 1) * pagination.value.pageSize
+
+    // Load products with filters and pagination
+    products.value = await productApi.getProducts({
+      locationId: filters.value.locationId || undefined,
+      productTypeId: filters.value.productTypeId || undefined,
+      skip,
+      limit: pagination.value.pageSize
+    })
+
+    // Load total count for pagination
+    pagination.value.total = await productApi.getProductsCount({
+      locationId: filters.value.locationId || undefined,
+      productTypeId: filters.value.productTypeId || undefined
+    })
   } catch (error) {
     console.error('Error loading products:', error)
   } finally {
@@ -68,9 +168,27 @@ const loadProductTypes = async () => {
   }
 }
 
+const loadLocations = async () => {
+  try {
+    locations.value = await productApi.getLocations()
+  } catch (error) {
+    console.error('Error loading locations:', error)
+  }
+}
+
 const getProductTypeName = (productTypeId: number) => {
   const productType = productTypes.value.find(pt => pt.id === productTypeId)
   return productType ? productType.name : 'Неизвестный тип'
+}
+
+const getBaseUnit = (product: Product) => {
+  // In a real implementation, this would come from the product's base_unit_code
+  // For now, we'll return a placeholder
+  return 'шт'; // Default unit
+}
+
+const createProduct = () => {
+  router.push('/product-form')
 }
 
 const editProduct = (productId: number) => {
@@ -89,23 +207,136 @@ const deleteProduct = async (productId: number) => {
   }
 }
 
+const resetFilters = () => {
+  filters.value.locationId = null
+  filters.value.productTypeId = null
+  loadProducts()
+}
+
+const handleSizeChange = (val: number) => {
+  pagination.value.pageSize = val
+  loadProducts()
+}
+
+const handleCurrentChange = (val: number) => {
+  pagination.value.currentPage = val
+  loadProducts()
+}
+
+// Watch for filter changes and reload products
+watch(filters, () => {
+  // Reset to first page when filters change
+  pagination.value.currentPage = 1
+  loadProducts()
+}, { deep: true })
+
 onMounted(async () => {
   await Promise.all([
-    loadProducts(),
-    loadProductTypes()
+    loadProductTypes(),
+    loadLocations(),
+    loadProducts() // Load products after other data is loaded
   ])
 })
 </script>
 
 <style scoped>
-.product-item {
+.product-list-container {
+  padding: 20px;
+}
+
+.actions {
+  margin-bottom: 20px;
+}
+
+.btn {
+  padding: 6px 12px;
   border: 1px solid #ccc;
-  margin: 10px;
-  padding: 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  background-color: #f5f5f5;
+  margin-right: 10px;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.btn-primary {
+  background-color: #007bff;
+  color: white;
+}
+
+.btn-secondary {
+  background-color: #6c757d;
+  color: white;
+}
+
+.btn-sm {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.btn-danger {
+  background-color: #dc3545;
+  color: white;
+}
+
+.form-group {
+  margin-right: 15px;
+  display: inline-block;
+}
+
+.filter-card {
+  margin: 20px 0;
+  padding: 15px;
+  border: 1px solid #ddd;
   border-radius: 4px;
 }
 
-.product-item h3 {
-  margin-top: 0;
+.product-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.product-table th,
+.product-table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: left;
+}
+
+.product-table th {
+  background-color: #f2f2f2;
+}
+
+.tag-success {
+  background-color: #28a745;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.tag-info {
+  background-color: #17a2b8;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.pagination {
+  margin-top: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pagination button {
+  margin: 0 5px;
+  padding: 6px 12px;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 </style>
