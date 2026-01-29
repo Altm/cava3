@@ -2,7 +2,7 @@
   <div class="product-list-container">
     <h2>Список товаров</h2>
     <div class="actions">
-      <button @click="createProduct" class="btn btn-primary">Создать товар</button>
+      <button @click="showCreateProductModal" class="btn btn-primary">Создать товар</button>
       <router-link to="/product-types" class="btn btn-secondary">Управление типами</router-link>
     </div>
 
@@ -76,7 +76,7 @@
             </span>
           </td>
           <td>
-            <button @click="editProduct(product.id)" class="btn btn-sm">Редактировать</button>
+            <button @click="showEditProductModal(product.id)" class="btn btn-sm">Редактировать</button>
             <button @click="deleteProduct(product.id)" class="btn btn-sm btn-danger">Удалить</button>
           </td>
         </tr>
@@ -104,6 +104,23 @@
         </button>
       </div>
     </div>
+
+    <!-- Product Form Modal -->
+    <div v-if="showProductModal" class="modal-overlay" @click="closeProductModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>{{ editingProductId ? 'Редактировать товар' : 'Создать товар' }}</h3>
+          <button @click="closeProductModal" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <ProductForm
+            :productId="editingProductId"
+            @close="closeProductModal"
+            @saved="onProductSaved"
+          />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -112,12 +129,17 @@ import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Product, ProductType, Location } from '@/api/productApi'
 import { productApi } from '@/api/productApi'
+import ProductForm from './ProductForm.vue' // Импортируем компонент формы
 
 const router = useRouter()
 const products = ref<Product[]>([])
 const productTypes = ref<ProductType[]>([])
 const locations = ref<Location[]>([])
 const loading = ref(true)
+
+// Modal state
+const showProductModal = ref(false)
+const editingProductId = ref<number | null>(null)
 
 // Filters
 const filters = ref({
@@ -187,12 +209,24 @@ const getBaseUnit = (product: Product) => {
   return 'шт'; // Default unit
 }
 
-const createProduct = () => {
-  router.push('/product-form')
+const showCreateProductModal = () => {
+  editingProductId.value = null
+  showProductModal.value = true
 }
 
-const editProduct = (productId: number) => {
-  router.push(`/product-form/${productId}`)
+const showEditProductModal = (productId: number) => {
+  editingProductId.value = productId
+  showProductModal.value = true
+}
+
+const closeProductModal = () => {
+  showProductModal.value = false
+  editingProductId.value = null
+}
+
+const onProductSaved = () => {
+  closeProductModal()
+  loadProducts() // Refresh the list after saving
 }
 
 const deleteProduct = async (productId: number) => {
@@ -338,5 +372,48 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* Modal styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: white;
+  padding: 0;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+  margin: 0;
+}
+
+.modal-body {
+  padding: 20px;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 </style>
