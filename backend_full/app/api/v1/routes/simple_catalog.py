@@ -9,14 +9,28 @@ from app.models import models
 from app.schemas import simple as schemas
 
 from app.models.models import AttributeDefinition, ProductAttributeValue, Location
+from app.config import get_settings
 
 router = APIRouter(prefix="/simple-catalog", tags=["simple-catalog"])
 
 
 def _default_location(db: Session) -> models.Location:
+    settings = get_settings()
+    # Сначала пытаемся найти склад с ID из настроек
+    loc = db.query(models.Location).filter(models.Location.id == settings.default_location_id).first()
+    if loc:
+        return loc
+
+    # Если склад с заданным ID не найден, пробуем найти по имени
+    loc = db.query(models.Location).filter(models.Location.name == settings.default_location_name).first()
+    if loc:
+        return loc
+
+    # Если ни по ID, ни по имени не найден, используем первый склад
     loc = db.query(models.Location).first()
     if not loc:
-        loc = models.Location(name="Warehouse", kind="warehouse")
+        # Если вообще нет складов, создаем первый
+        loc = models.Location(name=settings.default_location_name, kind="warehouse")
         db.add(loc)
         db.flush()
     return loc

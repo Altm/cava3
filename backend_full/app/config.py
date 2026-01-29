@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     jar_fraction: str = "0.1"
     admin_username: str = Field("admin", env="ADMIN_USERNAME")
     admin_password: str = Field("admin", env="ADMIN_PASSWORD")
+    default_location_id: int = Field(1, env="DEFAULT_LOCATION_ID")
+    default_location_name: str = Field("Main Warehouse", env="DEFAULT_LOCATION_NAME")
 
     class Config:
         case_sensitive = False
