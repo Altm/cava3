@@ -51,3 +51,18 @@ def check_permission(user: User, permission: str, location_id: int | None = None
             if scope == "global" or loc == location_id:
                 return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+
+
+def require_permission(permission: str, location_id: int | None = None):
+    """
+    Dependency that checks if the current user has the required permission.
+
+    Usage:
+    @router.get("/products/")
+    def get_products(user=Depends(require_permission("product.read"))):
+        ...
+    """
+    def permission_dependency(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+        check_permission(current_user, permission, location_id, db)
+        return current_user
+    return permission_dependency

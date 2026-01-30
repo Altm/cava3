@@ -2,8 +2,8 @@
   <div class="product-list-container">
     <h2>Список товаров</h2>
     <div class="actions">
-      <button @click="showCreateProductModal" class="btn btn-primary">Создать товар</button>
-      <router-link to="/product-types" class="btn btn-secondary">Управление типами</router-link>
+      <button v-if="hasPermission('product.write')" @click="showCreateProductModal" class="btn btn-primary">Создать товар</button>
+      <router-link v-if="hasPermission('product_type.read')" to="/product-types" class="btn btn-secondary">Управление типами</router-link>
     </div>
 
     <!-- Filters -->
@@ -76,8 +76,8 @@
             </span>
           </td>
           <td>
-            <button @click="showEditProductModal(product.id)" class="btn btn-sm">Редактировать</button>
-            <button @click="deleteProduct(product.id)" class="btn btn-sm btn-danger">Удалить</button>
+            <button v-if="hasPermission('product.write')" @click="showEditProductModal(product.id)" class="btn btn-sm">Редактировать</button>
+            <button v-if="hasPermission('product.delete')" @click="deleteProduct(product.id)" class="btn btn-sm btn-danger">Удалить</button>
           </td>
         </tr>
       </tbody>
@@ -127,9 +127,18 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import type { Product, ProductType, Location } from '@/api/productApi'
 import { productApi } from '@/api/productApi'
 import ProductForm from './ProductForm.vue' // Импортируем компонент формы
+
+// Auth store
+const authStore = useAuthStore();
+
+// Check permission function
+const hasPermission = (permission: string): boolean => {
+  return authStore.hasPermission(permission);
+};
 
 const router = useRouter()
 const products = ref<Product[]>([])

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.api.v1.deps.auth import get_db, get_current_user, check_permission
+from app.api.v1.deps.auth import get_db, require_permission
 from app.security.auth import get_password_hash
 from app.models.models import User
 
@@ -8,8 +8,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.post("")
-def create_user(payload: dict, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    check_permission(user, "user.write", db=db)
+def create_user(payload: dict, user=Depends(require_permission("user.write")), db: Session = Depends(get_db)):
     if db.query(User).filter_by(username=payload["username"]).first():
         raise HTTPException(status_code=400, detail="Exists")
     new_user = User(
@@ -25,6 +24,5 @@ def create_user(payload: dict, db: Session = Depends(get_db), user=Depends(get_c
 
 
 @router.get("")
-def list_users(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    check_permission(user, "user.read", db=db)
+def list_users(user=Depends(require_permission("user.read")), db: Session = Depends(get_db)):
     return db.query(User).all()

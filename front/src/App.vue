@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
-import { logout, isAuthenticated } from '@/api/authApi'
+import { logout } from '@/api/authApi'
+import { useAuthStore } from '@/stores/auth'
+
+const authStore = useAuthStore();
+authStore.initializeAuth();
 
 const handleLogout = () => {
   logout();
+  authStore.logout();
   // Redirect to login page
   window.location.href = '/login';
 };
@@ -12,7 +17,7 @@ const handleLogout = () => {
 <template>
   <header>
     <nav>
-      <template v-if="isAuthenticated()">
+      <template v-if="authStore.isAuthenticated">
         <RouterLink to="/">Главная</RouterLink> |
         <RouterLink to="/product-list">Список товаров</RouterLink> |
         <RouterLink to="/product-form">Создать товар</RouterLink> |

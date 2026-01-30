@@ -3,7 +3,7 @@
     <h2>Управление типами товаров</h2>
 
     <div class="search-card">
-      <button @click="showCreateDialog" class="btn btn-primary">Создать тип товара</button>
+      <button v-if="hasPermission('product_type.write')" @click="showCreateDialog" class="btn btn-primary">Создать тип товара</button>
     </div>
 
     <div v-if="loading">Загрузка...</div>
@@ -34,8 +34,8 @@
             </span>
           </td>
           <td>
-            <button @click="editProductType(productType)" class="btn btn-sm">Редактировать</button>
-            <button @click="deleteProductType(productType.id)" class="btn btn-sm btn-danger">Удалить</button>
+            <button v-if="hasPermission('product_type.write')" @click="editProductType(productType)" class="btn btn-sm">Редактировать</button>
+            <button v-if="hasPermission('product_type.delete')" @click="deleteProductType(productType.id)" class="btn btn-sm btn-danger">Удалить</button>
           </td>
         </tr>
       </tbody>
@@ -137,8 +137,17 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import type { ProductType, AttributeDefinition } from '@/api/productApi'
 import { productApi } from '@/api/productApi'
+
+// Auth store
+const authStore = useAuthStore();
+
+// Check permission function
+const hasPermission = (permission: string): boolean => {
+  return authStore.hasPermission(permission);
+};
 
 // State
 const productTypes = ref<ProductType[]>([])

@@ -38,7 +38,7 @@ def _default_location(db: Session) -> models.Location:
 
 # Units
 @router.get("/units/", response_model=List[schemas.Unit])
-def get_units(db: Session = Depends(get_db), user=Depends(get_current_user)):
+def get_units(user=Depends(require_permission("unit.read")), db: Session = Depends(get_db)):
     units = db.query(models.Unit).all()
     return [
         schemas.Unit(
@@ -53,7 +53,7 @@ def get_units(db: Session = Depends(get_db), user=Depends(get_current_user)):
 
 
 @router.post("/units/", response_model=schemas.Unit)
-def create_unit(unit: schemas.UnitCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def create_unit(unit: schemas.UnitCreate, user=Depends(require_permission("unit.write")), db: Session = Depends(get_db)):
     db_unit = models.Unit(code=unit.symbol, description=unit.name, ratio_to_base=unit.conversion_factor or 1)
     db.add(db_unit)
     db.flush()
@@ -73,7 +73,7 @@ def create_unit(unit: schemas.UnitCreate, db: Session = Depends(get_db), user=De
 
 # Product types
 @router.get("/product-types/", response_model=List[schemas.ProductType])
-def get_product_types(db: Session = Depends(get_db), user=Depends(get_current_user)):
+def get_product_types(user=Depends(require_permission("product_type.read")), db: Session = Depends(get_db)):
     types = db.query(models.ProductType).all()
     result = []
     for t in types:
@@ -100,7 +100,7 @@ def get_product_type(product_type_id: int, db: Session = Depends(get_db), user=D
 
 
 @router.post("/product-types/", response_model=schemas.ProductType)
-def create_product_type(payload: schemas.ProductTypeCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def create_product_type(payload: schemas.ProductTypeCreate, user=Depends(require_permission("product_type.write")), db: Session = Depends(get_db)):
     t = models.ProductType(name=payload.name, description=payload.description, is_composite=payload.is_composite)
     db.add(t)
     db.flush()  # Get the ID before committing
@@ -141,7 +141,7 @@ def create_product_type(payload: schemas.ProductTypeCreate, db: Session = Depend
 
 
 @router.put("/product-types/{product_type_id}", response_model=schemas.ProductType)
-def update_product_type(product_type_id: int, payload: schemas.ProductTypeUpdate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def update_product_type(product_type_id: int, payload: schemas.ProductTypeUpdate, user=Depends(require_permission("product_type.write")), db: Session = Depends(get_db)):
     t = db.query(models.ProductType).get(product_type_id)
     if not t:
         raise HTTPException(status_code=404, detail="Product type not found")
@@ -192,7 +192,7 @@ def update_product_type(product_type_id: int, payload: schemas.ProductTypeUpdate
 
 
 @router.delete("/product-types/{product_type_id}")
-def delete_product_type(product_type_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def delete_product_type(product_type_id: int, user=Depends(require_permission("product_type.delete")), db: Session = Depends(get_db)):
     t = db.query(models.ProductType).get(product_type_id)
     if not t:
         raise HTTPException(status_code=404, detail="Product type not found")
@@ -210,7 +210,7 @@ def delete_product_type(product_type_id: int, db: Session = Depends(get_db), use
 
 # Attribute definitions
 @router.post("/attribute-definitions/", response_model=schemas.AttributeDefinition)
-def create_attribute_definition(attr_def: schemas.AttributeDefinitionCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def create_attribute_definition(attr_def: schemas.AttributeDefinitionCreate, user=Depends(require_permission("attribute_definition.write")), db: Session = Depends(get_db)):
     db_def = models.AttributeDefinition(
         product_type_id=attr_def.product_type_id,
         name=attr_def.name,
@@ -282,7 +282,7 @@ def _ensure_unit(code: str, db: Session) -> models.Unit:
 
 # Products
 @router.post("/products/", response_model=schemas.Product)
-def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def create_product(product: schemas.ProductCreate, user=Depends(require_permission("product.write")), db: Session = Depends(get_db)):
     base_unit = product.base_unit_code or "unit"
     _ensure_unit(base_unit, db)
 
@@ -354,8 +354,8 @@ def get_products(
     product_type_id: Optional[int] = None,
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
+    user=Depends(require_permission("product.read")),
+    db: Session = Depends(get_db)
 ):
     query = db.query(models.Product)
 
@@ -380,8 +380,8 @@ def get_products(
 def get_products_count(
     location_id: Optional[int] = None,
     product_type_id: Optional[int] = None,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
+    user=Depends(require_permission("product.read")),
+    db: Session = Depends(get_db)
 ):
     query = db.query(models.Product)
 
@@ -402,7 +402,7 @@ def get_products_count(
 
 
 @router.get("/products/{product_id}", response_model=schemas.Product)
-def get_product(product_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def get_product(product_id: int, user=Depends(require_permission("product.read")), db: Session = Depends(get_db)):
     product = db.query(models.Product).get(product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -410,7 +410,7 @@ def get_product(product_id: int, db: Session = Depends(get_db), user=Depends(get
 
 
 @router.put("/products/{product_id}", response_model=schemas.Product)
-def update_product(product_id: int, product_update: schemas.ProductUpdate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def update_product(product_id: int, product_update: schemas.ProductUpdate, user=Depends(require_permission("product.write")), db: Session = Depends(get_db)):
     product = db.query(models.Product).get(product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -480,7 +480,7 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, db: S
 
 
 @router.delete("/products/{product_id}")
-def delete_product(product_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def delete_product(product_id: int, user=Depends(require_permission("product.delete")), db: Session = Depends(get_db)):
     product = db.query(models.Product).get(product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -493,7 +493,7 @@ def delete_product(product_id: int, db: Session = Depends(get_db), user=Depends(
 
 # Unit Conversions
 @router.get("/unit-conversions/", response_model=List[schemas.UnitConversionSchema])
-def get_unit_conversions(db: Session = Depends(get_db), user=Depends(get_current_user)):
+def get_unit_conversions(user=Depends(require_permission("unit_conversion.read")), db: Session = Depends(get_db)):
     conversions = db.query(models.UnitConversion).all()
     return [
         schemas.UnitConversionSchema(
@@ -507,7 +507,7 @@ def get_unit_conversions(db: Session = Depends(get_db), user=Depends(get_current
 
 
 @router.post("/unit-conversions/", response_model=schemas.UnitConversionSchema)
-def create_unit_conversion(conversion: schemas.UnitConversionSchema, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def create_unit_conversion(conversion: schemas.UnitConversionSchema, user=Depends(require_permission("unit_conversion.write")), db: Session = Depends(get_db)):
     # Validate that units exist
     from_unit_exists = db.query(models.Unit).filter(models.Unit.code == conversion.from_unit).first()
     to_unit_exists = db.query(models.Unit).filter(models.Unit.code == conversion.to_unit).first()
@@ -544,7 +544,7 @@ def create_unit_conversion(conversion: schemas.UnitConversionSchema, db: Session
 
 # Locations
 @router.get("/locations/", response_model=List[schemas.Location])
-def get_locations(db: Session = Depends(get_db), user=Depends(get_current_user)):
+def get_locations(user=Depends(require_permission("location.read")), db: Session = Depends(get_db)):
     locations = db.query(models.Location).all()
     return [
         schemas.Location(
@@ -557,7 +557,7 @@ def get_locations(db: Session = Depends(get_db), user=Depends(get_current_user))
 
 
 @router.post("/locations/", response_model=schemas.Location)
-def create_location(location: schemas.LocationBase, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def create_location(location: schemas.LocationBase, user=Depends(require_permission("location.write")), db: Session = Depends(get_db)):
     db_location = models.Location(name=location.name, kind=location.kind)
     db.add(db_location)
     db.commit()
@@ -570,7 +570,7 @@ def create_location(location: schemas.LocationBase, db: Session = Depends(get_db
 
 
 @router.post("/sales/")
-def sell_product(sale_request: schemas.SaleRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def sell_product(sale_request: schemas.SaleRequest, user=Depends(require_permission("sale.write")), db: Session = Depends(get_db)):
     product = db.query(models.Product).get(sale_request.product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -603,7 +603,7 @@ def sell_product(sale_request: schemas.SaleRequest, db: Session = Depends(get_db
 
 
 @router.post("/glass-sales/")
-def sell_wine_glass(sale_request: schemas.SaleRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def sell_wine_glass(sale_request: schemas.SaleRequest, user=Depends(require_permission("sale.write")), db: Session = Depends(get_db)):
     product = db.query(models.Product).get(sale_request.product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")

@@ -37,7 +37,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { login as authService } from '@/api/authApi';
+import { login as authService, getCurrentUser, setUserPermissions } from '@/api/authApi';
 
 const router = useRouter();
 const username = ref('');
@@ -56,6 +56,11 @@ const handleLogin = async () => {
 
   try {
     await authService(username.value, password.value);
+
+    // Get user info and permissions
+    const userInfo = await getCurrentUser();
+    setUserPermissions(userInfo.permissions);
+
     // Redirect to home page after successful login
     router.push('/');
   } catch (err: any) {
