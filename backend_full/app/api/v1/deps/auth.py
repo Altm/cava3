@@ -1,3 +1,4 @@
+from typing import List, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -35,9 +36,17 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-def check_permission(user: User, permission: str, location_id: int | None = None, db: Session | None = None) -> None:
-    if user.is_superuser:
-        return
+def has_permission(user: User, permission: str, location_id: int | None = None, db: Session | None = None) -> bool:
+    """Check if user has a specific permission"""
+    # Superuser has all permissions
+    #if user.is_superuser:
+    #    return True
+
+    # Check if user ID is in super admin IDs
+    settings = get_settings()
+    if user.id in settings.super_admin_ids:
+        return True
+
     role_ids = [ur.role_id for ur in db.query(UserRole).filter(UserRole.user_id == user.id).all()]
     permissions = (
         db.query(Permission.code, Role.scope, Role.location_id)
@@ -49,20 +58,29 @@ def check_permission(user: User, permission: str, location_id: int | None = None
     for code, scope, loc in permissions:
         if code == permission:
             if scope == "global" or loc == location_id:
-                return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+                return True
+    return False
 
 
-def require_permission(permission: str, location_id: int | None = None):
-    """
-    Dependency that checks if the current user has the required permission.
+def check_permission(user: User, permission: str, location_id: int | None = None, db: Session | None = None) -> None:
+    if not has_permission(user, permission, location_id, db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
 
-    Usage:
-    @router.get("/products/")
-    def get_products(user=Depends(require_permission("product.read"))):
-        ...
-    """
-    def permission_dependency(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-        check_permission(current_user, permission, location_id, db)
-        return current_user
-    return permission_dependency
+
+class PermissionChecker:
+    def __init__(self, permissions: List[str], location_id: Optional[int] = None):
+        self.permissions = permissions
+        self.location_id = location_id
+
+    def __call__(self, user=Depends(get_current_user), db: Session = Depends(get_db)):
+        # Check if user has any of the required permissions
+        for perm in self.permissions:
+            if has_permission(user, perm, self.location_id, db):
+                return user
+
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+
+def allow_public():
+    """Dependency for public endpoints that don't require authentication"""
+    pass

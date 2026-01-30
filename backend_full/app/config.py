@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     admin_password: str = Field("admin", env="ADMIN_PASSWORD")
     default_location_id: int = Field(1, env="DEFAULT_LOCATION_ID")
     default_location_name: str = Field("Main Warehouse", env="DEFAULT_LOCATION_NAME")
+    super_admin_ids: set[int] = set()
 
     class Config:
         case_sensitive = False
@@ -31,4 +32,10 @@ class Settings(BaseSettings):
 
 @lru_cache()
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    # Parse SUPER_ADMIN_IDS from environment variable
+    import os
+    ids_str = os.getenv("SUPER_ADMIN_IDS", "")
+    if ids_str:
+        settings.super_admin_ids = set(int(x.strip()) for x in ids_str.split(",") if x.strip())
+    return settings
