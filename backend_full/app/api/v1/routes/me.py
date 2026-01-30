@@ -8,9 +8,15 @@ router = APIRouter(prefix="/me", tags=["me"])
 
 def get_user_permissions(user: User, db: Session):
     """Get all permissions for a user"""
+    # Superuser has all permissions - return a special marker
     #if user.is_superuser:
-    #    # Superuser has all permissions - return a special marker
     #    return ["*"]
+
+    # Check if user ID is in super admin IDs
+    from app.config import get_settings
+    settings = get_settings()
+    if user.id in settings.super_admin_ids:
+        return ["*"]
 
     # Get user's roles
     role_ids = [ur.role_id for ur in db.query(UserRole).filter(UserRole.user_id == user.id).all()]
@@ -29,7 +35,7 @@ def get_user_permissions(user: User, db: Session):
 
 
 @router.get("")
-def get_current_user_info(user=Depends(PermissionChecker(["user.read_self"])), db: Session = Depends(get_db)):
+def get_current_user_info(user=Depends(get_current_user), db: Session = Depends(get_db)):
     # Get user permissions
     permissions = get_user_permissions(user, db)
 

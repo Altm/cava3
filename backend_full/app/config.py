@@ -22,20 +22,30 @@ class Settings(BaseSettings):
     admin_password: str = Field("admin", env="ADMIN_PASSWORD")
     default_location_id: int = Field(1, env="DEFAULT_LOCATION_ID")
     default_location_name: str = Field("Main Warehouse", env="DEFAULT_LOCATION_NAME")
-    super_admin_ids: set[int] = set()
+    super_admin_ids_str: str = ""  # Поле для чтения из .env
 
     class Config:
         case_sensitive = False
-        env_file = ".env"
+        env_file = "../.env"  # Путь к .env файлу в родительской директории
         env_file_encoding = "utf-8"
+
+    @property
+    def super_admin_ids(self) -> set[int]:
+        # This will be set by get_settings function
+        return getattr(self, '_super_admin_ids', set())
 
 
 @lru_cache()
 def get_settings() -> Settings:
-    settings = Settings()
-    # Parse SUPER_ADMIN_IDS from environment variable
     import os
-    ids_str = os.getenv("SUPER_ADMIN_IDS", "")
+    settings = Settings()
+    # Parse SUPER_ADMIN_IDS from environment variable or settings field
+    ids_str = os.getenv("SUPER_ADMIN_IDS", settings.super_admin_ids_str)
     if ids_str:
-        settings.super_admin_ids = set(int(x.strip()) for x in ids_str.split(",") if x.strip())
+        super_admin_ids = set(int(x.strip()) for x in ids_str.split(",") if x.strip())
+    else:
+        super_admin_ids = set()
+
+    # Add a property to access parsed IDs
+    settings.__dict__['_super_admin_ids'] = super_admin_ids
     return settings

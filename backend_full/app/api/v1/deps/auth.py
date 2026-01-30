@@ -38,13 +38,13 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 def has_permission(user: User, permission: str, location_id: int | None = None, db: Session | None = None) -> bool:
     """Check if user has a specific permission"""
-    # Superuser has all permissions
-    #if user.is_superuser:
-    #    return True
-
     # Check if user ID is in super admin IDs
     settings = get_settings()
+    # DEBUG: Print super admin IDs and current user ID
+    print(f"DEBUG: Current user ID: {user.id}, Super admin IDs: {settings.super_admin_ids}")
+
     if user.id in settings.super_admin_ids:
+        print(f"DEBUG: User {user.id} is a super admin")
         return True
 
     role_ids = [ur.role_id for ur in db.query(UserRole).filter(UserRole.user_id == user.id).all()]
