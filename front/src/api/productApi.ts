@@ -83,6 +83,7 @@ export interface ProductForm {
   name: string
   unitCost: string              // ← строка, не number!
   stock: string                 // ← строка
+  baseUnitId: number            // ← добавляем baseUnitId
   attributes: Record<string, any>
   components: Array<{
     componentProductId: number
@@ -208,6 +209,7 @@ export const productApi = {
       name: data.name,
       unit_cost: data.unitCost,
       stock: data.stock,
+      base_unit_id: data.baseUnitId,  // Add base unit ID
       is_composite: data.isComposite,  // Include the composite flag
       attributes: attributes as Array<{ attribute_definition_id: number; value: string }>,
       components: data.components.map(c => ({
@@ -260,6 +262,7 @@ async updateProduct(id: number, data: ProductForm) {
     name: data.name,
     unit_cost: data.unitCost,   // строка, например "33.00"
     stock: data.stock,          // строка, например "44.000000"
+    base_unit_id: data.baseUnitId,  // Add base unit ID
     is_composite: data.isComposite,  // Include the composite flag
     attributes: attributes as Array<{ attribute_definition_id: number; value: string }>,
     components

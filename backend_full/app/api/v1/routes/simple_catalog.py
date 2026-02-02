@@ -113,12 +113,18 @@ def create_product_type(payload: schemas.ProductTypeCreate, user=Depends(Permiss
     created_attributes = []
     if hasattr(payload, 'attributes') and payload.attributes:
         for attr_data in payload.attributes:
+            unit_id = None
+            if attr_data.unit_code:
+                unit = db.query(models.Unit).filter(models.Unit.code == attr_data.unit_code).first()
+                if unit:
+                    unit_id = unit.id
+
             attr = models.AttributeDefinition(
                 product_type_id=t.id,
                 name=attr_data.name,
                 code=attr_data.code,
                 data_type=attr_data.data_type,
-                unit_code=attr_data.unit_code,
+                unit_id=unit_id,
                 is_required=attr_data.is_required
             )
             db.add(attr)
@@ -155,7 +161,20 @@ def update_product_type(product_type_id: int, payload: schemas.ProductTypeUpdate
     t.description = payload.description
     t.is_composite = payload.is_composite
 
-    # Delete existing attributes
+    # Delete existing attribute values first to avoid foreign key constraint violations
+    # Get the attribute definition IDs that will be deleted
+    attr_def_ids = db.query(models.AttributeDefinition.id).filter(
+        models.AttributeDefinition.product_type_id == product_type_id
+    ).all()
+
+    if attr_def_ids:
+        attr_def_id_list = [row[0] for row in attr_def_ids]
+        # Delete associated product attribute values
+        db.query(models.ProductAttributeValue).filter(
+            models.ProductAttributeValue.attribute_definition_id.in_(attr_def_id_list)
+        ).delete()
+
+    # Now delete the attribute definitions
     db.query(models.AttributeDefinition).filter(
         models.AttributeDefinition.product_type_id == product_type_id
     ).delete()
@@ -164,12 +183,18 @@ def update_product_type(product_type_id: int, payload: schemas.ProductTypeUpdate
     created_attributes = []
     if hasattr(payload, 'attributes') and payload.attributes:
         for attr_data in payload.attributes:
+            unit_id = None
+            if attr_data.unit_code:
+                unit = db.query(models.Unit).filter(models.Unit.code == attr_data.unit_code).first()
+                if unit:
+                    unit_id = unit.id
+
             attr = models.AttributeDefinition(
                 product_type_id=product_type_id,
                 name=attr_data.name,
                 code=attr_data.code,
                 data_type=attr_data.data_type,
-                unit_code=attr_data.unit_code,
+                unit_id=unit_id,
                 is_required=attr_data.is_required
             )
             db.add(attr)
@@ -215,12 +240,18 @@ def delete_product_type(product_type_id: int, user=Depends(PermissionChecker(["p
 # Attribute definitions
 @router.post("/attribute-definitions/", response_model=schemas.AttributeDefinition)
 def create_attribute_definition(attr_def: schemas.AttributeDefinitionCreate, user=Depends(PermissionChecker(["attribute_definition.write"])), db: Session = Depends(get_db)):
+    unit_id = None
+    if attr_def.unit_code:
+        unit = db.query(models.Unit).filter(models.Unit.code == attr_def.unit_code).first()
+        if unit:
+            unit_id = unit.id
+
     db_def = models.AttributeDefinition(
         product_type_id=attr_def.product_type_id,
         name=attr_def.name,
         code=attr_def.code,
         data_type=attr_def.data_type,
-        unit_code=attr_def.unit_code,
+        unit_id=unit_id,
         is_required=attr_def.is_required,
     )
     db.add(db_def)
@@ -440,8 +471,14 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    # Ensure base_unit_id is provided or use existing value
+    base_unit_id = product_update.base_unit_id
+    if base_unit_id is None:
+        # Use the existing base_unit_id from the product
+        base_unit_id = product.base_unit_id
+
     # Get the base unit by ID
-    base_unit = db.query(models.Unit).get(product_update.base_unit_id)
+    base_unit = db.query(models.Unit).get(base_unit_id)
     if not base_unit:
         raise HTTPException(status_code=400, detail="Base unit not found")
 
@@ -452,7 +489,8 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
     product.product_type_id = product_update.product_type_id
     product.name = product_update.name
     product.unit_cost = product_update.unit_cost
-    product.base_unit_id = product_update.base_unit_id
+    # Always update base_unit_id with the resolved value
+    product.base_unit_id = base_unit_id
 
     db.query(models.ProductAttributeValue).filter(models.ProductAttributeValue.product_id == product.id).delete()
     for attr in product_update.attributes:
@@ -478,7 +516,7 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
     # First, check if there's already a product_unit entry for the base unit
     existing_base_unit = db.query(models.ProductUnit).filter(
         models.ProductUnit.product_id == product.id,
-        models.ProductUnit.unit_id == product_update.base_unit_id
+        models.ProductUnit.unit_id == base_unit_id
     ).first()
 
     if existing_base_unit:
@@ -488,7 +526,7 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
         # Create a new product_unit entry for the base unit
         base_product_unit = models.ProductUnit(
             product_id=product.id,
-            unit_id=product_update.base_unit_id,
+            unit_id=base_unit_id,
             ratio_to_base=Decimal("1.0"),  # Base unit always has ratio 1.0
             discrete_step=None  # Default discrete step
         )
@@ -501,7 +539,7 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
                 parent_product_id=product.id,
                 component_product_id=comp.component_product_id,
                 quantity=Decimal(str(comp.quantity)),
-                unit_id=product_update.base_unit_id,  # Changed to unit_id
+                unit_id=base_unit_id,  # Changed to unit_id
             )
             db.add(db_comp)
 
@@ -513,13 +551,14 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
     )
     if stock:
         stock.quantity = Decimal(str(product_update.stock))
+        stock.unit_id = base_unit_id
     else:
         db.add(
             models.Stock(
                 location_id=loc.id,
                 product_id=product.id,
                 quantity=Decimal(str(product_update.stock)),
-                unit_code=base_unit,
+                unit_id=base_unit_id,
             )
         )
     db.commit()

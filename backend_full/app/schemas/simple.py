@@ -112,7 +112,7 @@ class ProductCreate(BaseModel):
     sku: Optional[str] = None
     unit_cost: Decimal
     stock: Decimal = Decimal("0")
-    base_unit_id: int  # Changed from base_unit_code to base_unit_id
+    base_unit_id: Optional[int] = Field(default=None)  # Changed from base_unit_code to base_unit_id, made optional temporarily for frontend compatibility
     attributes: List[ProductAttributeValueCreate] = []
     components: List[ProductComponentCreate] = []
 
@@ -123,7 +123,7 @@ class ProductUpdate(BaseModel):
     sku: Optional[str] = None
     unit_cost: Decimal
     stock: Decimal = Decimal("0")
-    base_unit_id: int  # Changed from base_unit_code to base_unit_id
+    base_unit_id: Optional[int] = Field(default=None)  # Changed from base_unit_code to base_unit_id, made optional temporarily for frontend compatibility
     attributes: List[ProductAttributeValueCreate] = []
     components: List[ProductComponentCreate] = []
 
