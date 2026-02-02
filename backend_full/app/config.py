@@ -4,7 +4,7 @@ from pydantic import Field
 
 
 class Settings(BaseSettings):
-    app_name: str = "Cavina Inventory"
+    app_name: str = "Cavina Backoffice"
     environment: str = Field("development", description="Environment name for toggling features")
     database_url: str = Field(..., env="DATABASE_URL")
     jwt_secret_key: str = Field("change-me", env="JWT_SECRET_KEY")
@@ -22,30 +22,21 @@ class Settings(BaseSettings):
     admin_password: str = Field("admin", env="ADMIN_PASSWORD")
     default_location_id: int = Field(1, env="DEFAULT_LOCATION_ID")
     default_location_name: str = Field("Main Warehouse", env="DEFAULT_LOCATION_NAME")
-    super_admin_ids_str: str = ""  # Поле для чтения из .env
 
     class Config:
         case_sensitive = False
-        env_file = "../.env"  # Путь к .env файлу в родительской директории
+        env_file = ".env"
         env_file_encoding = "utf-8"
 
     @property
-    def super_admin_ids(self) -> set[int]:
-        # This will be set by get_settings function
-        return getattr(self, '_super_admin_ids', set())
+    def super_admin_ids(self) -> set:
+        import os
+        ids_str = os.getenv("SUPER_ADMIN_IDS", "")
+        if ids_str:
+            return {int(x.strip()) for x in ids_str.split(",") if x.strip()}
+        return set()
 
 
 @lru_cache()
 def get_settings() -> Settings:
-    import os
-    settings = Settings()
-    # Parse SUPER_ADMIN_IDS from environment variable or settings field
-    ids_str = os.getenv("SUPER_ADMIN_IDS", settings.super_admin_ids_str)
-    if ids_str:
-        super_admin_ids = set(int(x.strip()) for x in ids_str.split(",") if x.strip())
-    else:
-        super_admin_ids = set()
-
-    # Add a property to access parsed IDs
-    settings.__dict__['_super_admin_ids'] = super_admin_ids
-    return settings
+    return Settings()
