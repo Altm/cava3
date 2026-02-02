@@ -35,6 +35,13 @@ class Unit(Base):
 
     # Relationships
     product_units: Mapped[list["ProductUnit"]] = relationship(back_populates="unit", cascade="all, delete-orphan")
+    stocks: Mapped[list["Stock"]] = relationship(back_populates="unit")
+    price_lists: Mapped[list["PriceList"]] = relationship(back_populates="unit")
+    adjustments: Mapped[list["Adjustment"]] = relationship(back_populates="unit")
+    transfers: Mapped[list["Transfer"]] = relationship(back_populates="unit")
+    sale_lines: Mapped[list["SaleLine"]] = relationship(back_populates="unit")
+    attribute_definitions: Mapped[list["AttributeDefinition"]] = relationship(back_populates="unit")
+    composite_components: Mapped[list["CompositeComponent"]] = relationship(back_populates="unit")
 
 
 class ProductUnit(Base):
@@ -66,12 +73,13 @@ class Stock(Base):
     location_id: Mapped[int] = mapped_column(ForeignKey("location.id"), comment="Location reference")
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Product reference")
     quantity: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), default=Decimal("0"), comment="Available quantity")
-    unit_code: Mapped[str] = mapped_column(ForeignKey("unit.code"), comment="Unit in which quantity is stored")
+    unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id"), comment="Unit in which quantity is stored")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Last update timestamp")
     
     # Связи
     location = relationship("Location", back_populates="stocks")
     product = relationship("Product", back_populates="stocks")
+    unit: Mapped["Unit"] = relationship("Unit", back_populates="stocks")
     
     __table_args__ = (
         UniqueConstraint("location_id", "product_id", name="uq_stock_location_product"),
@@ -152,9 +160,12 @@ class AttributeDefinition(Base):
     name: Mapped[str] = mapped_column(String(128), comment="Display name")
     code: Mapped[str] = mapped_column(String(64), comment="Machine code")
     data_type: Mapped[str] = mapped_column(String(16), comment="number/boolean/string")
-    unit_code: Mapped[Optional[str]] = mapped_column(ForeignKey("unit.code"), nullable=True, comment="Optional unit reference")
+    unit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("unit.id"), nullable=True, comment="Optional unit reference")
     is_required: Mapped[bool] = mapped_column(Boolean, default=False, comment="Is attribute required")
     __table_args__ = (UniqueConstraint("product_type_id", "code", name="uq_attrdef_producttype_code"),)
+
+    # Relationships
+    unit: Mapped["Unit"] = relationship("Unit", back_populates="attribute_definitions")
 
 
 
@@ -189,7 +200,7 @@ class CompositeComponent(Base):
     parent_product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Composite parent product")
     component_product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Component product")
     quantity: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), comment="Quantity of component")
-    unit_code: Mapped[str] = mapped_column(ForeignKey("unit.code"), comment="Unit for component quantity")
+    unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id"), comment="Unit for component quantity")
     substitution_allowed: Mapped[bool] = mapped_column(Boolean, default=False, comment="If substitutions allowed")
     rounding: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, comment="Rounding rule identifier")
     __table_args__ = (
@@ -204,6 +215,7 @@ class CompositeComponent(Base):
         "Product",
         foreign_keys=[component_product_id]
     )
+    unit: Mapped["Unit"] = relationship("Unit", back_populates="composite_components")
 
 
 class Location(Base):
@@ -223,13 +235,15 @@ class PriceList(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     location_id: Mapped[int] = mapped_column(ForeignKey("location.id"), comment="Location reference")
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Product reference")
-    unit_code: Mapped[str] = mapped_column(ForeignKey("unit.code"), comment="Unit for pricing")
+    unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id"), comment="Unit for pricing")
     currency: Mapped[str] = mapped_column(String(3), default="USD", comment="Currency code")
     amount: Mapped[Decimal] = mapped_column(DECIMAL(18, 2), comment="Price amount")
     __table_args__ = (
-        UniqueConstraint("location_id", "product_id", "unit_code", name="uq_price_location_product_unit"),
+        UniqueConstraint("location_id", "product_id", "unit_id", name="uq_price_location_product_unit"),
     )
 
+    # Relationships
+    unit: Mapped["Unit"] = relationship("Unit", back_populates="price_lists")
 
 
 class Terminal(Base):
@@ -262,10 +276,12 @@ class SaleLine(Base):
     sale_event_id: Mapped[int] = mapped_column(ForeignKey("sale_event.id"), comment="Sale event reference")
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Sold product id")
     quantity: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), comment="Quantity sold in given unit")
-    unit_code: Mapped[str] = mapped_column(ForeignKey("unit.code"), comment="Unit id for quantity")
+    unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id"), comment="Unit id for quantity")
     currency: Mapped[str] = mapped_column(String(3), default="USD", comment="Currency code")
     price: Mapped[Decimal] = mapped_column(DECIMAL(18, 2), comment="Extended price for this line")
 
+    # Relationships
+    unit: Mapped["Unit"] = relationship("Unit", back_populates="sale_lines")
 
 
 class Adjustment(Base):
@@ -275,10 +291,12 @@ class Adjustment(Base):
     location_id: Mapped[int] = mapped_column(ForeignKey("location.id"), comment="Location reference")
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Product reference")
     delta: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), comment="Adjustment amount")
-    unit_code: Mapped[str] = mapped_column(ForeignKey("unit.code"), comment="Unit id for delta")
+    unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id"), comment="Unit id for delta")
     reason: Mapped[str] = mapped_column(String(255), comment="Reason for adjustment")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Created timestamp")
 
+    # Relationships
+    unit: Mapped["Unit"] = relationship("Unit", back_populates="adjustments")
 
 
 class Transfer(Base):
@@ -289,9 +307,11 @@ class Transfer(Base):
     to_location_id: Mapped[int] = mapped_column(ForeignKey("location.id"), comment="Destination location")
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Product reference")
     quantity: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), comment="Transferred quantity")
-    unit_code: Mapped[str] = mapped_column(ForeignKey("unit.code"), comment="Unit used")
+    unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id"), comment="Unit used")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Created timestamp")
 
+    # Relationships
+    unit: Mapped["Unit"] = relationship("Unit", back_populates="transfers")
 
 
 class InventorySnapshot(Base):
