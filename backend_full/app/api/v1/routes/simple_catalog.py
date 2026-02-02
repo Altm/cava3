@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,6 +11,8 @@ from app.schemas import simple as schemas
 
 from app.models.models import AttributeDefinition, ProductAttributeValue, Location, ProductUnit
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/simple-catalog", tags=["simple-catalog"])
 
@@ -536,55 +539,20 @@ def delete_product(product_id: int, user=Depends(PermissionChecker(["product.del
     return {"message": "Product deleted successfully"}
 
 
+
 # Unit Conversions
 @router.get("/unit-conversions/", response_model=List[schemas.UnitConversionSchema])
 def get_unit_conversions(user=Depends(PermissionChecker(["unit_conversion.read"])), db: Session = Depends(get_db)):
-    conversions = db.query(models.UnitConversion).all()
-    return [
-        schemas.UnitConversionSchema(
-            id=c.id,
-            from_unit=c.from_unit,
-            to_unit=c.to_unit,
-            ratio=c.ratio,
-        )
-        for c in conversions
-    ]
+    logger.warning("UnitConversion API is deprecated. Use ProductUnit for product-specific conversions.")
+    # Return empty list since UnitConversion table no longer exists
+    return []
 
 
 @router.post("/unit-conversions/", response_model=schemas.UnitConversionSchema)
 def create_unit_conversion(conversion: schemas.UnitConversionSchema, user=Depends(PermissionChecker(["unit_conversion.write"])), db: Session = Depends(get_db)):
-    # Validate that units exist
-    from_unit_exists = db.query(models.Unit).filter(models.Unit.code == conversion.from_unit).first()
-    to_unit_exists = db.query(models.Unit).filter(models.Unit.code == conversion.to_unit).first()
-
-    if not from_unit_exists:
-        # Create the from unit if it doesn't exist
-        new_from_unit = models.Unit(code=conversion.from_unit, description=conversion.from_unit)
-        db.add(new_from_unit)
-        db.flush()
-
-    if not to_unit_exists:
-        # Create the to unit if it doesn't exist
-        new_to_unit = models.Unit(code=conversion.to_unit, description=conversion.to_unit)
-        db.add(new_to_unit)
-        db.flush()
-
-    # Create the conversion
-    db_conversion = models.UnitConversion(
-        from_unit=conversion.from_unit,
-        to_unit=conversion.to_unit,
-        ratio=conversion.ratio
-    )
-    db.add(db_conversion)
-    db.commit()
-    db.refresh(db_conversion)
-
-    return schemas.UnitConversionSchema(
-        id=db_conversion.id,
-        from_unit=db_conversion.from_unit,
-        to_unit=db_conversion.to_unit,
-        ratio=db_conversion.ratio,
-    )
+    logger.error("UnitConversion API is deprecated. Use ProductUnit for product-specific conversions.")
+    # Raise an error since UnitConversion table no longer exists
+    raise HTTPException(status_code=400, detail="UnitConversion API is deprecated. Use ProductUnit for product-specific conversions.")
 
 
 # Locations

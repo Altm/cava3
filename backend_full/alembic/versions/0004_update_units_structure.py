@@ -18,31 +18,65 @@ depends_on = None
 
 
 def upgrade():
-    # 1. Add unit_type and is_discrete columns to existing unit table
-    # Check if columns already exist
+    # 1. Add id column to unit table if it doesn't exist (should have both code and id)
     connection = op.get_bind()
+
+    # Check if id column exists in unit table
     result = connection.execute(sa.text("""
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_name = 'unit' 
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'unit'
+        AND column_name = 'id'
+    """))
+    id_exists = result.fetchone() is not None
+
+    if not id_exists:
+        # Add id column to unit table
+        op.add_column('unit', sa.Column('id', sa.Integer(), autoincrement=True))
+
+        # Populate the id column with sequential values
+        # First, make sure the column allows nulls temporarily to allow population
+        op.execute("""
+            WITH numbered_rows AS (
+                SELECT ctid, row_number() OVER (ORDER BY code) as new_id
+                FROM unit
+            )
+            UPDATE unit
+            SET id = numbered_rows.new_id
+            FROM numbered_rows
+            WHERE unit.ctid = numbered_rows.ctid;
+        """)
+
+        # Make id column NOT NULL
+        op.alter_column('unit', 'id', nullable=False)
+
+        # Add unique constraint to id column so it can be referenced by foreign keys
+        op.create_unique_constraint('uq_unit_id', 'unit', ['id'])
+
+    # 2. Add unit_type and is_discrete columns to existing unit table
+    # Check if columns already exist
+    result = connection.execute(sa.text("""
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'unit'
         AND column_name IN ('unit_type', 'is_discrete')
     """))
     existing_columns = [row[0] for row in result.fetchall()]
-    
+
     if 'unit_type' not in existing_columns:
         op.add_column('unit', sa.Column('unit_type', sa.String(length=20), nullable=True))
     if 'is_discrete' not in existing_columns:
         op.add_column('unit', sa.Column('is_discrete', sa.Boolean(), server_default=sa.text('true'), nullable=True))
-    
+
     # Update existing units to have default values
     op.execute("UPDATE unit SET unit_type = COALESCE(unit_type, 'base')")
     op.execute("UPDATE unit SET is_discrete = COALESCE(is_discrete, true)")
-    
+
     # Make columns NOT NULL
     op.alter_column('unit', 'unit_type', nullable=False)
     op.alter_column('unit', 'is_discrete', nullable=False)
-    
-    # 2. Create product_unit table for product-specific units
+
+    # 3. Create product_unit table for product-specific units
     if not table_exists('product_unit'):
         op.create_table(
             'product_unit',

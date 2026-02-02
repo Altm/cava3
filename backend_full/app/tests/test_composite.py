@@ -2,20 +2,19 @@ from decimal import Decimal
 from app.services.sales_service import SalesService
 from app.models.models import (
     Unit,
-    UnitConversion,
     ProductType,
     Product,
     Location,
     Terminal,
     CompositeComponent,
     Stock,
+    ProductUnit,
 )
 
 
 def seed_composite(db):
     bottle = Unit(code="bottle", description="Bottle")
     glass = Unit(code="glass", description="Glass")
-    conv = UnitConversion(from_unit="glass", to_unit="bottle", ratio=Decimal("0.2"))
     wine_type = ProductType(name="wine", is_composite=False)
     snack_type = ProductType(name="snack", is_composite=True)
     wine = Product(
@@ -32,7 +31,7 @@ def seed_composite(db):
         product_type_id=2,
         base_unit_code="glass",
     )
-    db.add_all([bottle, glass, conv, wine_type, snack_type, wine, sandwich])
+    db.add_all([bottle, glass, wine_type, snack_type, wine, sandwich])
     db.flush()
     comp = CompositeComponent(parent_product_id=sandwich.id, component_product_id=wine.id, quantity=Decimal("1"), unit_code="glass")
     db.add(comp)

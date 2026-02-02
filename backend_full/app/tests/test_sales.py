@@ -5,19 +5,18 @@ from app.services.stock_service import StockService
 from app.common.errors import IdempotencyError, ValidationError
 from app.models.models import (
     Unit,
-    UnitConversion,
     ProductType,
     Product,
     Location,
     Terminal,
     Stock,
+    ProductUnit,
 )
 
 
 def seed_core(db):
     bottle = Unit(code="bottle", description="Bottle")
     glass = Unit(code="glass", description="Glass")
-    conv = UnitConversion(from_unit="glass", to_unit="bottle", ratio=Decimal("0.2"))
     wine_type = ProductType(name="wine", is_composite=False)
     wine = Product(
         name="Red wine",
@@ -28,7 +27,7 @@ def seed_core(db):
     )
     loc = Location(name="Bar", kind="bar")
     term = Terminal(terminal_id="t1", location_id=1, secret_hash="secret")
-    db.add_all([bottle, glass, conv, wine_type, wine, loc, term])
+    db.add_all([bottle, glass, wine_type, wine, loc, term])
     db.flush()
     stock = Stock(location_id=loc.id, product_id=wine.id, quantity=Decimal("10"), unit_code="bottle")
     db.add(stock)

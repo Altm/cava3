@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 from app.infrastructure.db.session import SessionLocal
 from app.models.models import (
     Unit,
-    UnitConversion,
     ProductType,
     Product,
     CompositeComponent,
@@ -23,6 +22,7 @@ from app.models.models import (
     SaleLine,
     AttributeDefinition,
     ProductAttributeValue,
+    ProductUnit,
 )
 from app.security.auth import get_password_hash
 
@@ -48,7 +48,9 @@ def seed(db: Session):
     bottle = upsert(db, Unit, code="bottle", defaults={"description": "Бутылка"})
     glass = upsert(db, Unit, code="glass", defaults={"description": "Бокал", "ratio_to_base": Decimal("0.1667")})
     piece = upsert(db, Unit, code="piece", defaults={"description": "Штука"})
-    upsert(db, UnitConversion, from_unit="glass", to_unit="bottle", defaults={"ratio": Decimal("0.1667")})
+    # Note: UnitConversion table was replaced with ProductUnit table in migration 0004
+    # Unit conversions are now product-specific. For seeding purposes, we would need to create
+    # ProductUnit entries for specific products, but for now we'll skip this legacy conversion
 
     # Product types
     wine_type = upsert(db, ProductType, name="Вино", defaults={"description": "Wine", "is_composite": False})
