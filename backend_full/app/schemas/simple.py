@@ -34,6 +34,13 @@ class Unit(UnitBase):
         from_attributes = True
 
 
+class UnitUpdate(UnitBase):
+    code: str
+    description: str
+    unit_type: str = Field(..., pattern=r"^(base|package|portion)$")  # 'base', 'package', 'portion'
+    is_discrete: bool = True
+
+
 class ProductUnitCreate(BaseModel):
     unit_id: int
     ratio_to_base: Decimal = Field(..., gt=0)  # Greater than 0

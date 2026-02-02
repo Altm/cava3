@@ -150,6 +150,21 @@ export interface ProductWithStockByLocation {
   stockByLocation: Array<{ locationId: number; quantity: number }>
 }
 
+// Define the interface for creating/updating units
+export interface CreateUnitRequest {
+  code: string
+  description: string
+  unit_type: string  // 'base', 'package', 'portion'
+  is_discrete: boolean
+}
+
+export interface UpdateUnitRequest {
+  code: string
+  description: string
+  unit_type: string  // 'base', 'package', 'portion'
+  is_discrete: boolean
+}
+
 export const productApi = {
   async getProductTypes(): Promise<ProductType[]> {
     const res = await api.get<ProductType[]>('/product-types/')
@@ -315,5 +330,19 @@ async updateProduct(id: number, data: ProductForm) {
   async getUnits(): Promise<Unit[]> {
     const res = await api.get<Unit[]>('/units/')
     return res.data
+  },
+
+  async createUnit(unitData: CreateUnitRequest): Promise<Unit> {
+    const res = await api.post<Unit>('/units/', unitData)
+    return res.data
+  },
+
+  async updateUnit(id: number, unitData: UpdateUnitRequest): Promise<Unit> {
+    const res = await api.put<Unit>(`/units/${id}`, unitData)
+    return res.data
+  },
+
+  async deleteUnit(id: number): Promise<void> {
+    await api.delete(`/units/${id}`)
   }
 }

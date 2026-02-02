@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 
 from app.api.v1.deps.auth import get_db, get_current_user, PermissionChecker, allow_public
 from app.models import models
@@ -57,11 +57,16 @@ def get_units(user=Depends(PermissionChecker(["unit.read"])), db: Session = Depe
 
 @router.post("/units/", response_model=schemas.Unit)
 def create_unit(unit: schemas.UnitCreate, user=Depends(PermissionChecker(["unit.write"])), db: Session = Depends(get_db)):
+    # Check if unit with this code already exists
+    existing_unit = db.query(models.Unit).filter(models.Unit.code == unit.code).first()
+    if existing_unit:
+        raise HTTPException(status_code=400, detail="Unit with this code already exists")
+
     db_unit = models.Unit(
-        code=unit.symbol,
-        description=unit.name,
-        unit_type="base",  # Default to base unit type
-        is_discrete=True   # Default to discrete
+        code=unit.code,
+        description=unit.description,
+        unit_type=unit.unit_type or "base",  # Use provided value or default to base
+        is_discrete=unit.is_discrete if unit.is_discrete is not None else True   # Use provided value or default to True
     )
     db.add(db_unit)
     db.commit()
@@ -684,3 +689,90 @@ def sell_wine_glass(sale_request: schemas.SaleRequest, user=Depends(PermissionCh
     stock.quantity -= bottles_needed
     db.commit()
     return {"message": f"Successfully sold {sale_request.quantity} glasses of {product.name}"}
+
+
+# Unit management endpoints
+@router.put("/units/{unit_id}", response_model=schemas.Unit)
+def update_unit(unit_id: int, unit_update: schemas.UnitUpdate, user=Depends(PermissionChecker(["unit.write"])), db: Session = Depends(get_db)):
+    db_unit = db.query(models.Unit).get(unit_id)
+    if not db_unit:
+        raise HTTPException(status_code=404, detail="Unit not found")
+
+    # Check if another unit with this code already exists (excluding current unit)
+    existing_unit = db.query(models.Unit).filter(
+        models.Unit.code == unit_update.code,
+        models.Unit.id != unit_id
+    ).first()
+    if existing_unit:
+        raise HTTPException(status_code=400, detail="Unit with this code already exists")
+
+    # Update fields
+    db_unit.code = unit_update.code
+    db_unit.description = unit_update.description
+    db_unit.unit_type = unit_update.unit_type
+    db_unit.is_discrete = unit_update.is_discrete
+
+    db.commit()
+    db.refresh(db_unit)
+    return schemas.Unit(
+        id=db_unit.id,
+        code=db_unit.code,
+        description=db_unit.description,
+        unit_type=db_unit.unit_type,
+        is_discrete=db_unit.is_discrete
+    )
+
+
+@router.delete("/units/{unit_id}")
+def delete_unit(unit_id: int, user=Depends(PermissionChecker(["unit.delete"])), db: Session = Depends(get_db)):
+    db_unit = db.query(models.Unit).get(unit_id)
+    if not db_unit:
+        raise HTTPException(status_code=404, detail="Unit not found")
+
+    # Check if unit is used by other entities to prevent foreign key constraint violations
+    # Check specific tables that reference units
+    from app.models.models import ProductUnit, Stock, PriceList, Adjustment, Transfer, SaleLine, AttributeDefinition, CompositeComponent
+
+    # Check if this unit is referenced in ProductUnit
+    product_unit_count = db.query(ProductUnit).filter(ProductUnit.unit_id == unit_id).count()
+    if product_unit_count > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by product units")
+
+    # Check if this unit is referenced in Stock
+    stock_count = db.query(Stock).filter(Stock.unit_id == unit_id).count()
+    if stock_count > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by stock records")
+
+    # Check if this unit is referenced in PriceList
+    price_list_count = db.query(PriceList).filter(PriceList.unit_id == unit_id).count()
+    if price_list_count > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by price lists")
+
+    # Check if this unit is referenced in Adjustment
+    adjustment_count = db.query(Adjustment).filter(Adjustment.unit_id == unit_id).count()
+    if adjustment_count > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by adjustments")
+
+    # Check if this unit is referenced in Transfer
+    transfer_count = db.query(Transfer).filter(Transfer.unit_id == unit_id).count()
+    if transfer_count > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by transfers")
+
+    # Check if this unit is referenced in SaleLine
+    sale_line_count = db.query(SaleLine).filter(SaleLine.unit_id == unit_id).count()
+    if sale_line_count > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by sale lines")
+
+    # Check if this unit is referenced in AttributeDefinition
+    attr_def_count = db.query(AttributeDefinition).filter(AttributeDefinition.unit_id == unit_id).count()
+    if attr_def_count > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by attribute definitions")
+
+    # Check if this unit is referenced in CompositeComponent
+    comp_count = db.query(CompositeComponent).filter(CompositeComponent.unit_id == unit_id).count()
+    if comp_count > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by composite components")
+
+    db.delete(db_unit)
+    db.commit()
+    return {"message": "Unit deleted successfully"}

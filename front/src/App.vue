@@ -22,6 +22,7 @@ const handleLogout = () => {
         <RouterLink to="/product-list">Список товаров</RouterLink> |
         <RouterLink to="/product-form">Создать товар</RouterLink> |
         <RouterLink to="/product-types">Типы товаров</RouterLink> |
+        <RouterLink to="/units">Единицы измерения</RouterLink> |
         <RouterLink to="/sales">Продажи</RouterLink> |
         <a href="#" @click="handleLogout">Выйти</a>
       </template>
