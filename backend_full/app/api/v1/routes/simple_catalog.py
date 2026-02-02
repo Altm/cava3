@@ -8,7 +8,7 @@ from app.api.v1.deps.auth import get_db, get_current_user, PermissionChecker, al
 from app.models import models
 from app.schemas import simple as schemas
 
-from app.models.models import AttributeDefinition, ProductAttributeValue, Location
+from app.models.models import AttributeDefinition, ProductAttributeValue, Location, ProductUnit
 from app.config import get_settings
 
 router = APIRouter(prefix="/simple-catalog", tags=["simple-catalog"])
@@ -45,8 +45,8 @@ def get_units(user=Depends(PermissionChecker(["unit.read"])), db: Session = Depe
             code=u.code,
             symbol=u.code,
             name=u.description,
-            base_unit_code=None,
-            conversion_factor=u.ratio_to_base,
+            unit_type=u.unit_type,
+            is_discrete=u.is_discrete
         )
         for u in units
     ]
@@ -54,20 +54,21 @@ def get_units(user=Depends(PermissionChecker(["unit.read"])), db: Session = Depe
 
 @router.post("/units/", response_model=schemas.Unit)
 def create_unit(unit: schemas.UnitCreate, user=Depends(PermissionChecker(["unit.write"])), db: Session = Depends(get_db)):
-    db_unit = models.Unit(code=unit.symbol, description=unit.name, ratio_to_base=unit.conversion_factor or 1)
+    db_unit = models.Unit(
+        code=unit.symbol,
+        description=unit.name,
+        unit_type="base",  # Default to base unit type
+        is_discrete=True   # Default to discrete
+    )
     db.add(db_unit)
-    db.flush()
-    if unit.base_unit_code and unit.conversion_factor:
-        conv = models.UnitConversion(from_unit=unit.symbol, to_unit=unit.base_unit_code, ratio=unit.conversion_factor)
-        db.add(conv)
     db.commit()
     db.refresh(db_unit)
     return schemas.Unit(
         code=db_unit.code,
         symbol=db_unit.code,
         name=db_unit.description,
-        base_unit_code=unit.base_unit_code,
-        conversion_factor=db_unit.ratio_to_base,
+        unit_type=db_unit.unit_type,
+        is_discrete=db_unit.is_discrete
     )
 
 
@@ -266,15 +267,21 @@ def _serialize_product(db_product: models.Product, db: Session) -> schemas.Produ
         unit_cost=db_product.unit_cost or Decimal("0"),
         stock=total_stock,
         is_composite=db_product.product_type.is_composite,
+        base_unit_id=db_product.base_unit_id,
         attributes=attributes,  # ← список объектов с полем "value"
         components=components,
     )
 
 
 def _ensure_unit(code: str, db: Session) -> models.Unit:
-    unit = db.query(models.Unit).get(code)
+    unit = db.query(models.Unit).filter(models.Unit.code == code).first()
     if not unit:
-        unit = models.Unit(code=code, description=code)
+        unit = models.Unit(
+            code=code,
+            description=code,
+            unit_type="base",  # Default to base unit type
+            is_discrete=True   # Default to discrete
+        )
         db.add(unit)
         db.flush()
     return unit
@@ -283,8 +290,10 @@ def _ensure_unit(code: str, db: Session) -> models.Unit:
 # Products
 @router.post("/products/", response_model=schemas.Product)
 def create_product(product: schemas.ProductCreate, user=Depends(PermissionChecker(["product.write"])), db: Session = Depends(get_db)):
-    base_unit = product.base_unit_code or "unit"
-    _ensure_unit(base_unit, db)
+    # Get the base unit by ID
+    base_unit = db.query(models.Unit).get(product.base_unit_id)
+    if not base_unit:
+        raise HTTPException(status_code=400, detail="Base unit not found")
 
     pt = db.query(models.ProductType).get(product.product_type_id)
     if not pt:
@@ -295,7 +304,7 @@ def create_product(product: schemas.ProductCreate, user=Depends(PermissionChecke
         name=product.name,
         sku=product.sku or product.name.replace(" ", "_"),
         primary_category=pt.name,
-        base_unit_code=base_unit,
+        base_unit_id=product.base_unit_id,
         unit_cost=product.unit_cost,
         is_active=True,
     )
@@ -322,6 +331,19 @@ def create_product(product: schemas.ProductCreate, user=Depends(PermissionChecke
 
         db.add(db_attr)
 
+    # Create product_unit entry for the base unit with ratio 1.0
+    base_product_unit = models.ProductUnit(
+        product_id=db_product.id,
+        unit_id=product.base_unit_id,
+        ratio_to_base=Decimal("1.0"),  # Base unit always has ratio 1.0
+        discrete_step=None  # Default discrete step
+    )
+    db.add(base_product_unit)
+
+    # Also add other units that might be commonly used with this product
+    # For example, if the base unit is a bottle, we might want to add glass units
+    # This would typically be done based on business rules or user input
+
     # Компоненты (если составной)
     if pt.is_composite:
         for comp in product.components:
@@ -329,7 +351,7 @@ def create_product(product: schemas.ProductCreate, user=Depends(PermissionChecke
                 parent_product_id=db_product.id,
                 component_product_id=comp.component_product_id,
                 quantity=Decimal(str(comp.quantity)),
-                unit_code=base_unit,
+                unit_id=product.base_unit_id,  # Changed to unit_id
             )
             db.add(db_comp)
 
@@ -339,7 +361,7 @@ def create_product(product: schemas.ProductCreate, user=Depends(PermissionChecke
         location_id=loc.id,
         product_id=db_product.id,  # ✅ тоже используем db_product.id
         quantity=Decimal(str(product.stock)),
-        unit_code=base_unit,
+        unit_id=product.base_unit_id,  # Changed to unit_id
     )
     db.add(stock)
 
@@ -415,8 +437,11 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    base_unit = product_update.base_unit_code or product.base_unit_code
-    _ensure_unit(base_unit, db)
+    # Get the base unit by ID
+    base_unit = db.query(models.Unit).get(product_update.base_unit_id)
+    if not base_unit:
+        raise HTTPException(status_code=400, detail="Base unit not found")
+
     pt = db.query(models.ProductType).get(product_update.product_type_id)
     if not pt:
         raise HTTPException(status_code=400, detail="Product type not found")
@@ -424,7 +449,7 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
     product.product_type_id = product_update.product_type_id
     product.name = product_update.name
     product.unit_cost = product_update.unit_cost
-    product.base_unit_code = base_unit
+    product.base_unit_id = product_update.base_unit_id
 
     db.query(models.ProductAttributeValue).filter(models.ProductAttributeValue.product_id == product.id).delete()
     for attr in product_update.attributes:
@@ -446,6 +471,26 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
 
         db.add(db_attr)
 
+    # Update product_unit entry for the base unit with ratio 1.0
+    # First, check if there's already a product_unit entry for the base unit
+    existing_base_unit = db.query(models.ProductUnit).filter(
+        models.ProductUnit.product_id == product.id,
+        models.ProductUnit.unit_id == product_update.base_unit_id
+    ).first()
+
+    if existing_base_unit:
+        # Update the existing base unit entry
+        existing_base_unit.ratio_to_base = Decimal("1.0")
+    else:
+        # Create a new product_unit entry for the base unit
+        base_product_unit = models.ProductUnit(
+            product_id=product.id,
+            unit_id=product_update.base_unit_id,
+            ratio_to_base=Decimal("1.0"),  # Base unit always has ratio 1.0
+            discrete_step=None  # Default discrete step
+        )
+        db.add(base_product_unit)
+
     db.query(models.CompositeComponent).filter(models.CompositeComponent.parent_product_id == product.id).delete()
     if pt.is_composite:
         for comp in product_update.components:
@@ -453,7 +498,7 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
                 parent_product_id=product.id,
                 component_product_id=comp.component_product_id,
                 quantity=Decimal(str(comp.quantity)),
-                unit_code=base_unit,
+                unit_id=product_update.base_unit_id,  # Changed to unit_id
             )
             db.add(db_comp)
 

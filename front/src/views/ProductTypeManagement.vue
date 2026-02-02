@@ -104,12 +104,12 @@
             <div class="form-row">
               <div class="form-group">
                 <label>Единица измерения:</label>
-                <select v-model="attr.unitCode">
+                <select v-model="attr.unitId">
                   <option value="">Не выбрана</option>
                   <option
                     v-for="unit in units"
-                    :key="unit.code"
-                    :value="unit.code"
+                    :key="unit.id"
+                    :value="unit.id"
                   >
                     {{ unit.name }} ({{ unit.symbol }})
                   </option>
@@ -161,7 +161,7 @@ const form = ref({
   name: '',
   description: '',
   isComposite: false,
-  attributes: [{ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false }] as AttributeDefinition[],
+  attributes: [{ name: '', code: '', dataType: 'string', unitId: null, isRequired: false }] as AttributeDefinition[],
   unitConversions: [] as Array<{ fromUnit: string, toUnit: string, ratio: number }>
 })
 

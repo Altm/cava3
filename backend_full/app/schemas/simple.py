@@ -1,6 +1,6 @@
 from typing import List, Optional, Dict, Any, Union
 from decimal import Decimal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LocationBase(BaseModel):
@@ -16,12 +16,36 @@ class Location(LocationBase):
         from_attributes = True
 
 
+class UnitBase(BaseModel):
+    code: str
+    description: str
+    unit_type: str = Field(..., pattern=r"^(base|package|portion)$")  # 'base', 'package', 'portion'
+    is_discrete: bool = True
 
-class UnitCreate(BaseModel):
-    symbol: str
-    name: str
-    base_unit_code: Optional[str] = None
-    conversion_factor: Optional[Decimal] = None
+
+class UnitCreate(UnitBase):
+    pass
+
+
+class Unit(UnitBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class ProductUnitCreate(BaseModel):
+    unit_id: int
+    ratio_to_base: Decimal = Field(..., gt=0)  # Greater than 0
+    discrete_step: Optional[Decimal] = None
+
+
+class ProductUnit(ProductUnitCreate):
+    id: int
+    product_id: int
+
+    class Config:
+        from_attributes = True
 
 
 class UnitConversionSchema(BaseModel):
@@ -34,19 +58,12 @@ class UnitConversionSchema(BaseModel):
         from_attributes = True
 
 
-class Unit(UnitCreate):
-    code: str
-
-    class Config:
-        from_attributes = True
-
-
 class AttributeDefinitionCreate(BaseModel):
     product_type_id: int
     name: str
     code: str
     data_type: str  # number/boolean/string
-    unit_code: Optional[str] = None
+    unit_id: Optional[int] = None  # Changed from unit_code to unit_id
     is_required: bool = False
 
 
@@ -95,7 +112,7 @@ class ProductCreate(BaseModel):
     sku: Optional[str] = None
     unit_cost: Decimal
     stock: Decimal = Decimal("0")
-    base_unit_code: Optional[str] = None
+    base_unit_id: int  # Changed from base_unit_code to base_unit_id
     attributes: List[ProductAttributeValueCreate] = []
     components: List[ProductComponentCreate] = []
 
@@ -106,7 +123,7 @@ class ProductUpdate(BaseModel):
     sku: Optional[str] = None
     unit_cost: Decimal
     stock: Decimal = Decimal("0")
-    base_unit_code: Optional[str] = None
+    base_unit_id: int  # Changed from base_unit_code to base_unit_id
     attributes: List[ProductAttributeValueCreate] = []
     components: List[ProductComponentCreate] = []
 
@@ -118,8 +135,7 @@ class Product(BaseModel):
     unit_cost: Decimal
     stock: Decimal
     is_composite: bool
-    #stock_by_location: Optional[Decimal] = None  # ← для фильтрации по location_id
-    #locations: List[Location] = []  # ← все локации, где есть продукт
+    base_unit_id: int  # Added base_unit_id
     attributes: List[ProductAttributeValueCreate] = []
     components: List[Dict[str, Any]] = []
 

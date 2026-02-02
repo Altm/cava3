@@ -111,6 +111,14 @@ export interface ProductAttribute {
   value: string;
 }
 
+export interface Unit {
+  id: number;
+  code: string;
+  description: string;
+  unitType: string;  // 'base', 'package', 'portion'
+  isDiscrete: boolean;
+}
+
 export interface Product {
   id: number
   productTypeId: number
@@ -118,6 +126,7 @@ export interface Product {
   stock: number
   unitCost: number
   isComposite: boolean
+  baseUnitId: number;  // Add base unit ID
   attributes: ProductAttribute[];
   components: Array<{ componentProductId: number; quantity: number }>
 }
@@ -298,5 +307,10 @@ async updateProduct(id: number, data: ProductForm) {
 
   async deleteProductType(id: number): Promise<void> {
     await api.delete(`/product-types/${id}`)
+  },
+
+  async getUnits(): Promise<Unit[]> {
+    const res = await api.get<Unit[]>('/units/')
+    return res.data
   }
 }

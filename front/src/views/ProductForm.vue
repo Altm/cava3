@@ -58,6 +58,25 @@
         </div>
       </div>
 
+      <!-- Базовая единица измерения -->
+      <div class="form-group">
+        <label>Базовая единица измерения *</label>
+        <select
+          v-model.number="form.baseUnitId"
+          required
+          class="form-control"
+        >
+          <option value="">Выберите базовую единицу</option>
+          <option
+            v-for="unit in units"
+            :key="unit.id"
+            :value="unit.id"
+          >
+            {{ unit.name }} ({{ unit.code }})
+          </option>
+        </select>
+      </div>
+
       <!-- Атрибуты -->
       <div v-for="attr in currentTypeAttributes" :key="attr.id" class="form-group">
         <label>
@@ -174,7 +193,8 @@ import type {
   ProductType,
   Product,
   ProductAttribute,
-  ProductComponent as ApiComponent
+  ProductComponent as ApiComponent,
+  Unit
 } from '@/api/productApi'
 import { productApi } from '@/api/productApi'
 
@@ -191,11 +211,13 @@ const isEditing = computed(() => !!props.productId)
 // Состояние
 const productTypes = ref<ProductType[]>([])
 const allProducts = ref<Product[]>([])
+const units = ref<Unit[]>([])  // Add units state
 const form = ref({
   productTypeId: 0,
   name: '',
   unitCost: 0,
   stock: 0,
+  baseUnitId: 0,  // Add base unit ID
   isComposite: false,  // Add the composite flag to the form
   attributes: {} as Record<string, any>,
   components: [] as Array<{ componentProductId: number; quantity: number }>
@@ -265,6 +287,7 @@ const handleSubmit = async () => {
       name: form.value.name,
       unit_cost: form.value.unitCost,
       stock: form.value.stock,
+      base_unit_id: form.value.baseUnitId,  // Include base unit ID
       is_composite: isProductTypeComposite,  // Use the composite flag from the product type
       attributes: Object.entries(form.value.attributes)
         .map(([code, value]) => {
@@ -309,11 +332,14 @@ const handleSubmit = async () => {
 // Загрузка данных
 onMounted(async () => {
   try {
-    // Загружаем типы и все товары параллельно
-    const [typesRes, productsRes] = await Promise.all([
+    // Загружаем типы, все товары и единицы измерения параллельно
+    const [typesRes, productsRes, unitsRes] = await Promise.all([
       productApi.getProductTypes(),
-      productApi.getProducts()
+      productApi.getProducts(),
+      productApi.getUnits()  // Load units
     ])
+
+    units.value = unitsRes  // Store units
 
     // Нормализуем типы (если нужно — см. ваш TODO)
     productTypes.value = typesRes.map(type => ({
@@ -382,6 +408,7 @@ onMounted(async () => {
         name: product.name,
         unitCost: product.unitCost,
         stock: product.stock,
+        baseUnitId: product.baseUnitId || 0,  // Set base unit ID
         isComposite: isProductTypeComposite,  // Use the composite flag from the product type
         attributes: initialAttributes,
         components: isProductTypeComposite ? initialComponents : []  // Only include components if product type is composite
@@ -393,6 +420,7 @@ onMounted(async () => {
         name: '',
         unitCost: 0,
         stock: 0,
+        baseUnitId: 0,  // Default base unit ID
         isComposite: false,  // Default to non-composite for new products
         attributes: {},
         components: []
@@ -465,6 +493,7 @@ watch(() => props.productId, async (newId) => {
         name: product.name,
         unitCost: product.unitCost,
         stock: product.stock,
+        baseUnitId: product.baseUnitId || 0,  // Set base unit ID
         isComposite: isProductTypeComposite,  // Use the composite flag from the product type
         attributes: initialAttributes,
         components: isProductTypeComposite ? initialComponents : []  // Only include components if product type is composite
