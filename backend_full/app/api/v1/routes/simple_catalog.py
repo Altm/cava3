@@ -45,9 +45,9 @@ def get_units(user=Depends(PermissionChecker(["unit.read"])), db: Session = Depe
     units = db.query(models.Unit).all()
     return [
         schemas.Unit(
+            id=u.id,
             code=u.code,
-            symbol=u.code,
-            name=u.description,
+            description=u.description,
             unit_type=u.unit_type,
             is_discrete=u.is_discrete
         )
@@ -67,9 +67,9 @@ def create_unit(unit: schemas.UnitCreate, user=Depends(PermissionChecker(["unit.
     db.commit()
     db.refresh(db_unit)
     return schemas.Unit(
+        id=db_unit.id,
         code=db_unit.code,
-        symbol=db_unit.code,
-        name=db_unit.description,
+        description=db_unit.description,
         unit_type=db_unit.unit_type,
         is_discrete=db_unit.is_discrete
     )
