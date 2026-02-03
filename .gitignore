@@ -2,6 +2,7 @@
 frontend/
 front/node_modules
 front/.vscode
+data/product_images
 
 # Python
 __pycache__/
