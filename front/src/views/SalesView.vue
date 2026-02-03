@@ -77,7 +77,10 @@ const productTypeAttributes = computed(() => {
   if (!product) return []
 
   const productType = productTypes.value.find(pt => pt.id === product.productTypeId)
-  return productType ? productType.attributes : []
+  if (!productType) return []
+
+  // Sort attributes by sortOrder
+  return [...productType.attributes].sort((a, b) => a.sortOrder - b.sortOrder)
 })
 
 // Helper function to convert attributes array to object with codes as keys

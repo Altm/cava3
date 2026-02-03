@@ -122,6 +122,16 @@
                   Обязательный
                 </label>
               </div>
+
+              <div class="form-group">
+                <label>Порядок:</label>
+                <input
+                  type="number"
+                  v-model.number="attr.sortOrder"
+                  placeholder="Порядок отображения"
+                  min="1"
+                />
+              </div>
             </div>
           </div>
 
@@ -161,7 +171,7 @@ const form = ref({
   name: '',
   description: '',
   isComposite: false,
-  attributes: [{ name: '', code: '', dataType: 'string', unitId: null, isRequired: false }] as AttributeDefinition[],
+  attributes: [{ name: '', code: '', dataType: 'string', unitId: null, isRequired: false, sortOrder: 1 }] as AttributeDefinition[],
   unitConversions: [] as Array<{ fromUnit: string, toUnit: string, ratio: number }>
 })
 
@@ -210,7 +220,8 @@ const editProductType = (productType: ProductType) => {
   form.value.attributes = productType.attributes && productType.attributes.length > 0
     ? [...productType.attributes.map(attr => ({
         ...attr,
-        unitId: attr.unitId || null
+        unitId: attr.unitId || null,
+        sortOrder: attr.sortOrder || 1  // Ensure sortOrder is set
       }))]
     : []
 
@@ -233,7 +244,9 @@ const deleteProductType = async (id: number) => {
 }
 
 const addAttribute = () => {
-  form.value.attributes.push({ name: '', code: '', dataType: 'string', unitId: null, isRequired: false })
+  // Calculate the next sort order value
+  const maxSortOrder = form.value.attributes.reduce((max, attr) => Math.max(max, attr.sortOrder || 0), 0)
+  form.value.attributes.push({ name: '', code: '', dataType: 'string', unitId: null, isRequired: false, sortOrder: maxSortOrder + 1 })
 }
 
 const removeAttribute = (index: number) => {
@@ -241,7 +254,8 @@ const removeAttribute = (index: number) => {
   form.value.attributes.splice(index, 1)
   // Если массив стал пустым, добавим один пустой атрибут для удобства
   if (form.value.attributes.length === 0) {
-    form.value.attributes.push({ name: '', code: '', dataType: 'string', unitId: null, isRequired: false })
+    const maxSortOrder = form.value.attributes.reduce((max, attr) => Math.max(max, attr.sortOrder || 0), 0)
+    form.value.attributes.push({ name: '', code: '', dataType: 'string', unitId: null, isRequired: false, sortOrder: maxSortOrder + 1 })
   }
 }
 
@@ -270,7 +284,8 @@ const saveProductType = async () => {
             code: attr.code,
             data_type: attr.dataType,
             unit_id: attr.unitId || null,
-            is_required: attr.isRequired
+            is_required: attr.isRequired,
+            sort_order: attr.sortOrder || 1
           }))
       }
 
@@ -288,7 +303,8 @@ const saveProductType = async () => {
           code: attr.code,
           data_type: attr.dataType,
           unit_id: attr.unitId || null,
-          is_required: attr.isRequired
+          is_required: attr.isRequired,
+          sort_order: attr.sortOrder || 1
         }))
       }
 

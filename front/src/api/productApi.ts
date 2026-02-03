@@ -69,6 +69,7 @@ export interface AttributeDefinition {
   dataType: 'number' | 'boolean' | 'string'
   unitId?: number
   isRequired: boolean
+  sortOrder: number
 }
 
 export interface ProductType {

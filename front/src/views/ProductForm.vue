@@ -279,7 +279,10 @@ const form = ref({
 const currentType = computed(() =>
   productTypes.value.find(t => t.id === form.value.productTypeId)
 )
-const currentTypeAttributes = computed(() => currentType.value?.attributes || [])
+const currentTypeAttributes = computed(() => {
+  const attrs = currentType.value?.attributes || []
+  return [...attrs].sort((a, b) => a.sortOrder - b.sortOrder)
+})
 
 // Computed property to determine if the current product type is composite
 const currentProductTypeIsComposite = computed(() => {
