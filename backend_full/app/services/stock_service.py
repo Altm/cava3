@@ -12,11 +12,18 @@ class StockService:
         self.db = db
         self.converter = UnitConverter(db)
 
-    def adjust_stock(self, location_id: int, product_id: int, quantity: Decimal, unit_code: str) -> Stock:
+    def adjust_stock(self, location_id: int, product_id: int, quantity: Decimal, unit_id: int) -> Stock:
         product = self.db.query(Product).get(product_id)
         if not product:
             raise ValidationError("Product missing")
-        quantity_base = self.converter.to_base(unit_code, quantity, product.base_unit_code)
+
+        # Get unit code from unit ID
+        from app.models.models import Unit
+        unit = self.db.query(Unit).get(unit_id)
+        if not unit:
+            raise ValidationError("Unit not found")
+
+        quantity_base = self.converter.to_base(unit.code, quantity, product.base_unit_code)
         stock = self.db.query(Stock).filter_by(location_id=location_id, product_id=product_id).first()
         if not stock:
             stock = Stock(location_id=location_id, product_id=product_id, unit_code=product.base_unit_code, quantity=Decimal("0"))

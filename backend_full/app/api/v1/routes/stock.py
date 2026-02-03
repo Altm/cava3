@@ -14,7 +14,7 @@ def adjust_stock(payload: dict, user=Depends(PermissionChecker(["stock.write"]))
         location_id=payload["location_id"],
         product_id=payload["product_id"],
         quantity=Decimal(str(payload["quantity"])),
-        unit_code=payload["unit"],
+        unit_id=payload["unit_id"],  # Changed to use unit_id
     )
     db.commit()
     return {"product_id": stock.product_id, "location_id": stock.location_id, "quantity": float(stock.quantity)}

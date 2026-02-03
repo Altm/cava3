@@ -119,8 +119,8 @@ def create_product_type(payload: schemas.ProductTypeCreate, user=Depends(Permiss
     if hasattr(payload, 'attributes') and payload.attributes:
         for attr_data in payload.attributes:
             unit_id = None
-            if attr_data.unit_code:
-                unit = db.query(models.Unit).filter(models.Unit.code == attr_data.unit_code).first()
+            if attr_data.unit_id:
+                unit = db.query(models.Unit).get(attr_data.unit_id)
                 if unit:
                     unit_id = unit.id
 
@@ -189,8 +189,8 @@ def update_product_type(product_type_id: int, payload: schemas.ProductTypeUpdate
     if hasattr(payload, 'attributes') and payload.attributes:
         for attr_data in payload.attributes:
             unit_id = None
-            if attr_data.unit_code:
-                unit = db.query(models.Unit).filter(models.Unit.code == attr_data.unit_code).first()
+            if attr_data.unit_id:
+                unit = db.query(models.Unit).get(attr_data.unit_id)
                 if unit:
                     unit_id = unit.id
 
@@ -246,8 +246,8 @@ def delete_product_type(product_type_id: int, user=Depends(PermissionChecker(["p
 @router.post("/attribute-definitions/", response_model=schemas.AttributeDefinition)
 def create_attribute_definition(attr_def: schemas.AttributeDefinitionCreate, user=Depends(PermissionChecker(["attribute_definition.write"])), db: Session = Depends(get_db)):
     unit_id = None
-    if attr_def.unit_code:
-        unit = db.query(models.Unit).filter(models.Unit.code == attr_def.unit_code).first()
+    if attr_def.unit_id:
+        unit = db.query(models.Unit).get(attr_def.unit_id)
         if unit:
             unit_id = unit.id
 
