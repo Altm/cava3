@@ -123,6 +123,7 @@ class Product(Base):
     # New relationships for the updated schema
     product_units: Mapped[list["ProductUnit"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     stocks = relationship("Stock", back_populates="product")
+    meta: Mapped[list["ProductMeta"]] = relationship(back_populates="product", cascade="all, delete-orphan")
 
     @property
     def is_composite(self) -> bool:
@@ -322,6 +323,36 @@ class InventorySnapshot(Base):
     location_id: Mapped[int] = mapped_column(ForeignKey("location.id"), comment="Location reference")
     taken_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="Snapshot time")
     data: Mapped[dict] = mapped_column(JSON, comment="Serialized snapshot data")
+
+
+class ProductMeta(Base):
+    """Shopify metadata for products."""
+
+    __tablename__ = 'product_meta'
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("product.id", ondelete="CASCADE"), nullable=False)
+    old_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    handle: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    body_html: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    vendor: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tags: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    published: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    variant_barcode: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    seo_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    seo_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    google_shopping: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    image: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Unique constraints
+    __table_args__ = (
+        UniqueConstraint("product_id"),
+        UniqueConstraint("old_id"),
+    )
+
+    # Relationships
+    product: Mapped["Product"] = relationship("Product", back_populates="meta")
 
 
 class User(Base):

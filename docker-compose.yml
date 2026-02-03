@@ -13,7 +13,7 @@ services:
     ports:
       - "8001:8000"
     volumes:
-      - ./data/product_images:/app/images:rw
+      - ./data:/app/data:rw
     env_file:
       - .env
 
