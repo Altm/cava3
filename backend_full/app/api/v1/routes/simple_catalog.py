@@ -284,7 +284,7 @@ def _serialize_product(db_product: models.Product, db: Session) -> schemas.Produ
         if val is not None:
             attributes.append(
                 schemas.ProductAttributeValueCreate(
-                    product_attribute_id=attr.attribute_definition_id,
+                    product_attribute_id=attr.product_attribute_id,
                     value=val
                 )
             )

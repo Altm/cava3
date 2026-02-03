@@ -18,13 +18,47 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # First, drop the foreign key constraint
-    # We need to find the exact name of the constraint
-    # Using generic approach to drop constraint
-    try:
-        op.drop_constraint(None, 'product_attribute_value', type_='foreignkey')
-    except:
-        pass  # Continue if constraint doesn't exist with expected name
+    # First, drop the unique constraint that references the old column name
+    # Find the exact name of the constraint
+    from sqlalchemy import text
+    connection = op.get_bind()
+
+    # Query to find the unique constraint name
+    result = connection.execute(text("""
+        SELECT tc.constraint_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
+        WHERE tc.table_name = 'product_attribute_value'
+        AND tc.constraint_type = 'UNIQUE'
+        AND ccu.column_name = 'attribute_definition_id'
+    """))
+
+    rows = result.fetchall()
+    for row in rows:
+        constraint_name = row[0]
+        try:
+            op.drop_constraint(constraint_name, 'product_attribute_value', type_='unique')
+        except:
+            pass  # Continue if constraint doesn't exist with expected name
+
+    # Next, drop the foreign key constraint
+    # Find the exact name of the foreign key constraint
+    result = connection.execute(text("""
+        SELECT con.conname
+        FROM pg_constraint con
+        JOIN pg_class tbl ON tbl.oid = con.conrelid
+        JOIN pg_class ref_tbl ON ref_tbl.oid = con.confrelid
+        WHERE tbl.relname = 'product_attribute_value'
+        AND ref_tbl.relname = 'product_attribute'
+    """))
+
+    rows = result.fetchall()
+    for row in rows:
+        constraint_name = row[0]
+        try:
+            op.drop_constraint(constraint_name, 'product_attribute_value', type_='foreignkey')
+        except:
+            pass  # Continue if constraint doesn't exist with expected name
 
     # Rename the column
     op.alter_column('product_attribute_value', 'attribute_definition_id', new_column_name='product_attribute_id')
@@ -38,12 +72,7 @@ def upgrade() -> None:
         ['id']
     )
     
-    # Also rename the unique constraint to reflect the new column name
-    try:
-        op.drop_constraint('uq_product_attr_value', 'product_attribute_value', type_='unique')
-    except:
-        pass  # Continue if constraint doesn't exist with expected name
-        
+    # Recreate the unique constraint with the new column name
     op.create_unique_constraint(
         'uq_product_attr_val_prod_attr',
         'product_attribute_value',
@@ -52,11 +81,46 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Drop the unique constraint with the new column name
+    # Find the exact name of the constraint
+    from sqlalchemy import text
+    connection = op.get_bind()
+    
+    # Query to find the unique constraint name
+    result = connection.execute(text("""
+        SELECT tc.constraint_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
+        WHERE tc.table_name = 'product_attribute_value'
+        AND tc.constraint_type = 'UNIQUE'
+        AND ccu.column_name = 'product_attribute_id'
+    """))
+    
+    rows = result.fetchall()
+    for row in rows:
+        constraint_name = row[0]
+        try:
+            op.drop_constraint(constraint_name, 'product_attribute_value', type_='unique')
+        except:
+            pass  # Continue if constraint doesn't exist with expected name
+
     # Drop the foreign key constraint with the new column name
-    try:
-        op.drop_constraint('fk_product_attr_val_prod_attr_id', 'product_attribute_value', type_='foreignkey')
-    except:
-        pass  # Continue if constraint doesn't exist with expected name
+    result = connection.execute(text("""
+        SELECT con.conname
+        FROM pg_constraint con
+        JOIN pg_class tbl ON tbl.oid = con.conrelid
+        JOIN pg_class ref_tbl ON ref_tbl.oid = con.confrelid
+        WHERE tbl.relname = 'product_attribute_value'
+        AND ref_tbl.relname = 'product_attribute'
+    """))
+    
+    rows = result.fetchall()
+    for row in rows:
+        constraint_name = row[0]
+        try:
+            op.drop_constraint(constraint_name, 'product_attribute_value', type_='foreignkey')
+        except:
+            pass  # Continue if constraint doesn't exist with expected name
 
     # Rename the column back
     op.alter_column('product_attribute_value', 'product_attribute_id', new_column_name='attribute_definition_id')
@@ -70,12 +134,7 @@ def downgrade() -> None:
         ['id']
     )
     
-    # Rename the unique constraint back
-    try:
-        op.drop_constraint('uq_product_attr_val_prod_attr', 'product_attribute_value', type_='unique')
-    except:
-        pass  # Continue if constraint doesn't exist with expected name
-        
+    # Recreate the unique constraint with the old column name
     op.create_unique_constraint(
         'uq_product_attr_value',
         'product_attribute_value',
