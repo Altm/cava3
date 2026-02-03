@@ -9,7 +9,7 @@ from app.api.v1.deps.auth import get_db, get_current_user, PermissionChecker, al
 from app.models import models
 from app.schemas import simple as schemas
 
-from app.models.models import AttributeDefinition, ProductAttributeValue, Location, ProductUnit
+from app.models.models import ProductAttribute, ProductAttributeValue, Location, ProductUnit
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ def get_product_types(user=Depends(PermissionChecker(["product_type.read"])), db
     types = db.query(models.ProductType).all()
     result = []
     for t in types:
-        attrs = db.query(models.AttributeDefinition).filter(models.AttributeDefinition.product_type_id == t.id).all()
+        attrs = db.query(models.ProductAttribute).filter(models.ProductAttribute.product_type_id == t.id).all()
         result.append(
             schemas.ProductType(
                 id=t.id,
@@ -104,7 +104,7 @@ def get_product_type(product_type_id: int, user=Depends(PermissionChecker(["prod
     t = db.query(models.ProductType).get(product_type_id)
     if not t:
         raise HTTPException(status_code=404, detail="Product type not found")
-    attrs = db.query(models.AttributeDefinition).filter(models.AttributeDefinition.product_type_id == t.id).all()
+    attrs = db.query(models.ProductAttribute).filter(models.ProductAttribute.product_type_id == t.id).all()
     return schemas.ProductType(id=t.id, name=t.name, description=t.description, is_composite=t.is_composite, attributes=attrs)
 
 
@@ -124,7 +124,7 @@ def create_product_type(payload: schemas.ProductTypeCreate, user=Depends(Permiss
                 if unit:
                     unit_id = unit.id
 
-            attr = models.AttributeDefinition(
+            attr = models.ProductAttribute(
                 product_type_id=t.id,
                 name=attr_data.name,
                 code=attr_data.code,
@@ -144,7 +144,7 @@ def create_product_type(payload: schemas.ProductTypeCreate, user=Depends(Permiss
         db.refresh(attr)
 
     # Get all attributes for this product type
-    attrs = db.query(models.AttributeDefinition).filter(models.AttributeDefinition.product_type_id == t.id).all()
+    attrs = db.query(models.ProductAttribute).filter(models.ProductAttribute.product_type_id == t.id).all()
 
     return schemas.ProductType(
         id=t.id,
@@ -168,8 +168,8 @@ def update_product_type(product_type_id: int, payload: schemas.ProductTypeUpdate
 
     # Delete existing attribute values first to avoid foreign key constraint violations
     # Get the attribute definition IDs that will be deleted
-    attr_def_ids = db.query(models.AttributeDefinition.id).filter(
-        models.AttributeDefinition.product_type_id == product_type_id
+    attr_def_ids = db.query(models.ProductAttribute.id).filter(
+        models.ProductAttribute.product_type_id == product_type_id
     ).all()
 
     if attr_def_ids:
@@ -180,8 +180,8 @@ def update_product_type(product_type_id: int, payload: schemas.ProductTypeUpdate
         ).delete()
 
     # Now delete the attribute definitions
-    db.query(models.AttributeDefinition).filter(
-        models.AttributeDefinition.product_type_id == product_type_id
+    db.query(models.ProductAttribute).filter(
+        models.ProductAttribute.product_type_id == product_type_id
     ).delete()
 
     # Create new attributes
@@ -194,7 +194,7 @@ def update_product_type(product_type_id: int, payload: schemas.ProductTypeUpdate
                 if unit:
                     unit_id = unit.id
 
-            attr = models.AttributeDefinition(
+            attr = models.ProductAttribute(
                 product_type_id=product_type_id,
                 name=attr_data.name,
                 code=attr_data.code,
@@ -214,7 +214,7 @@ def update_product_type(product_type_id: int, payload: schemas.ProductTypeUpdate
         db.refresh(attr)
 
     # Get all attributes for this product type
-    attrs = db.query(models.AttributeDefinition).filter(models.AttributeDefinition.product_type_id == t.id).all()
+    attrs = db.query(models.ProductAttribute).filter(models.ProductAttribute.product_type_id == t.id).all()
 
     return schemas.ProductType(
         id=t.id,
@@ -232,8 +232,8 @@ def delete_product_type(product_type_id: int, user=Depends(PermissionChecker(["p
         raise HTTPException(status_code=404, detail="Product type not found")
 
     # Delete associated attributes
-    db.query(models.AttributeDefinition).filter(
-        models.AttributeDefinition.product_type_id == product_type_id
+    db.query(models.ProductAttribute).filter(
+        models.ProductAttribute.product_type_id == product_type_id
     ).delete()
 
     # Delete the product type
@@ -243,15 +243,15 @@ def delete_product_type(product_type_id: int, user=Depends(PermissionChecker(["p
 
 
 # Attribute definitions
-@router.post("/attribute-definitions/", response_model=schemas.AttributeDefinition)
-def create_attribute_definition(attr_def: schemas.AttributeDefinitionCreate, user=Depends(PermissionChecker(["attribute_definition.write"])), db: Session = Depends(get_db)):
+@router.post("/attribute-definitions/", response_model=schemas.ProductAttribute)
+def create_attribute_definition(attr_def: schemas.ProductAttributeCreate, user=Depends(PermissionChecker(["attribute_definition.write"])), db: Session = Depends(get_db)):
     unit_id = None
     if attr_def.unit_id:
         unit = db.query(models.Unit).get(attr_def.unit_id)
         if unit:
             unit_id = unit.id
 
-    db_def = models.AttributeDefinition(
+    db_def = models.ProductAttribute(
         product_type_id=attr_def.product_type_id,
         name=attr_def.name,
         code=attr_def.code,
@@ -352,7 +352,7 @@ def create_product(product: schemas.ProductCreate, user=Depends(PermissionChecke
 
     # Атрибуты
     for attr in product.attributes:
-        attr_def = db.get(AttributeDefinition, attr.attribute_definition_id)
+        attr_def = db.get(ProductAttribute, attr.attribute_definition_id)
         if not attr_def:
             raise ValueError("Invalid attribute definition")
 
@@ -499,7 +499,7 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
 
     db.query(models.ProductAttributeValue).filter(models.ProductAttributeValue.product_id == product.id).delete()
     for attr in product_update.attributes:
-        attr_def = db.get(AttributeDefinition, attr.attribute_definition_id)
+        attr_def = db.get(ProductAttribute, attr.attribute_definition_id)
         if not attr_def:
             raise ValueError("Invalid attribute definition")
 
@@ -666,10 +666,10 @@ def sell_wine_glass(sale_request: schemas.SaleRequest, user=Depends(PermissionCh
         raise HTTPException(status_code=404, detail="Product not found")
     glasses_per_bottle = (
         db.query(models.ProductAttributeValue)
-        .join(models.AttributeDefinition, models.ProductAttributeValue.attribute_definition_id == models.AttributeDefinition.id)
+        .join(models.ProductAttribute, models.ProductAttributeValue.attribute_definition_id == models.ProductAttribute.id)
         .filter(
             models.ProductAttributeValue.product_id == product.id,
-            models.AttributeDefinition.code == "glasses_per_bottle",
+            models.ProductAttribute.code == "glasses_per_bottle",
         )
         .first()
     )
@@ -731,7 +731,7 @@ def delete_unit(unit_id: int, user=Depends(PermissionChecker(["unit.delete"])), 
 
     # Check if unit is used by other entities to prevent foreign key constraint violations
     # Check specific tables that reference units
-    from app.models.models import ProductUnit, Stock, PriceList, Adjustment, Transfer, SaleLine, AttributeDefinition, CompositeComponent
+    from app.models.models import ProductUnit, Stock, PriceList, Adjustment, Transfer, SaleLine, ProductAttribute, CompositeComponent
 
     # Check if this unit is referenced in ProductUnit
     product_unit_count = db.query(ProductUnit).filter(ProductUnit.unit_id == unit_id).count()
@@ -763,8 +763,8 @@ def delete_unit(unit_id: int, user=Depends(PermissionChecker(["unit.delete"])), 
     if sale_line_count > 0:
         raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by sale lines")
 
-    # Check if this unit is referenced in AttributeDefinition
-    attr_def_count = db.query(AttributeDefinition).filter(AttributeDefinition.unit_id == unit_id).count()
+    # Check if this unit is referenced in ProductAttribute
+    attr_def_count = db.query(ProductAttribute).filter(ProductAttribute.unit_id == unit_id).count()
     if attr_def_count > 0:
         raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by attribute definitions")
 

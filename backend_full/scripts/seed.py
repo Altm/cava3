@@ -20,7 +20,7 @@ from app.models.models import (
     Transfer,
     SaleEvent,
     SaleLine,
-    AttributeDefinition,
+    ProductAttribute,
     ProductAttributeValue,
     ProductUnit,
 )
@@ -64,56 +64,56 @@ def seed(db: Session):
     # Attribute definitions
     volume_attr = upsert(
         db,
-        AttributeDefinition,
+        ProductAttribute,
         product_type_id=wine_type.id,
         code="volume",
         defaults={"name": "Объём", "data_type": "number", "unit_code": "liter", "is_required": True},
     )
     strength_attr = upsert(
         db,
-        AttributeDefinition,
+        ProductAttribute,
         product_type_id=wine_type.id,
         code="strength",
         defaults={"name": "Крепость", "data_type": "number", "is_required": True},
     )
     glasses_per_bottle_attr = upsert(
         db,
-        AttributeDefinition,
+        ProductAttribute,
         product_type_id=wine_type.id,
         code="glasses_per_bottle",
         defaults={"name": "Бокалов в бутылке", "data_type": "number", "is_required": False},
     )
     weight_attr = upsert(
         db,
-        AttributeDefinition,
+        ProductAttribute,
         product_type_id=olives_type.id,
         code="weight",
         defaults={"name": "Вес", "data_type": "number", "unit_code": "kg", "is_required": True},
     )
     calories_attr = upsert(
         db,
-        AttributeDefinition,
+        ProductAttribute,
         product_type_id=olives_type.id,
         code="calories",
         defaults={"name": "Калорийность", "data_type": "number", "is_required": True},
     )
     has_pit_attr = upsert(
         db,
-        AttributeDefinition,
+        ProductAttribute,
         product_type_id=olives_type.id,
         code="has_pit",
         defaults={"name": "С косточкой", "data_type": "boolean", "is_required": True},
     )
     bread_weight_attr = upsert(
         db,
-        AttributeDefinition,
+        ProductAttribute,
         product_type_id=bread_type.id,
         code="weight",
         defaults={"name": "Вес", "data_type": "number", "unit_code": "kg", "is_required": True},
     )
     paste_weight_attr = upsert(
         db,
-        AttributeDefinition,
+        ProductAttribute,
         product_type_id=tomato_paste_type.id,
         code="weight",
         defaults={"name": "Вес", "data_type": "number", "unit_code": "kg", "is_required": True},

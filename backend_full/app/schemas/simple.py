@@ -65,7 +65,7 @@ class UnitConversionSchema(BaseModel):
         from_attributes = True
 
 
-class AttributeDefinitionCreate(BaseModel):
+class ProductAttributeCreate(BaseModel):
     product_type_id: int
     name: str
     code: str
@@ -74,7 +74,7 @@ class AttributeDefinitionCreate(BaseModel):
     is_required: bool = False
 
 
-class AttributeDefinition(AttributeDefinitionCreate):
+class ProductAttribute(ProductAttributeCreate):
     id: int
 
     class Config:
@@ -85,19 +85,19 @@ class ProductTypeCreate(BaseModel):
     name: str
     description: Optional[str] = None
     is_composite: bool = False
-    attributes: List[AttributeDefinitionCreate] = []
+    attributes: List[ProductAttributeCreate] = []
 
 
 class ProductTypeUpdate(BaseModel):
     name: str
     description: Optional[str] = None
     is_composite: bool = False
-    attributes: List[AttributeDefinitionCreate] = []
+    attributes: List[ProductAttributeCreate] = []
 
 
 class ProductType(ProductTypeCreate):
     id: int
-    attributes: List[AttributeDefinition] = []
+    attributes: List[ProductAttribute] = []
 
     class Config:
         from_attributes = True

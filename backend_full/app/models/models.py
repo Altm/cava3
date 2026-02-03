@@ -40,7 +40,7 @@ class Unit(Base):
     adjustments: Mapped[list["Adjustment"]] = relationship(back_populates="unit")
     transfers: Mapped[list["Transfer"]] = relationship(back_populates="unit")
     sale_lines: Mapped[list["SaleLine"]] = relationship(back_populates="unit")
-    attribute_definitions: Mapped[list["AttributeDefinition"]] = relationship(back_populates="unit")
+    attribute_definitions: Mapped[list["ProductAttribute"]] = relationship(back_populates="unit")
     composite_components: Mapped[list["CompositeComponent"]] = relationship(back_populates="unit")
 
 
@@ -95,6 +95,9 @@ class ProductType(Base):
     description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="Extended description")
     is_composite: Mapped[bool] = mapped_column(Boolean, default=False, comment="Composite flag for recipes")
 
+    # Relationships
+    attributes: Mapped[list["ProductAttribute"]] = relationship(back_populates="product_type")
+
 
 class Product(Base):
     """Base product representation."""
@@ -137,23 +140,27 @@ class ProductCategory(Base):
 
 
 @deprecated(
-    reason="Use AttributeDefinition",
+    reason="Use ProductAttribute",
     version="0.1.0",
-    alternative="AttributeDefinition",
+    alternative="ProductAttribute",
     category=FutureWarning  # Для видимости у конечных пользователей библиотеки
 )
-class ProductAttribute(Base):
-    """Flexible attributes for products."""
+class ProductAttributeOld(Base):
+    """Flexible attributes for products (deprecated)."""
+
+    __tablename__ = 'product_attribute_old'  # Give it a different table name
 
     id: Mapped[int] = mapped_column(primary_key=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Product reference")
     name: Mapped[str] = mapped_column(String(64), comment="Attribute name")
     value: Mapped[str] = mapped_column(String(255), comment="Attribute value")
-    __table_args__ = (UniqueConstraint("product_id", "name", name="uq_product_attribute"),)
+    __table_args__ = (UniqueConstraint("product_id", "name", name="uq_product_attribute_old"),)
 
 
-class AttributeDefinition(Base):
-    """Attribute definitions bound to product types with explicit data types."""
+class ProductAttribute(Base):
+    """Attribute definitions bound to product types with explicit data types (previously called AttributeDefinition)."""
+
+    __tablename__ = 'product_attribute'
 
     id: Mapped[int] = mapped_column(primary_key=True)
     product_type_id: Mapped[int] = mapped_column(ForeignKey("product_type.id"), comment="Product type reference")
@@ -162,10 +169,11 @@ class AttributeDefinition(Base):
     data_type: Mapped[str] = mapped_column(String(16), comment="number/boolean/string")
     unit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("unit.id"), nullable=True, comment="Optional unit reference")
     is_required: Mapped[bool] = mapped_column(Boolean, default=False, comment="Is attribute required")
-    __table_args__ = (UniqueConstraint("product_type_id", "code", name="uq_attrdef_producttype_code"),)
+    __table_args__ = (UniqueConstraint("product_type_id", "code", name="uq_productattr_producttype_code"),)
 
     # Relationships
     unit: Mapped["Unit"] = relationship("Unit", back_populates="attribute_definitions")
+    product_type: Mapped["ProductType"] = relationship("ProductType", back_populates="attributes")
 
 
 
@@ -174,23 +182,15 @@ class ProductAttributeValue(Base):
     """Typed values for attributes per product."""
 
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), primary_key=True, comment="Product reference")
-    attribute_definition_id: Mapped[int] = mapped_column(ForeignKey("attribute_definition.id"), primary_key=True, comment="Attribute definition reference")
+    attribute_definition_id: Mapped[int] = mapped_column(ForeignKey("product_attribute.id"), primary_key=True, comment="Attribute definition reference")
     value_number: Mapped[Optional[float]] = mapped_column(Numeric(10, 6), nullable=True, comment="Numeric value")
     value_boolean: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, comment="Boolean value")
     value_string: Mapped[Optional[str]] = mapped_column(String(3000), nullable=True, comment="String value")
     __table_args__ = (UniqueConstraint("product_id", "attribute_definition_id", name="uq_product_attr_value"),)
     product: Mapped["Product"] = relationship("Product", back_populates="attributes")
-    attribute_definition: Mapped["AttributeDefinition"] = relationship("AttributeDefinition")
+    attribute_definition: Mapped["ProductAttribute"] = relationship("ProductAttribute")
 
 
-class ProductAttribute_(Base):
-    """Flexible attributes for products (legacy approach kept for compatibility)."""
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Product reference")
-    name: Mapped[str] = mapped_column(String(64), comment="Attribute name")
-    value: Mapped[str] = mapped_column(String(255), comment="Attribute value")
-    __table_args__ = (UniqueConstraint("product_id", "name", name="uq_product_attribute"),)
 
 
 class CompositeComponent(Base):

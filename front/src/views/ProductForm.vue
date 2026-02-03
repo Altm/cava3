@@ -123,22 +123,6 @@
           Неизвестный тип: {{ attr.dataType }}
         </div>
       </div>
-
-      <!-- Базовая единица измерения -->
-      <div class="form-group">
-        <label>Базовая единица измерения *</label>
-        <select
-          v-model.number="form.baseUnitId"
-          required
-          class="form-control"
-        >
-          <option value="">Выберите базовую единицу</option>
-          <option v-for="unit in units" :key="unit.id" :value="unit.id">
-            {{ unit.name }} ({{ unit.code }})
-          </option>
-        </select>
-      </div>
-
       <!-- Флаг составного товара - отображается на основе типа товара -->
       <div class="form-group">
         <label class="form-check-label">
