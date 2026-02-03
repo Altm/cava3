@@ -346,7 +346,7 @@ const handleSubmit = async () => {
           const def = currentType.value?.attributes?.find(a => a.code === code)
           if (!def) return null
           return {
-            attribute_definition_id: def.id,
+            product_attribute_id: def.id,
             value: String(value) // всегда строка для бэкенда
           }
         })

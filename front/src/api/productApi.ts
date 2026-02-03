@@ -228,7 +228,7 @@ export const productApi = {
         throw new Error(`Attribute definition not found for code: ${code}`)
       }
       return {
-        attribute_definition_id: attrDef.id,
+        product_attribute_id: attrDef.id,
         value
       }
     }).filter(Boolean); // Remove null entries
@@ -240,7 +240,7 @@ export const productApi = {
       stock: data.stock,
       base_unit_id: data.baseUnitId,  // Add base unit ID
       is_composite: data.isComposite,  // Include the composite flag
-      attributes: attributes as Array<{ attribute_definition_id: number; value: string }>,
+      attributes: attributes as Array<{ product_attribute_id: number; value: string }>,
       components: data.components.map(c => ({
         component_product_id: c.componentProductId,
         quantity: c.quantity
@@ -277,11 +277,11 @@ async updateProduct(id: number, data: ProductForm) {
       }
 
       return {
-        attribute_definition_id: attrDef.id,
+        product_attribute_id: attrDef.id,
         value: String(value) // always string!
       }
     })
-    .filter(Boolean) as Array<{ attribute_definition_id: number; value: string }>
+    .filter(Boolean) as Array<{ product_attribute_id: number; value: string }>
 
   // ✅ Correct component format
   const components = (data.components || [])
@@ -298,7 +298,7 @@ async updateProduct(id: number, data: ProductForm) {
     stock: data.stock,          // string, e.g. "44.000000"
     base_unit_id: data.baseUnitId,  // Add base unit ID
     is_composite: data.isComposite,  // Include the composite flag
-    attributes: attributes as Array<{ attribute_definition_id: number; value: string }>,
+    attributes: attributes as Array<{ product_attribute_id: number; value: string }>,
     components,
     product_units: data.productUnits.map(pu => ({
       unit_id: pu.unit_id,
