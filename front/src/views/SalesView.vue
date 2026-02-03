@@ -95,7 +95,7 @@ const getAttributesAsObject = (productId: number) => {
 
   const attrObj: Record<string, any> = {};
   product.attributes.forEach(attr => {
-    const attrDef = productType.attributes.find(def => def.id === attr.attributeDefinitionId);
+    const attrDef = productType.attributes.find(def => def.id === attr.productAttributeId);
     if (attrDef) {
       attrObj[attrDef.code] = attr.value;
     }
@@ -133,7 +133,7 @@ const getGlassesPerBottleText = (product: Product) => {
 
     const attrDef = productType.attributes.find(def => def.code === 'glasses_per_bottle');
     if (attrDef) {
-      const attrValue = product.attributes.find(attr => attr.attributeDefinitionId === attrDef.id);
+      const attrValue = product.attributes.find(attr => attr.productAttributeId === attrDef.id);
       if (attrValue && attrValue.value) {
         return `(бокалов в бутылке: ${attrValue.value})`;
       }
@@ -156,7 +156,7 @@ const onProductChange = () => {
 
       const attrDef = productType.attributes.find(def => def.code === 'glasses_per_bottle');
       if (attrDef) {
-        const attrValue = product.attributes.find(attr => attr.attributeDefinitionId === attrDef.id);
+        const attrValue = product.attributes.find(attr => attr.productAttributeId === attrDef.id);
         if (attrValue && attrValue.value) {
           glassesPerBottle.value = parseFloat(attrValue.value);
           if (!currentProductHasGlasses.value) {

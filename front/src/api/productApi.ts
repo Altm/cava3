@@ -97,7 +97,7 @@ export interface ProductForm {
 }
 
 export interface ProductAttributeValue {
-  attributeDefinitionId: number;
+  productAttributeId: number;
   value: string;
 }
 
@@ -113,7 +113,7 @@ export interface SaleResponse {
 
 // Define the attribute structure as it comes from the API after snakeToCamel conversion
 export interface ProductAttribute {
-  attributeDefinitionId: number;
+  productAttributeId: number;
   value: string;
 }
 

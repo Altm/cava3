@@ -419,7 +419,7 @@ onMounted(async () => {
       if (type.attributes) {
         for (const def of type.attributes) {
           const apiAttr = (product.attributes || []).find(
-            (a: ProductAttribute) => a.attributeDefinitionId === def.id
+            (a: ProductAttribute) => a.productAttributeId === def.id
           )
           let value: any = null
           if (apiAttr) {
@@ -509,7 +509,7 @@ watch(() => props.productId, async (newId) => {
       if (type.attributes) {
         for (const def of type.attributes) {
           const apiAttr = (product.attributes || []).find(
-            (a: ProductAttribute) => a.attributeDefinitionId === def.id
+            (a: ProductAttribute) => a.productAttributeId === def.id
           )
           let value: any = null
           if (apiAttr) {
