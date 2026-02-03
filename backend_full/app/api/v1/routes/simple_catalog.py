@@ -130,7 +130,8 @@ def create_product_type(payload: schemas.ProductTypeCreate, user=Depends(Permiss
                 code=attr_data.code,
                 data_type=attr_data.data_type,
                 unit_id=unit_id,
-                is_required=attr_data.is_required
+                is_required=attr_data.is_required,
+                sort_order=attr_data.sort_order
             )
             db.add(attr)
             db.flush()
@@ -176,7 +177,7 @@ def update_product_type(product_type_id: int, payload: schemas.ProductTypeUpdate
         attr_def_id_list = [row[0] for row in attr_def_ids]
         # Delete associated product attribute values
         db.query(models.ProductAttributeValue).filter(
-            models.ProductAttributeValue.attribute_definition_id.in_(attr_def_id_list)
+            models.ProductAttributeValue.product_attribute_id.in_(attr_def_id_list)
         ).delete()
 
     # Now delete the attribute definitions
@@ -200,7 +201,8 @@ def update_product_type(product_type_id: int, payload: schemas.ProductTypeUpdate
                 code=attr_data.code,
                 data_type=attr_data.data_type,
                 unit_id=unit_id,
-                is_required=attr_data.is_required
+                is_required=attr_data.is_required,
+                sort_order=attr_data.sort_order
             )
             db.add(attr)
             db.flush()
@@ -258,6 +260,7 @@ def create_attribute_definition(attr_def: schemas.ProductAttributeCreate, user=D
         data_type=attr_def.data_type,
         unit_id=unit_id,
         is_required=attr_def.is_required,
+        sort_order=attr_def.sort_order,
     )
     db.add(db_def)
     db.commit()
@@ -281,7 +284,7 @@ def _serialize_product(db_product: models.Product, db: Session) -> schemas.Produ
         if val is not None:
             attributes.append(
                 schemas.ProductAttributeValueCreate(
-                    attribute_definition_id=attr.attribute_definition_id,
+                    product_attribute_id=attr.attribute_definition_id,
                     value=val
                 )
             )
@@ -352,13 +355,13 @@ def create_product(product: schemas.ProductCreate, user=Depends(PermissionChecke
 
     # Атрибуты
     for attr in product.attributes:
-        attr_def = db.get(ProductAttribute, attr.attribute_definition_id)
+        attr_def = db.get(ProductAttribute, attr.product_attribute_id)
         if not attr_def:
             raise ValueError("Invalid attribute definition")
 
         db_attr = ProductAttributeValue(
             product_id=db_product.id,  # ✅ ПРАВИЛЬНО: используем id сохранённого товара
-            attribute_definition_id=attr.attribute_definition_id
+            product_attribute_id=attr.product_attribute_id
         )
 
         if attr_def.data_type == "number":
@@ -499,13 +502,13 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
 
     db.query(models.ProductAttributeValue).filter(models.ProductAttributeValue.product_id == product.id).delete()
     for attr in product_update.attributes:
-        attr_def = db.get(ProductAttribute, attr.attribute_definition_id)
+        attr_def = db.get(ProductAttribute, attr.product_attribute_id)
         if not attr_def:
             raise ValueError("Invalid attribute definition")
 
         db_attr = models.ProductAttributeValue(
             product_id=product.id,
-            attribute_definition_id=attr.attribute_definition_id
+            product_attribute_id=attr.product_attribute_id
         )
 
         if attr_def.data_type == "number":
@@ -666,7 +669,7 @@ def sell_wine_glass(sale_request: schemas.SaleRequest, user=Depends(PermissionCh
         raise HTTPException(status_code=404, detail="Product not found")
     glasses_per_bottle = (
         db.query(models.ProductAttributeValue)
-        .join(models.ProductAttribute, models.ProductAttributeValue.attribute_definition_id == models.ProductAttribute.id)
+        .join(models.ProductAttribute, models.ProductAttributeValue.product_attribute_id == models.ProductAttribute.id)
         .filter(
             models.ProductAttributeValue.product_id == product.id,
             models.ProductAttribute.code == "glasses_per_bottle",

@@ -81,7 +81,7 @@ def seed(db: Session):
         ProductAttribute,
         product_type_id=wine_type.id,
         code="glasses_per_bottle",
-        defaults={"name": "Бокалов в бутылке", "data_type": "number", "is_required": False},
+        defaults={"name": "Бокалов в бутылке", "data_type": "number", "is_required": False, "sort_order": 1},
     )
     weight_attr = upsert(
         db,
@@ -137,7 +137,7 @@ def seed(db: Session):
         for attr_def, val in attrs.items():
             pav = ProductAttributeValue(
                 product_id=prod.id,
-                attribute_definition_id=attr_def.id,
+                product_attribute_id=attr_def.id,
                 value_number=Decimal(str(val)) if attr_def.data_type == "number" else None,
                 value_boolean=bool(val) if attr_def.data_type == "boolean" else None,
                 value_string=str(val) if attr_def.data_type == "string" else None,

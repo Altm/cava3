@@ -72,6 +72,7 @@ class ProductAttributeCreate(BaseModel):
     data_type: str  # number/boolean/string
     unit_id: Optional[int] = None  # Changed from unit_code to unit_id
     is_required: bool = False
+    sort_order: int = 1  # Order in which the attribute should be displayed
 
 
 class ProductAttribute(ProductAttributeCreate):
@@ -104,7 +105,7 @@ class ProductType(ProductTypeCreate):
 
 
 class ProductAttributeValueCreate(BaseModel):
-    attribute_definition_id: int
+    product_attribute_id: int
     value: Union[float, bool, str, Decimal]
 
 

@@ -169,6 +169,7 @@ class ProductAttribute(Base):
     data_type: Mapped[str] = mapped_column(String(16), comment="number/boolean/string")
     unit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("unit.id"), nullable=True, comment="Optional unit reference")
     is_required: Mapped[bool] = mapped_column(Boolean, default=False, comment="Is attribute required")
+    sort_order: Mapped[int] = mapped_column(Integer, default=1, comment="Order in which the attribute should be displayed")
     __table_args__ = (UniqueConstraint("product_type_id", "code", name="uq_productattr_producttype_code"),)
 
     # Relationships
@@ -182,13 +183,13 @@ class ProductAttributeValue(Base):
     """Typed values for attributes per product."""
 
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), primary_key=True, comment="Product reference")
-    attribute_definition_id: Mapped[int] = mapped_column(ForeignKey("product_attribute.id"), primary_key=True, comment="Attribute definition reference")
+    product_attribute_id: Mapped[int] = mapped_column(ForeignKey("product_attribute.id"), primary_key=True, comment="Product attribute reference")
     value_number: Mapped[Optional[float]] = mapped_column(Numeric(10, 6), nullable=True, comment="Numeric value")
     value_boolean: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, comment="Boolean value")
     value_string: Mapped[Optional[str]] = mapped_column(String(3000), nullable=True, comment="String value")
-    __table_args__ = (UniqueConstraint("product_id", "attribute_definition_id", name="uq_product_attr_value"),)
+    __table_args__ = (UniqueConstraint("product_id", "product_attribute_id", name="uq_product_attr_val_prod_attr"),)
     product: Mapped["Product"] = relationship("Product", back_populates="attributes")
-    attribute_definition: Mapped["ProductAttribute"] = relationship("ProductAttribute")
+    product_attribute: Mapped["ProductAttribute"] = relationship("ProductAttribute")
 
 
 
