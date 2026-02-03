@@ -89,6 +89,11 @@ export interface ProductForm {
     componentProductId: number
     quantity: number
   }>
+  productUnits: Array<{          // Add product-specific units
+    unit_id: number
+    ratio_to_base: number
+    discrete_step: number | null
+  }>
 }
 
 export interface ProductAttributeValue {
@@ -120,6 +125,14 @@ export interface Unit {
   isDiscrete: boolean;
 }
 
+export interface ProductUnit {
+  id: number
+  product_id: number
+  unit_id: number
+  ratio_to_base: number
+  discrete_step: number | null
+}
+
 export interface Product {
   id: number
   productTypeId: number
@@ -130,6 +143,7 @@ export interface Product {
   baseUnitId: number;  // Add base unit ID
   attributes: ProductAttribute[];
   components: Array<{ componentProductId: number; quantity: number }>
+  productUnits?: ProductUnit[];  // Add product-specific units
 }
 
 export interface Location {
@@ -230,6 +244,11 @@ export const productApi = {
       components: data.components.map(c => ({
         component_product_id: c.componentProductId,
         quantity: c.quantity
+      })),
+      product_units: data.productUnits.map(pu => ({
+        unit_id: pu.unit_id,
+        ratio_to_base: pu.ratio_to_base,
+        discrete_step: pu.discrete_step
       }))
     }
 
@@ -237,16 +256,16 @@ export const productApi = {
   },
 
 async updateProduct(id: number, data: ProductForm) {
-  // 🔒 Валидация: productTypeId должен быть числом > 0
+  // 🔒 Validation: productTypeId must be a number > 0
   if (!data.productTypeId || typeof data.productTypeId !== 'number' || data.productTypeId <= 0) {
     throw new Error('Invalid productTypeId')
   }
 
-  // Загружаем тип товара для маппинга атрибутов
+  // Load product type for attribute mapping
   const productType = await api.get(`/product-types/${data.productTypeId}`)
   const attributeDefs = productType.data.attributes
 
-  // Преобразуем атрибуты
+  // Transform attributes
   const attributes = Object.entries(data.attributes)
     .map(([code, value]) => {
       if (value === null || value === undefined || value === '') return null
@@ -259,28 +278,33 @@ async updateProduct(id: number, data: ProductForm) {
 
       return {
         attribute_definition_id: attrDef.id,
-        value: String(value) // всегда строка!
+        value: String(value) // always string!
       }
     })
     .filter(Boolean) as Array<{ attribute_definition_id: number; value: string }>
 
-  // ✅ Правильный формат компонентов
+  // ✅ Correct component format
   const components = (data.components || [])
-    .filter(c => c.componentProductId > 0 && c.quantity > 0) // фильтруем пустые
+    .filter(c => c.componentProductId > 0 && c.quantity > 0) // filter empty
     .map(c => ({
-      component_product_id: c.componentProductId, // ← ключи как в API
+      component_product_id: c.componentProductId, // ← API keys
       quantity: c.quantity
     }))
 
   const payload = {
     product_type_id: data.productTypeId,
     name: data.name,
-    unit_cost: data.unitCost,   // строка, например "33.00"
-    stock: data.stock,          // строка, например "44.000000"
+    unit_cost: data.unitCost,   // string, e.g. "33.00"
+    stock: data.stock,          // string, e.g. "44.000000"
     base_unit_id: data.baseUnitId,  // Add base unit ID
     is_composite: data.isComposite,  // Include the composite flag
     attributes: attributes as Array<{ attribute_definition_id: number; value: string }>,
-    components
+    components,
+    product_units: data.productUnits.map(pu => ({
+      unit_id: pu.unit_id,
+      ratio_to_base: pu.ratio_to_base,
+      discrete_step: pu.discrete_step
+    }))
   }
 
   return api.put(`/products/${id}`, payload)

@@ -124,6 +124,21 @@
         </div>
       </div>
 
+      <!-- Базовая единица измерения -->
+      <div class="form-group">
+        <label>Базовая единица измерения *</label>
+        <select
+          v-model.number="form.baseUnitId"
+          required
+          class="form-control"
+        >
+          <option value="">Выберите базовую единицу</option>
+          <option v-for="unit in units" :key="unit.id" :value="unit.id">
+            {{ unit.name }} ({{ unit.code }})
+          </option>
+        </select>
+      </div>
+
       <!-- Флаг составного товара - отображается на основе типа товара -->
       <div class="form-group">
         <label class="form-check-label">
@@ -135,6 +150,58 @@
           />
           Составной товар (настраивается в типе товара)
         </label>
+      </div>
+
+      <!-- Продукто-зависимые единицы измерения -->
+      <div class="form-group">
+        <label>Продукто-зависимые единицы измерения</label>
+        <div class="product-units-section">
+          <div v-for="(pu, index) in form.productUnits" :key="index" class="product-unit-item">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Единица измерения</label>
+                <select
+                  v-model.number="pu.unit_id"
+                  class="form-control"
+                >
+                  <option value="">Выберите единицу</option>
+                  <option v-for="unit in units" :key="unit.id" :value="unit.id">
+                    {{ unit.name }} ({{ unit.code }})
+                  </option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>Коэффициент к базовой</label>
+                <input
+                  v-model.number="pu.ratio_to_base"
+                  type="number"
+                  step="0.000001"
+                  placeholder="Коэффициент"
+                  class="form-control"
+                />
+              </div>
+
+              <div class="form-group">
+                <label>Дискретный шаг</label>
+                <input
+                  v-model.number="pu.discrete_step"
+                  type="number"
+                  step="0.000001"
+                  placeholder="Шаг"
+                  class="form-control"
+                />
+              </div>
+
+              <div class="form-group">
+                <label>&nbsp;</label>
+                <button type="button" @click="removeProductUnit(index)" class="btn btn-danger btn-sm">Удалить</button>
+              </div>
+            </div>
+          </div>
+
+          <button type="button" @click="addProductUnit" class="btn btn-secondary">+ Добавить единицу</button>
+        </div>
       </div>
 
       <!-- Компоненты (только для составных) -->
@@ -220,7 +287,8 @@ const form = ref({
   baseUnitId: 0,  // Add base unit ID
   isComposite: false,  // Add the composite flag to the form
   attributes: {} as Record<string, any>,
-  components: [] as Array<{ componentProductId: number; quantity: number }>
+  components: [] as Array<{ componentProductId: number; quantity: number }>,
+  productUnits: [] as Array<{ unit_id: number; ratio_to_base: number; discrete_step: number | null }>
 })
 
 // Вычисляемые свойства
@@ -402,6 +470,9 @@ onMounted(async () => {
       const productType = productTypes.value.find(t => t.id === product.productTypeId);
       const isProductTypeComposite = productType ? productType.isComposite : false;
 
+      // Get product-specific units if available
+      const productUnits = product.productUnits || [];
+
       // Устанавливаем форму
       form.value = {
         productTypeId: Number(product.productTypeId), // ← гарантируем number
@@ -411,7 +482,8 @@ onMounted(async () => {
         baseUnitId: product.baseUnitId || 0,  // Set base unit ID
         isComposite: isProductTypeComposite,  // Use the composite flag from the product type
         attributes: initialAttributes,
-        components: isProductTypeComposite ? initialComponents : []  // Only include components if product type is composite
+        components: isProductTypeComposite ? initialComponents : [],  // Only include components if product type is composite
+        productUnits: productUnits  // Add product-specific units
       }
     } else {
       // Новый товар — начальное состояние
@@ -423,7 +495,8 @@ onMounted(async () => {
         baseUnitId: 0,  // Default base unit ID
         isComposite: false,  // Default to non-composite for new products
         attributes: {},
-        components: []
+        components: [],
+        productUnits: []  // Initialize with empty product units
       }
     }
   } catch (e) {
@@ -496,7 +569,8 @@ watch(() => props.productId, async (newId) => {
         baseUnitId: product.baseUnitId || 0,  // Set base unit ID
         isComposite: isProductTypeComposite,  // Use the composite flag from the product type
         attributes: initialAttributes,
-        components: isProductTypeComposite ? initialComponents : []  // Only include components if product type is composite
+        components: isProductTypeComposite ? initialComponents : [],  // Only include components if product type is composite
+        productUnits: productUnits  // Add product-specific units
       }
     } catch (e) {
       console.error('Ошибка загрузки данных:', e)
@@ -505,6 +579,19 @@ watch(() => props.productId, async (newId) => {
     }
   }
 })
+
+// Methods for managing product-specific units
+const addProductUnit = () => {
+  form.value.productUnits.push({
+    unit_id: 0,
+    ratio_to_base: 1.0,
+    discrete_step: null
+  });
+};
+
+const removeProductUnit = (index: number) => {
+  form.value.productUnits.splice(index, 1);
+};
 </script>
 
 <style scoped>
@@ -553,6 +640,21 @@ label {
 .form-check-label {
   display: flex;
   align-items: center;
+}
+
+.product-units-section {
+  border: 1px solid #ddd;
+  padding: 15px;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+}
+
+.product-unit-item {
+  margin-bottom: 10px;
+  padding: 10px;
+  background-color: white;
+  border-radius: 4px;
+  border: 1px solid #eee;
 }
 
 .required {
