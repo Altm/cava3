@@ -210,7 +210,7 @@ const editProductType = (productType: ProductType) => {
   form.value.attributes = productType.attributes && productType.attributes.length > 0
     ? [...productType.attributes.map(attr => ({
         ...attr,
-        unitCode: attr.unitId ? String(attr.unitId) : undefined
+        unitId: attr.unitId || null
       }))]
     : []
 
@@ -233,7 +233,7 @@ const deleteProductType = async (id: number) => {
 }
 
 const addAttribute = () => {
-  form.value.attributes.push({ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false })
+  form.value.attributes.push({ name: '', code: '', dataType: 'string', unitId: null, isRequired: false })
 }
 
 const removeAttribute = (index: number) => {
@@ -241,7 +241,7 @@ const removeAttribute = (index: number) => {
   form.value.attributes.splice(index, 1)
   // Если массив стал пустым, добавим один пустой атрибут для удобства
   if (form.value.attributes.length === 0) {
-    form.value.attributes.push({ name: '', code: '', dataType: 'string', unitCode: '', isRequired: false })
+    form.value.attributes.push({ name: '', code: '', dataType: 'string', unitId: null, isRequired: false })
   }
 }
 
@@ -262,14 +262,16 @@ const saveProductType = async () => {
         name: form.value.name,
         description: form.value.description,
         is_composite: form.value.isComposite,
-        attributes: form.value.attributes.map(attr => ({
-          product_type_id: form.value.id,
-          name: attr.name,
-          code: attr.code,
-          data_type: attr.dataType,
-          unit_code: attr.unitCode || null,
-          is_required: attr.isRequired
-        }))
+        attributes: form.value.attributes
+          .filter(attr => attr.code.trim() !== '')  // Filter out attributes with empty codes
+          .map(attr => ({
+            product_type_id: form.value.id,
+            name: attr.name,
+            code: attr.code,
+            data_type: attr.dataType,
+            unit_id: attr.unitId || null,
+            is_required: attr.isRequired
+          }))
       }
 
       // Use productApi for consistency
@@ -285,7 +287,7 @@ const saveProductType = async () => {
           name: attr.name,
           code: attr.code,
           data_type: attr.dataType,
-          unit_code: attr.unitCode || null,
+          unit_id: attr.unitId || null,
           is_required: attr.isRequired
         }))
       }
