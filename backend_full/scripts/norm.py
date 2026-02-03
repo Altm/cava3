@@ -78,7 +78,7 @@ df.insert(0, 'id', range(1, len(df) + 1))
 # === 2. Переименовываем ВСЕ колонки ===
 new_columns = {}
 for col in df.columns:
-    if col == 'old_id':
+    if col == 'id':
         new_columns[col] = 'old_id'
     else:
         new_name = process_metafield_column(col)
@@ -115,7 +115,7 @@ def normalize_row(row):
 
     # --- Вина ---
     if "Alcoholic Beverages > Wine" in cat or "Wine" in title or "vin" in title.lower():
-        vintage = "NV"
+        vintage = ""  # <-- по умолчанию пусто
         size = "0.75 L"
 
         for name, val in [(opt1_name, opt1_val), (opt2_name, opt2_val), (opt3_name, opt3_val)]:
@@ -123,7 +123,7 @@ def normalize_row(row):
             if re.fullmatch(r"\d{4}", val):
                 vintage = val
             elif any(kw in name_lower for kw in ["vint", "añad", "añada", "cosecha", "vintage"]):
-                vintage = val if val else "NV"
+                vintage = val
             elif any(kw in name_lower for kw in ["size", "tamaño", "formato", "capacidad"]):
                 size = normalize_size(val)
             elif val and any(kw in val.lower() for kw in ["l", "ml", "gr", "kg"]) and not re.fullmatch(r"\d{4}", val):
@@ -137,8 +137,7 @@ def normalize_row(row):
         row["option3_value"] = ""
 
     # --- Пиво / Безалкогольные напитки ---
-    elif any(x in cat for x in
-             ["> Beer", "> Low Alcohol", "> Water"]) or "beer" in title.lower() or "agua" in title.lower():
+    elif any(x in cat for x in ["> Beer", "> Low Alcohol", "> Water"]) or "beer" in title.lower() or "agua" in title.lower():
         exp_date = ""
         for val in [opt1_val, opt2_val, opt3_val]:
             if val:
@@ -152,8 +151,7 @@ def normalize_row(row):
         row["option3_value"] = ""
 
     # --- Крепкий алкоголь / Ликёры ---
-    elif any(x in cat for x in ["> Liquor", "> Orujo", "> Brandy", "> Whiskey",
-                                "> Gin"]) or "whisky" in title.lower() or "gin" in title.lower():
+    elif any(x in cat for x in ["> Liquor", "> Orujo", "> Brandy", "> Whiskey", "> Gin"]) or "whisky" in title.lower() or "gin" in title.lower():
         size = "0.7 L"
         for val in [opt1_val, opt2_val, opt3_val]:
             if val and any(kw in val.lower() for kw in ["l", "lit"]):
@@ -206,7 +204,7 @@ def normalize_row(row):
     # --- Товары без категории или неизвестные ---
     else:
         # Просто унифицируем: если есть год → Vintage, если объём → Size
-        vintage = "NV"
+        vintage = ""
         size = ""
 
         for name, val in [(opt1_name, opt1_val), (opt2_name, opt2_val), (opt3_name, opt3_val)]:
@@ -288,39 +286,42 @@ elif EMPTY_COLS_MODE == 'show':
     print("ℹ️ Колонки оставлены (режим 'show').")
 
 
-# === 6. Скачивание изображений (опционально) ===
+# === 6. Генерация имён файлов и (опционально) скачивание изображений ===
 image_filenames = []
 
-if DOWNLOAD_IMAGES:
-    print("🖼️ Скачивание изображений...")
-    for _, row in df.iterrows():
-        img_url = str(row.get("image_src", "")).strip()
-        item_id = row["old_id"]
-        filename = ""
+print("🖼️ Генерация имён файлов изображений...")
+for _, row in df.iterrows():
+    img_url = str(row.get("image_src", "")).strip()
+    item_id = row["old_id"]
+    filename = ""
 
-        if img_url and img_url.lower() not in ("nan", "none", ""):
+    if img_url and img_url.lower() not in ("nan", "none", ""):
+        # Определяем расширение из URL
+        ext = os.path.splitext(urlparse(img_url).path)[-1]
+        if not ext or len(ext) > 5 or '.' not in ext:
+            ext = ".jpg"
+        filename = f"{item_id}{ext}"
+
+        # Скачиваем ТОЛЬКО если включено
+        if DOWNLOAD_IMAGES:
             try:
-                ext = os.path.splitext(urlparse(img_url).path)[-1]
-                if not ext or len(ext) > 5:
-                    ext = ".jpg"
-                filename = f"{item_id}{ext}"
                 filepath = os.path.join(IMAGES_DIR, filename)
                 if not os.path.exists(filepath):
                     resp = requests.get(img_url, timeout=10)
                     resp.raise_for_status()
                     with open(filepath, "wb") as f:
                         f.write(resp.content)
-                image_filenames.append(filename)
                 time.sleep(0.1)
             except Exception as e:
                 print(f"⚠️ Ошибка при скачивании {img_url}: {e}")
-                image_filenames.append("")
-        else:
-            image_filenames.append("")
+                # Имя файла всё равно сохраняем — даже при ошибке
+    # Если URL пустой — filename остаётся ""
+    image_filenames.append(filename)
 
-    df["downloaded_image"] = image_filenames
-else:
-    df["downloaded_image"] = ""
+df["downloaded_image"] = image_filenames
+
+if DOWNLOAD_IMAGES:
+    print(f"📁 Изображения сохранены в: {IMAGES_DIR}/")
 
 
 # === 7. Генерация отчёта по категориям ===
