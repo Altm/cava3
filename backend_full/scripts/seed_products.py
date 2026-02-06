@@ -22,7 +22,7 @@ from app.config import get_settings
 
 
 # === SETTINGS ===
-CSV_FILE = "products_normalized.csv"
+CSV_FILE = "./data/products_normalized.csv"
 DEFAULT_LOCATION_ID = 1  # ID of the default location/warehouse
 DEFAULT_BASE_UNIT_CODE = "bottle"  # or "piece", "unit" — ensure it exists in the unit table
 

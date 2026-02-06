@@ -5,7 +5,7 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     app_name: str = "Cavina Backoffice"
-    environment: str = Field("development", description="Environment name for toggling features")
+    env: str = Field("DEV", description="Environment name for toggling features")
     database_url: str = Field(..., env="DATABASE_URL")
     jwt_secret_key: str = Field("change-me", env="JWT_SECRET_KEY")
     jwt_algorithm: str = "HS256"
@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     swagger_enabled: bool = Field(True, env="SWAGGER_ENABLED")
     log_level: str = Field("INFO", env="LOG_LEVEL")
     structlog_json: bool = Field(True, env="STRUCTLOG_JSON")
-    hmac_clock_skew_seconds: int = 300
+    hmac_clock_skew_seconds: int = 30
     default_currency: str = "EUR"
     glasses_per_bottle: int = 5
     loaf_fraction: str = "0.1"
