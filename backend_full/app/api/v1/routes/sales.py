@@ -52,15 +52,15 @@ async def daily_log(
     return result
 
 
-@router.post("/deduct-stock")
-async def deduct_stock(
+@router.post("/register-sales-transactions")
+async def register_sales_transactions(
     request: Request,
     x_terminal_id: str = Header(..., alias="X-Terminal-ID"),
     x_signature: str = Header(..., alias="X-Signature"),
     x_timestamp: str = Header(..., alias="X-Timestamp"),
 ):
     """
-    Endpoint for deducting sold items from stock.
+    Endpoint for registering sales transactions and updating stock levels.
     Expects a JSON body with sales data.
     """
     # Get the raw body for signature verification
@@ -174,7 +174,7 @@ async def generate_curl_command():
     timestamp = str(int(time.time()))
     # Sample data with the correct timestamp
     method = "POST"
-    path = "/api/v1/sales/deduct-stock"
+    path = "/api/v1/sales/register-sales-transactions"
     data = {
         "sales": [
             {"product_id": "ABC123", "quantity": 5},
