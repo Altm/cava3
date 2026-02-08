@@ -225,7 +225,7 @@ class Location(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128), unique=True, comment="Location name")
-    kind: Mapped[str] = mapped_column(String(64), comment="Type of location e.g. warehouse, bar")
+    code: Mapped[str] = mapped_column(String(64), comment="Code of location e.g. warehouse, bar")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="Soft delete flag")
     # Связь с запасами
     stocks = relationship("Stock", back_populates="location")

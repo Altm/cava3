@@ -25,7 +25,7 @@ def seed_core(db):
         product_type_id=1,
         base_unit_code="bottle",
     )
-    loc = Location(name="Bar", kind="bar")
+    loc = Location(name="Bar", code="bar")
     term = Terminal(terminal_id="t1", location_id=1, secret_hash="secret")
     db.add_all([bottle, glass, wine_type, wine, loc, term])
     db.flush()

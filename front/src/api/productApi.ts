@@ -150,7 +150,7 @@ export interface Product {
 export interface Location {
   id: number
   name: string
-  kind: string
+  code: string
 }
 
 export interface ProductWithStockByLocation {

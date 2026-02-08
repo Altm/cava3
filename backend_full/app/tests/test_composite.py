@@ -35,7 +35,7 @@ def seed_composite(db):
     db.flush()
     comp = CompositeComponent(parent_product_id=sandwich.id, component_product_id=wine.id, quantity=Decimal("1"), unit_code="glass")
     db.add(comp)
-    loc = Location(name="Bar2", kind="bar")
+    loc = Location(name="Bar2", code="bar")
     db.add(loc)
     db.flush()
     term = Terminal(terminal_id="t2", location_id=loc.id, secret_hash="secret")

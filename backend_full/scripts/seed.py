@@ -216,7 +216,7 @@ def seed(db: Session):
         )
     upsert(db, CompositeComponent, parent_product_id=tasting_set.id, component_product_id=sandwich.id, defaults={"quantity": Decimal("1"), "unit_code": "piece"})
 
-    default_loc = upsert(db, Location, name="Main", defaults={"kind": "bar"})
+    default_loc = upsert(db, Location, name="Main", defaults={"code": "bar"})
     stock_items = []
     for prod, qty in wines:
         stock_items.append((prod, qty, "bottle"))

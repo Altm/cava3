@@ -33,7 +33,7 @@ def _default_location(db: Session) -> models.Location:
     loc = db.query(models.Location).first()
     if not loc:
         # Если вообще нет складов, создаем первый
-        loc = models.Location(name=settings.default_location_name, kind="warehouse")
+        loc = models.Location(name=settings.default_location_name, code="warehouse")
         db.add(loc)
         db.flush()
     return loc
@@ -610,7 +610,7 @@ def get_locations(user=Depends(PermissionChecker(["location.read"])), db: Sessio
         schemas.Location(
             id=l.id,
             name=l.name,
-            kind=l.kind,
+            code=l.code,
         )
         for l in locations
     ]
@@ -618,14 +618,14 @@ def get_locations(user=Depends(PermissionChecker(["location.read"])), db: Sessio
 
 @router.post("/locations/", response_model=schemas.Location)
 def create_location(location: schemas.LocationBase, user=Depends(PermissionChecker(["location.write"])), db: Session = Depends(get_db)):
-    db_location = models.Location(name=location.name, kind=location.kind)
+    db_location = models.Location(name=location.name, code=location.code)
     db.add(db_location)
     db.commit()
     db.refresh(db_location)
     return schemas.Location(
         id=db_location.id,
         name=db_location.name,
-        kind=db_location.kind,
+        code=db_location.code,
     )
 
 

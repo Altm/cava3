@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 class LocationBase(BaseModel):
     id: int
     name: str
-    kind: str
+    code: str
 
 
 class Location(LocationBase):
