@@ -59,7 +59,7 @@ def test_new_model():
         name="Test Wine",
         sku="TEST001",  # SKU is required
         product_type_id=1,
-        unit_cost=10.0,
+        base_cost=10.0,
         primary_category="Wine",
         is_active=True,
         base_unit_id=1

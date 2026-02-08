@@ -119,7 +119,7 @@ def seed(db: Session):
         defaults={"name": "Вес", "data_type": "number", "unit_code": "kg", "is_required": True},
     )
 
-    def create_product(name: str, sku: str, ptype: ProductType, base_unit: str, unit_cost: Decimal, stock_qty: Decimal, attrs: dict):
+    def create_product(name: str, sku: str, ptype: ProductType, base_unit: str, base_cost: Decimal, stock_qty: Decimal, attrs: dict):
         prod = upsert(
             db,
             Product,
@@ -130,7 +130,7 @@ def seed(db: Session):
                 "product_type_id": ptype.id,
                 "base_unit_code": base_unit,
                 "is_composite": ptype.is_composite,
-                "unit_cost": unit_cost,
+                "base_cost": base_cost,
             },
         )
         db.query(ProductAttributeValue).filter(ProductAttributeValue.product_id == prod.id).delete()
@@ -166,7 +166,7 @@ def seed(db: Session):
             "product_type_id": wine_basket_type.id,
             "base_unit_code": "piece",
             "is_composite": True,
-            "unit_cost": Decimal("2000"),
+            "base_cost": Decimal("2000"),
         },
     )
     sandwich = upsert(
@@ -179,7 +179,7 @@ def seed(db: Session):
             "product_type_id": sandwich_type.id,
             "base_unit_code": "piece",
             "is_composite": True,
-            "unit_cost": Decimal("30"),
+            "base_cost": Decimal("30"),
         },
     )
     tasting_set = upsert(
@@ -192,7 +192,7 @@ def seed(db: Session):
             "product_type_id": tasting_set_type.id,
             "base_unit_code": "piece",
             "is_composite": True,
-            "unit_cost": Decimal("500"),
+            "base_cost": Decimal("500"),
         },
     )
 
@@ -228,7 +228,7 @@ def seed(db: Session):
     stock_items.append((tasting_set, Decimal("10"), "piece"))
     for prod, qty, unit in stock_items:
         upsert(db, Stock, location_id=default_loc.id, product_id=prod.id, defaults={"quantity": qty, "unit_code": unit})
-        upsert(db, PriceList, location_id=default_loc.id, product_id=prod.id, unit_code=unit, defaults={"currency": "EUR", "amount": prod.unit_cost})
+        upsert(db, PriceList, location_id=default_loc.id, product_id=prod.id, unit_code=unit, defaults={"currency": "EUR", "amount": prod.base_cost})
 
     upsert(db, Terminal, terminal_id="T-1", defaults={"location_id": default_loc.id, "secret_hash": "secret"})
 

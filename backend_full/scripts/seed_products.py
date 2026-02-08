@@ -135,7 +135,7 @@ def import_wines(db, df, attr_map, base_unit_id):
             product = db.query(Product).filter(Product.id == meta.product_id).first()
             if product:
                 product.name = row["title"]
-                product.unit_cost = unit_cost
+                product.base_cost = unit_cost
                 product.primary_category = "Wine"
                 print(f"🔄 Updated product.id={product.id}")
         else:
@@ -143,7 +143,7 @@ def import_wines(db, df, attr_map, base_unit_id):
             product = Product(
                 name=row["title"],
                 product_type_id=1,
-                unit_cost=unit_cost,
+                base_cost=unit_cost,
                 primary_category="Wine",
                 is_active=True,
                 base_unit_id=base_unit_id

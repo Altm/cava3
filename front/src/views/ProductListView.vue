@@ -57,7 +57,7 @@
           <th>Тип товара</th>
           <th>Основная единица</th>
           <th>Остаток</th>
-          <th>Себестоимость</th>
+          <th>Стоимость</th>
           <th>Составной</th>
           <th>Действия</th>
         </tr>
@@ -69,7 +69,7 @@
           <td>{{ getProductTypeName(product.productTypeId) }}</td>
           <td>{{ getBaseUnit(product) }}</td>
           <td>{{ product.stock }}</td>
-          <td>{{ product.unitCost }}</td>
+          <td>{{ product.baseCost }}</td>
           <td>
             <span :class="{'tag-success': product.isComposite, 'tag-info': !product.isComposite}">
               {{ product.isComposite ? 'Да' : 'Нет' }}

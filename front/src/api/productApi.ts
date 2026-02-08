@@ -82,7 +82,7 @@ export interface ProductType {
 export interface ProductForm {
   productTypeId: number
   name: string
-  unitCost: string              // ← строка, не number!
+  baseCost: string              // ← строка, не number!
   stock: string                 // ← строка
   baseUnitId: number            // ← добавляем baseUnitId
   attributes: Record<string, any>
@@ -139,7 +139,7 @@ export interface Product {
   productTypeId: number
   name: string
   stock: number
-  unitCost: number
+  baseCost: number
   isComposite: boolean
   baseUnitId: number;  // Add base unit ID
   attributes: ProductAttribute[];
@@ -158,7 +158,7 @@ export interface ProductWithStockByLocation {
   productTypeId: number
   name: string
   stock: number
-  unitCost: number
+  baseCost: number
   isComposite: boolean
   attributes: Record<string, any>
   components: Array<{ componentProductId: number; quantity: number }>
@@ -237,7 +237,7 @@ export const productApi = {
     const payload = {
       product_type_id: data.productTypeId,
       name: data.name,
-      unit_cost: data.unitCost,
+      base_cost: data.baseCost,
       stock: data.stock,
       base_unit_id: data.baseUnitId,  // Add base unit ID
       is_composite: data.isComposite,  // Include the composite flag
@@ -295,7 +295,7 @@ async updateProduct(id: number, data: ProductForm) {
   const payload = {
     product_type_id: data.productTypeId,
     name: data.name,
-    unit_cost: data.unitCost,   // string, e.g. "33.00"
+    base_cost: data.baseCost,   // string, e.g. "33.00"
     stock: data.stock,          // string, e.g. "44.000000"
     base_unit_id: data.baseUnitId,  // Add base unit ID
     is_composite: data.isComposite,  // Include the composite flag

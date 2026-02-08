@@ -75,7 +75,7 @@ def test_product_attribute_id_field():
         primary_category="test",
         product_type_id=product_type.id,
         base_unit_id=1,
-        unit_cost=Decimal("10.00")
+        base_cost=Decimal("10.00")
     )
     session.add(product)
     session.commit()

@@ -111,7 +111,7 @@ class Product(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="Soft delete flag")
     #unit_cost: Mapped[Decimal] = mapped_column(DECIMAL(18, 2), default=Decimal("0.00"), comment="Unit cost for catalog")
     tax_flags: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, comment="Tax or regulatory flags")
-    unit_cost: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True, comment="Cost per unit")
+    base_cost: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True, comment="Base cost per unit")
     
     product_type: Mapped["ProductType"] = relationship()
     attributes: Mapped[list["ProductAttributeValue"]] = relationship(back_populates="product")

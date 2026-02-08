@@ -31,15 +31,15 @@
         />
       </div>
 
-      <!-- Себестоимость и остаток -->
+      <!-- Стоимость и остаток -->
       <div class="form-row">
         <div class="form-group">
-          <label>Себестоимость *</label>
+          <label>Стоимость *</label>
           <input
-            v-model.number="form.unitCost"
+            v-model.number="form.baseCost"
             type="number"
             step="0.01"
-            placeholder="Себестоимость"
+            placeholder="Стоимость"
             required
             class="form-control"
           />
@@ -266,7 +266,7 @@ const units = ref<Unit[]>([])  // Add units state
 const form = ref({
   productTypeId: 0,
   name: '',
-  unitCost: 0,
+  baseCost: 0,
   stock: 0,
   baseUnitId: 0,  // Add base unit ID
   isComposite: false,  // Add the composite flag to the form
@@ -340,7 +340,7 @@ const handleSubmit = async () => {
     const payload: any = {
       product_type_id: form.value.productTypeId,
       name: form.value.name,
-      unit_cost: form.value.unitCost,
+      base_cost: form.value.baseCost,
       stock: form.value.stock,
       base_unit_id: form.value.baseUnitId,  // Include base unit ID
       is_composite: isProductTypeComposite,  // Use the composite flag from the product type
@@ -464,7 +464,7 @@ onMounted(async () => {
       form.value = {
         productTypeId: Number(product.productTypeId), // ← гарантируем number
         name: product.name,
-        unitCost: product.unitCost,
+        baseCost: product.baseCost,
         stock: product.stock,
         baseUnitId: product.baseUnitId || 0,  // Set base unit ID
         isComposite: isProductTypeComposite,  // Use the composite flag from the product type
@@ -477,7 +477,7 @@ onMounted(async () => {
       form.value = {
         productTypeId: 0,
         name: '',
-        unitCost: 0,
+        baseCost: 0,
         stock: 0,
         baseUnitId: 0,  // Default base unit ID
         isComposite: false,  // Default to non-composite for new products
@@ -551,7 +551,7 @@ watch(() => props.productId, async (newId) => {
       form.value = {
         productTypeId: Number(product.productTypeId), // ← гарантируем number
         name: product.name,
-        unitCost: product.unitCost,
+        baseCost: product.baseCost,
         stock: product.stock,
         baseUnitId: product.baseUnitId || 0,  // Set base unit ID
         isComposite: isProductTypeComposite,  // Use the composite flag from the product type

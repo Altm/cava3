@@ -306,7 +306,7 @@ def _serialize_product(db_product: models.Product, db: Session) -> schemas.Produ
         id=db_product.id,
         product_type_id=db_product.product_type_id,
         name=db_product.name,
-        unit_cost=db_product.unit_cost or Decimal("0"),
+        base_cost=db_product.base_cost or Decimal("0"),
         stock=total_stock,
         is_composite=db_product.product_type.is_composite,
         base_unit_id=db_product.base_unit_id,
@@ -347,7 +347,7 @@ def create_product(product: schemas.ProductCreate, user=Depends(PermissionChecke
         sku=product.sku or product.name.replace(" ", "_"),
         primary_category=pt.name,
         base_unit_id=product.base_unit_id,
-        unit_cost=product.unit_cost,
+        base_cost=product.base_cost,
         is_active=True,
     )
     db.add(db_product)
@@ -496,7 +496,7 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
 
     product.product_type_id = product_update.product_type_id
     product.name = product_update.name
-    product.unit_cost = product_update.unit_cost
+    product.base_cost = product_update.base_cost
     # Always update base_unit_id with the resolved value
     product.base_unit_id = base_unit_id
 
