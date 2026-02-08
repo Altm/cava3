@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import List
 from sqlalchemy.orm import Session
 from app.common.errors import IdempotencyError
-from app.models.models import SaleEvent, SaleLine, Product, CompositeComponent
+from app.models.models import SaleEvent, SaleLine, Product, ProductComposite
 from app.services.stock_service import StockService
 import structlog
 
@@ -52,7 +52,7 @@ class SalesService:
         return sale
 
     def _expand_components(self, product_id: int, quantity: Decimal, unit: str) -> List[dict]:
-        components = self.db.query(CompositeComponent).filter_by(parent_product_id=product_id).all()
+        components = self.db.query(ProductComposite).filter_by(parent_product_id=product_id).all()
         if not components:
             return [{"product_id": product_id, "quantity": quantity, "unit": unit}]
         expanded: List[dict] = []

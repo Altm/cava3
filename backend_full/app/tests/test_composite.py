@@ -6,7 +6,7 @@ from app.models.models import (
     Product,
     Location,
     Terminal,
-    CompositeComponent,
+    ProductComposite,
     Stock,
     ProductUnit,
 )
@@ -33,7 +33,7 @@ def seed_composite(db):
     )
     db.add_all([bottle, glass, wine_type, snack_type, wine, sandwich])
     db.flush()
-    comp = CompositeComponent(parent_product_id=sandwich.id, component_product_id=wine.id, quantity=Decimal("1"), unit_code="glass")
+    comp = ProductComposite(parent_product_id=sandwich.id, component_product_id=wine.id, quantity=Decimal("1"), unit_code="glass")
     db.add(comp)
     loc = Location(name="Bar2", code="bar")
     db.add(loc)

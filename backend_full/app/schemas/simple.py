@@ -136,6 +136,22 @@ class ProductUpdate(BaseModel):
     components: List[ProductComponentCreate] = []
 
 
+class ProductComponentCreate(BaseModel):
+    component_product_id: int
+    quantity: Decimal
+
+
+class ProductComponent(ProductComponentCreate):
+    id: int
+    parent_product_id: int
+    unit_id: int
+    substitution_allowed: bool = False
+    rounding: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class Product(BaseModel):
     id: int
     product_type_id: int
@@ -145,7 +161,7 @@ class Product(BaseModel):
     is_composite: bool
     base_unit_id: int  # Added base_unit_id
     attributes: List[ProductAttributeValueCreate] = []
-    components: List[Dict[str, Any]] = []
+    components: List[ProductComponent] = []
 
     class Config:
         from_attributes = True

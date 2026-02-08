@@ -5,7 +5,7 @@ from app.models.models import (
     Unit,
     ProductType,
     Product,
-    CompositeComponent,
+    ProductComposite,
     Location,
     PriceList,
     Terminal,
@@ -199,22 +199,22 @@ def seed(db: Session):
     for wine_prod, _ in wines:
         upsert(
             db,
-            CompositeComponent,
+            ProductComposite,
             parent_product_id=wine_basket.id,
             component_product_id=wine_prod.id,
             defaults={"quantity": Decimal("1"), "unit_code": "bottle"},
         )
-    upsert(db, CompositeComponent, parent_product_id=sandwich.id, component_product_id=bread.id, defaults={"quantity": Decimal("0.1"), "unit_code": "kg"})
-    upsert(db, CompositeComponent, parent_product_id=sandwich.id, component_product_id=tomato_paste.id, defaults={"quantity": Decimal("0.02"), "unit_code": "kg"})
+    upsert(db, ProductComposite, parent_product_id=sandwich.id, component_product_id=bread.id, defaults={"quantity": Decimal("0.1"), "unit_code": "kg"})
+    upsert(db, ProductComposite, parent_product_id=sandwich.id, component_product_id=tomato_paste.id, defaults={"quantity": Decimal("0.02"), "unit_code": "kg"})
     for wine_prod, _ in wines:
         upsert(
             db,
-            CompositeComponent,
+            ProductComposite,
             parent_product_id=tasting_set.id,
             component_product_id=wine_prod.id,
             defaults={"quantity": Decimal("0.167"), "unit_code": "bottle"},
         )
-    upsert(db, CompositeComponent, parent_product_id=tasting_set.id, component_product_id=sandwich.id, defaults={"quantity": Decimal("1"), "unit_code": "piece"})
+    upsert(db, ProductComposite, parent_product_id=tasting_set.id, component_product_id=sandwich.id, defaults={"quantity": Decimal("1"), "unit_code": "piece"})
 
     default_loc = upsert(db, Location, name="Main", defaults={"code": "bar"})
     stock_items = []

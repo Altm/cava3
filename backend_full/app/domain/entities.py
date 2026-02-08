@@ -29,7 +29,7 @@ class Product:
 
 
 @dataclass
-class CompositeComponent:
+class ProductComposite:
     product_id: int
     quantity: Decimal
     unit: str

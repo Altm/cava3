@@ -389,7 +389,7 @@ def create_product(product: schemas.ProductCreate, user=Depends(PermissionChecke
     # Компоненты (если составной)
     if pt.is_composite:
         for comp in product.components:
-            db_comp = models.CompositeComponent(
+            db_comp = models.ProductComposite(
                 parent_product_id=db_product.id,
                 component_product_id=comp.component_product_id,
                 quantity=Decimal(str(comp.quantity)),
@@ -540,10 +540,10 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, user=
         )
         db.add(base_product_unit)
 
-    db.query(models.CompositeComponent).filter(models.CompositeComponent.parent_product_id == product.id).delete()
+    db.query(models.ProductComposite).filter(models.ProductComposite.parent_product_id == product.id).delete()
     if pt.is_composite:
         for comp in product_update.components:
-            db_comp = models.CompositeComponent(
+            db_comp = models.ProductComposite(
                 parent_product_id=product.id,
                 component_product_id=comp.component_product_id,
                 quantity=Decimal(str(comp.quantity)),
@@ -580,7 +580,7 @@ def delete_product(product_id: int, user=Depends(PermissionChecker(["product.del
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     db.query(models.ProductAttributeValue).filter(models.ProductAttributeValue.product_id == product.id).delete()
-    db.query(models.CompositeComponent).filter(models.CompositeComponent.parent_product_id == product.id).delete()
+    db.query(models.ProductComposite).filter(models.ProductComposite.parent_product_id == product.id).delete()
     db.delete(product)
     db.commit()
     return {"message": "Product deleted successfully"}
@@ -645,7 +645,7 @@ def sell_product(sale_request: schemas.SaleRequest, user=Depends(PermissionCheck
         raise HTTPException(status_code=400, detail="Insufficient stock")
 
     if product.product_type.is_composite:
-        components = db.query(models.CompositeComponent).filter(models.CompositeComponent.parent_product_id == product.id).all()
+        components = db.query(models.ProductComposite).filter(models.ProductComposite.parent_product_id == product.id).all()
         for comp in components:
             comp_stock = (
                 db.query(models.Stock)
@@ -734,7 +734,7 @@ def delete_unit(unit_id: int, user=Depends(PermissionChecker(["unit.delete"])), 
 
     # Check if unit is used by other entities to prevent foreign key constraint violations
     # Check specific tables that reference units
-    from app.models.models import ProductUnit, Stock, PriceList, Adjustment, Transfer, SaleLine, ProductAttribute, CompositeComponent
+    from app.models.models import ProductUnit, Stock, PriceList, Adjustment, Transfer, SaleLine, ProductAttribute, ProductComposite
 
     # Check if this unit is referenced in ProductUnit
     product_unit_count = db.query(ProductUnit).filter(ProductUnit.unit_id == unit_id).count()
@@ -771,8 +771,8 @@ def delete_unit(unit_id: int, user=Depends(PermissionChecker(["unit.delete"])), 
     if attr_def_count > 0:
         raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by attribute definitions")
 
-    # Check if this unit is referenced in CompositeComponent
-    comp_count = db.query(CompositeComponent).filter(CompositeComponent.unit_id == unit_id).count()
+    # Check if this unit is referenced in ProductComposite
+    comp_count = db.query(ProductComposite).filter(ProductComposite.unit_id == unit_id).count()
     if comp_count > 0:
         raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by composite components")
 

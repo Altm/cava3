@@ -115,8 +115,8 @@ class Product(Base):
     
     product_type: Mapped["ProductType"] = relationship()
     attributes: Mapped[list["ProductAttributeValue"]] = relationship(back_populates="product")
-    components: Mapped[list["CompositeComponent"]] = relationship(
-        foreign_keys="[CompositeComponent.parent_product_id]",
+    components: Mapped[list["ProductComposite"]] = relationship(
+        foreign_keys="[ProductComposite.parent_product_id]",
         back_populates="parent_product"
     )
     
@@ -195,7 +195,7 @@ class ProductAttributeValue(Base):
 
 
 
-class CompositeComponent(Base):
+class ProductComposite(Base):
     """Components for composite or recipe products."""
 
     id: Mapped[int] = mapped_column(primary_key=True)
