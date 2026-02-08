@@ -290,7 +290,15 @@ def _serialize_product(db_product: models.Product, db: Session) -> schemas.Produ
             )
 
     components = [
-        {"component_product_id": c.component_product_id, "quantity": c.quantity}
+        schemas.ProductComponent(
+            id=c.id,
+            parent_product_id=c.parent_product_id,
+            component_product_id=c.component_product_id,
+            quantity=c.quantity,
+            unit_id=c.unit_id,
+            substitution_allowed=c.substitution_allowed,
+            rounding=c.rounding
+        )
         for c in db_product.components
     ]
 
