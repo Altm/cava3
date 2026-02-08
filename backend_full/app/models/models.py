@@ -41,7 +41,7 @@ class Unit(Base):
     transfers: Mapped[list["Transfer"]] = relationship(back_populates="unit")
     sale_lines: Mapped[list["SaleLine"]] = relationship(back_populates="unit")
     attribute_definitions: Mapped[list["ProductAttribute"]] = relationship(back_populates="unit")
-    composite_components: Mapped[list["ProductComposite"]] = relationship(back_populates="unit")
+    product_composites: Mapped[list["ProductComposite"]] = relationship(back_populates="unit")
 
 
 class ProductUnit(Base):
@@ -217,7 +217,7 @@ class ProductComposite(Base):
         "Product",
         foreign_keys=[component_product_id]
     )
-    unit: Mapped["Unit"] = relationship("Unit", back_populates="composite_components")
+    unit: Mapped["Unit"] = relationship("Unit", back_populates="product_composites")
 
 
 class Location(Base):
