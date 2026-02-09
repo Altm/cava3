@@ -175,12 +175,35 @@ async def generate_curl_command():
     # Sample data with the correct timestamp
     method = "POST"
     path = "/api/v1/sales/register-sales-transactions"
+
+    # Fixed values for demo purposes
+    terminal_id = "T-1"
+    terminal_secret = "secret"
+
     data = {
         "sales": [
-            {"product_id": "ABC123", "quantity": 5},
-            {"product_id": "DEF456", "quantity": 2}
+            {
+                "sale_id": 456,
+                "terminal_id" : terminal_id,
+                "user_id": 12,#terminal_user_id or user name
+                "timestamp": "2026-01-01T10:00:00Z",#Time of sale
+                "items": [
+                    {"product_id": "ABC123", "quantity": 5, "price": 24.85},
+                    {"product_id": "DEF456", "quantity": 2, "price": 15.50}
+                ]
+            },
+            {
+                "sale_id": 457,
+                "terminal_id" : terminal_id,
+                "user_id": 12,
+                "timestamp": "2026-01-01T14:15:23Z",
+                "items": [
+                    {"product_id": "CCC425", "quantity": 1, "price": 12.85},
+                    {"product_id": "DDD456", "quantity": 3, "price": 12.50}
+                ]
+            }
         ],
-        "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(int(timestamp)))
+        "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(int(timestamp)))#Time of send
     }
 
     # Use the same format as in the actual request processing
@@ -191,10 +214,6 @@ async def generate_curl_command():
     logger = logging.getLogger(__name__)
     logger.info(f"Generated body for signature: {body_with_updated_time}")
     logger.info(f"Body hash: {hashlib.sha256(body_with_updated_time.encode()).hexdigest()}")
-
-    # Fixed values for demo purposes
-    terminal_id = "T-1"
-    terminal_secret = "secret"
 
     # Generate signature
     signature = _generate_hmac_signature(method, path, body_with_updated_time, terminal_secret, timestamp)
