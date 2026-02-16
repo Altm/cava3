@@ -58,6 +58,36 @@
       </div>
     </div>
 
+    <div class="card">
+      <h3>План перемещения</h3>
+      <div v-if="doc?.transfer_lines?.length" class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Товар</th>
+              <th>Политика</th>
+              <th>План (шт)</th>
+              <th>Планируемые QR (ITM)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="line in doc.transfer_lines" :key="line.transfer_line_id">
+              <td>{{ line.product_name }} (id={{ line.product_id }})</td>
+              <td>{{ line.pick_policy }}</td>
+              <td>{{ line.qty_base }}</td>
+              <td>
+                <div v-if="line.planned_qr_codes.length" class="qr-list">
+                  <code v-for="qr in line.planned_qr_codes" :key="`${line.transfer_line_id}-${qr}`">{{ qr }}</code>
+                </div>
+                <span v-else>-</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-else class="hint">План пока пуст.</p>
+    </div>
+
     <div class="grid">
       <div class="card">
         <h3>Сканирование на складе (picking)</h3>
@@ -279,6 +309,7 @@ onMounted(async () => {
   border: 1px solid #ddd;
   border-radius: 8px;
   padding: 16px;
+  margin-bottom: 16px;
 }
 .form-group {
   margin-bottom: 12px;
@@ -333,6 +364,30 @@ onMounted(async () => {
   padding: 12px;
   border-radius: 6px;
   overflow: auto;
+}
+.hint {
+  margin: 0;
+  color: #374151;
+}
+.table-wrap {
+  overflow: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table th,
+.table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.92rem;
+}
+.qr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 @media (max-width: 1024px) {
   .grid {

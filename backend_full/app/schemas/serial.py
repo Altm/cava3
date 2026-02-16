@@ -130,6 +130,16 @@ class TransferDocDetailOut(BaseModel):
     picked_count: int = 0
     received_count: int = 0
     removed_count: int = 0
+    transfer_lines: List["TransferPlanLineOut"] = Field(default_factory=list)
+
+
+class TransferPlanLineOut(BaseModel):
+    transfer_line_id: int
+    product_id: int
+    product_name: str
+    qty_base: int
+    pick_policy: str
+    planned_qr_codes: List[str] = Field(default_factory=list)
 
 
 class TransferDocListOut(BaseModel):

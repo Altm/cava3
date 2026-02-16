@@ -74,6 +74,36 @@
       </div>
     </div>
 
+    <div v-if="transferId" class="card">
+      <h3>План перемещения</h3>
+      <div v-if="transferLines.length" class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Товар</th>
+              <th>Политика</th>
+              <th>План (шт)</th>
+              <th>Планируемые QR (ITM)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="line in transferLines" :key="line.transfer_line_id">
+              <td>{{ line.product_name }} (id={{ line.product_id }})</td>
+              <td>{{ line.pick_policy }}</td>
+              <td>{{ line.qty_base }}</td>
+              <td>
+                <div v-if="line.planned_qr_codes.length" class="qr-list">
+                  <code v-for="qr in line.planned_qr_codes" :key="`${line.transfer_line_id}-${qr}`">{{ qr }}</code>
+                </div>
+                <span v-else>-</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-else class="hint">План пока пуст.</p>
+    </div>
+
     <div class="grid">
       <div class="card">
         <h3>Сканирование на складе (picking)</h3>
@@ -112,7 +142,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { productApi, type Location, type Product, type Unit } from '@/api/productApi'
-import { serialApi } from '@/api/serialApi'
+import { serialApi, type TransferDocDetailOut } from '@/api/serialApi'
 
 const locations = ref<Location[]>([])
 const products = ref<Product[]>([])
@@ -122,11 +152,13 @@ const fromLocationId = ref(0)
 const toLocationId = ref(0)
 const transferId = ref<number | null>(null)
 const transferStatus = ref('')
+const transferDetail = ref<TransferDocDetailOut | null>(null)
 
 const plan = ref({ productId: 0, qtyBase: 1 })
 const plannedTotal = ref(0)
 const pickedTotal = ref(0)
 const receivedTotal = ref(0)
+const transferLines = computed(() => transferDetail.value?.transfer_lines ?? [])
 
 const scanPickQr = ref('')
 const scanRecvQr = ref('')
@@ -143,7 +175,13 @@ const serialProducts = computed(() => {
 })
 
 const canCreate = computed(() => fromLocationId.value > 0 && toLocationId.value > 0 && fromLocationId.value !== toLocationId.value)
-const canPlan = computed(() => !!transferId.value && plan.value.productId > 0 && plan.value.qtyBase > 0)
+const canPlan = computed(
+  () =>
+    !!transferId.value &&
+    ['draft', 'picking'].includes(transferStatus.value) &&
+    plan.value.productId > 0 &&
+    plan.value.qtyBase > 0
+)
 
 const listAvailableProductIds = async (locationId: number) => {
   const pageSize = 500
@@ -187,24 +225,37 @@ const createDoc = async () => {
   try {
     const res = await serialApi.createTransfer(fromLocationId.value, toLocationId.value)
     transferId.value = res.id
-    transferStatus.value = res.status
-    plannedTotal.value = 0
-    pickedTotal.value = 0
-    receivedTotal.value = 0
     pickLog.value = []
     recvLog.value = []
+    await refreshTransfer()
   } catch (e: any) {
     alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
   }
+}
+
+const refreshTransfer = async () => {
+  if (!transferId.value) {
+    transferDetail.value = null
+    transferStatus.value = ''
+    plannedTotal.value = 0
+    pickedTotal.value = 0
+    receivedTotal.value = 0
+    return
+  }
+  const detail = await serialApi.getTransfer(transferId.value)
+  transferDetail.value = detail
+  transferStatus.value = detail.status
+  plannedTotal.value = detail.planned_count
+  pickedTotal.value = detail.picked_count
+  receivedTotal.value = detail.received_count
 }
 
 const planDoc = async () => {
   if (!transferId.value) return
   try {
     const res = await serialApi.planTransfer(transferId.value, plan.value.productId, plan.value.qtyBase)
-    plannedTotal.value += res.planned_items ?? res.plannedItems ?? plan.value.qtyBase
-    transferStatus.value = 'picking'
     pickLog.value.unshift(`PLAN line_id=${res.transfer_line_id} planned=${res.planned_items}`)
+    await refreshTransfer()
   } catch (e: any) {
     alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
   }
@@ -217,6 +268,7 @@ const removePlannedByScan = async () => {
     if (!scan.found || scan.kind !== 'ITM' || !scan.id) throw new Error('Не найден ITM')
     const res = await serialApi.removeTransferItem(transferId.value, scan.id)
     pickLog.value.unshift(`REMOVE product_item_id=${res.removed_product_item_id}`)
+    await refreshTransfer()
   } catch (e: any) {
     alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
   }
@@ -226,10 +278,9 @@ const scanPicking = async () => {
   if (!transferId.value) return
   try {
     const res = await serialApi.scanTransfer(transferId.value, scanPickQr.value.trim(), 'picking')
-    if (res.picked_item_id) pickedTotal.value += 1
-    if (res.picked_items) pickedTotal.value += Number(res.picked_items)
     pickLog.value.unshift(`PICK ${scanPickQr.value.trim()} => ${JSON.stringify(res)}`)
     scanPickQr.value = ''
+    await refreshTransfer()
   } catch (e: any) {
     alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
   }
@@ -239,8 +290,8 @@ const ship = async () => {
   if (!transferId.value) return
   try {
     const res = await serialApi.shipTransfer(transferId.value)
-    transferStatus.value = res.status ?? 'shipped'
     pickLog.value.unshift(`SHIP => ${JSON.stringify(res)}`)
+    await refreshTransfer()
   } catch (e: any) {
     alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
   }
@@ -250,10 +301,9 @@ const scanReceiving = async () => {
   if (!transferId.value) return
   try {
     const res = await serialApi.scanTransfer(transferId.value, scanRecvQr.value.trim(), 'receiving')
-    if (res.received_item_id) receivedTotal.value += 1
-    if (res.received_items) receivedTotal.value += Number(res.received_items)
     recvLog.value.unshift(`RECV ${scanRecvQr.value.trim()} => ${JSON.stringify(res)}`)
     scanRecvQr.value = ''
+    await refreshTransfer()
   } catch (e: any) {
     alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
   }
@@ -264,8 +314,8 @@ const closeDoc = async () => {
   if (!confirm('Закрыть перемещение? Не принятое будет списано как lost_in_transit.')) return
   try {
     const res = await serialApi.closeTransfer(transferId.value)
-    transferStatus.value = 'closed'
     recvLog.value.unshift(`CLOSE => ${JSON.stringify(res)}`)
+    await refreshTransfer()
   } catch (e: any) {
     alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
   }
@@ -305,6 +355,7 @@ watch(fromLocationId, async (locationId) => {
   border: 1px solid #ddd;
   border-radius: 8px;
   padding: 16px;
+  margin-bottom: 16px;
 }
 .form-group {
   margin-bottom: 12px;
@@ -362,6 +413,27 @@ watch(fromLocationId, async (locationId) => {
 }
 .hint {
   color: #4b5563;
+  margin: 0;
+}
+.table-wrap {
+  overflow: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table th,
+.table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.92rem;
+}
+.qr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 @media (max-width: 1024px) {
   .grid {

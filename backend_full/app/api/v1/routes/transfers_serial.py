@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.deps.auth import get_db, PermissionChecker
 from app.schemas import serial as schemas
-from app.models.models import TransferDoc, TransferLine, TransferItem
+from app.models.models import TransferDoc, TransferLine, TransferItem, Product, ProductItem
 from app.services.serial_transfers import TransferService
 
 
@@ -77,6 +77,44 @@ def get_transfer(
         .scalar()
         or 0
     )
+    line_rows = (
+        db.query(
+            TransferLine.id.label("transfer_line_id"),
+            TransferLine.product_id,
+            TransferLine.qty_base,
+            TransferLine.pick_policy,
+            Product.name.label("product_name"),
+        )
+        .join(Product, Product.id == TransferLine.product_id)
+        .filter(TransferLine.transfer_doc_id == transfer_doc_id)
+        .order_by(TransferLine.id.asc())
+        .all()
+    )
+    qr_rows = (
+        db.query(
+            TransferItem.transfer_line_id,
+            ProductItem.qr_code,
+        )
+        .join(ProductItem, ProductItem.id == TransferItem.product_item_id)
+        .join(TransferLine, TransferLine.id == TransferItem.transfer_line_id)
+        .filter(TransferLine.transfer_doc_id == transfer_doc_id, TransferItem.state == "planned")
+        .order_by(TransferItem.transfer_line_id.asc(), TransferItem.id.asc())
+        .all()
+    )
+    planned_qr_codes_by_line: dict[int, list[str]] = {}
+    for transfer_line_id, qr_code in qr_rows:
+        planned_qr_codes_by_line.setdefault(transfer_line_id, []).append(qr_code)
+    transfer_lines = [
+        schemas.TransferPlanLineOut(
+            transfer_line_id=row.transfer_line_id,
+            product_id=row.product_id,
+            product_name=row.product_name,
+            qty_base=row.qty_base,
+            pick_policy=row.pick_policy,
+            planned_qr_codes=planned_qr_codes_by_line.get(row.transfer_line_id, []),
+        )
+        for row in line_rows
+    ]
 
     return schemas.TransferDocDetailOut(
         id=doc.id,
@@ -90,6 +128,7 @@ def get_transfer(
         picked_count=picked_count,
         received_count=int(received_count),
         removed_count=removed_count,
+        transfer_lines=transfer_lines,
     )
 
 

@@ -99,6 +99,15 @@ export interface TransferDocListOut {
   updated_at: string
 }
 
+export interface TransferPlanLineOut {
+  transfer_line_id: number
+  product_id: number
+  product_name: string
+  qty_base: number
+  pick_policy: string
+  planned_qr_codes: string[]
+}
+
 export interface TransferDocDetailOut {
   id: number
   from_location_id: number
@@ -111,6 +120,13 @@ export interface TransferDocDetailOut {
   picked_count: number
   received_count: number
   removed_count: number
+  transfer_lines: TransferPlanLineOut[]
+}
+
+export interface TransferPlanOut {
+  transfer_doc_id: number
+  transfer_line_id: number
+  planned_items: number
 }
 
 export interface InventoryDocOut {
@@ -270,7 +286,7 @@ export const serialApi = {
     const res = await api.post('/transfers', { from_location_id, to_location_id })
     return res.data
   },
-  async planTransfer(transfer_doc_id: number, product_id: number, qty_base: number) {
+  async planTransfer(transfer_doc_id: number, product_id: number, qty_base: number): Promise<TransferPlanOut> {
     const res = await api.post(`/transfers/${transfer_doc_id}/plan`, { product_id, qty_base })
     return res.data
   },
