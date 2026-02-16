@@ -118,6 +118,20 @@ class TransferDocOut(BaseModel):
         from_attributes = True
 
 
+class TransferDocDetailOut(BaseModel):
+    id: int
+    from_location_id: int
+    to_location_id: int
+    status: str
+    created_by_user_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+    planned_count: int = 0
+    picked_count: int = 0
+    received_count: int = 0
+    removed_count: int = 0
+
+
 class TransferDocListOut(BaseModel):
     id: int
     from_location_id: int
@@ -162,6 +176,20 @@ class InventoryDocOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class InventoryDocDetailOut(BaseModel):
+    id: int
+    location_id: int
+    status: str
+    created_by_user_id: Optional[int] = None
+    closed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    expected_count: int = 0
+    scanned_count: int = 0
+    missing_count: int = 0
+    unexpected_count: int = 0
 
 
 class InventoryDocListOut(BaseModel):

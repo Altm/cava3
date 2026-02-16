@@ -1,5 +1,5 @@
 from decimal import Decimal
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps.auth import get_db, PermissionChecker
@@ -49,6 +49,36 @@ def list_receipts(
     return [schemas.ReceiptListOut.model_validate(row) for row in query.all()]
 
 
+@router.get("/{receipt_id}", response_model=schemas.ReceiptListOut)
+def get_receipt(
+    receipt_id: int,
+    user=Depends(PermissionChecker(["receipts.read"])),
+    db: Session = Depends(get_db),
+):
+    receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    return schemas.ReceiptListOut.model_validate(receipt)
+
+
+@router.get("/{receipt_id}/lines", response_model=list[schemas.ReceiptLineOut])
+def get_receipt_lines(
+    receipt_id: int,
+    user=Depends(PermissionChecker(["receipts.read"])),
+    db: Session = Depends(get_db),
+):
+    exists = db.query(Receipt.id).filter(Receipt.id == receipt_id).first()
+    if not exists:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    rows = (
+        db.query(ReceiptLine)
+        .filter(ReceiptLine.receipt_id == receipt_id)
+        .order_by(ReceiptLine.id.asc())
+        .all()
+    )
+    return [schemas.ReceiptLineOut.model_validate(row) for row in rows]
+
+
 @router.post("/{receipt_id}/lines", response_model=schemas.ReceiptLineOut)
 def add_receipt_line(
     receipt_id: int,
@@ -66,6 +96,19 @@ def add_receipt_line(
     )
     db.commit()
     return schemas.ReceiptLineOut.model_validate(line)
+
+
+@router.post("/{receipt_id}/lines/{line_id}/remove")
+def remove_receipt_line(
+    receipt_id: int,
+    line_id: int,
+    user=Depends(PermissionChecker(["receipts.write"])),
+    db: Session = Depends(get_db),
+):
+    service = ReceiptService(db)
+    result = service.remove_line(receipt_id=receipt_id, line_id=line_id)
+    db.commit()
+    return result
 
 
 @router.post("/{receipt_id}/generate", response_model=schemas.ReceiptGenerateOut)

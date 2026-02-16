@@ -47,6 +47,8 @@ export interface ReceiptListOut {
   updated_at: string
 }
 
+export interface ReceiptDetailOut extends ReceiptListOut {}
+
 export interface ReceiptLineOut {
   id: number
   receipt_id: number
@@ -97,6 +99,20 @@ export interface TransferDocListOut {
   updated_at: string
 }
 
+export interface TransferDocDetailOut {
+  id: number
+  from_location_id: number
+  to_location_id: number
+  status: string
+  created_by_user_id?: number | null
+  created_at: string
+  updated_at: string
+  planned_count: number
+  picked_count: number
+  received_count: number
+  removed_count: number
+}
+
 export interface InventoryDocOut {
   id: number
   location_id: number
@@ -111,6 +127,20 @@ export interface InventoryDocListOut {
   closed_at?: string | null
   created_at: string
   updated_at: string
+}
+
+export interface InventoryDocDetailOut {
+  id: number
+  location_id: number
+  status: string
+  created_by_user_id?: number | null
+  closed_at?: string | null
+  created_at: string
+  updated_at: string
+  expected_count: number
+  scanned_count: number
+  missing_count: number
+  unexpected_count: number
 }
 
 export interface ProductItemListOut {
@@ -182,6 +212,18 @@ export const serialApi = {
     offset?: number
   }): Promise<ReceiptListOut[]> {
     const res = await api.get('/receipts', { params })
+    return res.data
+  },
+  async getReceipt(receipt_id: number): Promise<ReceiptDetailOut> {
+    const res = await api.get(`/receipts/${receipt_id}`)
+    return res.data
+  },
+  async listReceiptLines(receipt_id: number): Promise<ReceiptLineOut[]> {
+    const res = await api.get(`/receipts/${receipt_id}/lines`)
+    return res.data
+  },
+  async removeReceiptLine(receipt_id: number, line_id: number) {
+    const res = await api.post(`/receipts/${receipt_id}/lines/${line_id}/remove`)
     return res.data
   },
 
@@ -256,6 +298,10 @@ export const serialApi = {
     const res = await api.get('/transfers', { params })
     return res.data
   },
+  async getTransfer(transfer_doc_id: number): Promise<TransferDocDetailOut> {
+    const res = await api.get(`/transfers/${transfer_doc_id}`)
+    return res.data
+  },
 
   // Inventories (serialized)
   async createInventory(location_id: number): Promise<InventoryDocOut> {
@@ -282,6 +328,10 @@ export const serialApi = {
     offset?: number
   }): Promise<InventoryDocListOut[]> {
     const res = await api.get('/inventories', { params })
+    return res.data
+  },
+  async getInventory(inventory_doc_id: number): Promise<InventoryDocDetailOut> {
+    const res = await api.get(`/inventories/${inventory_doc_id}`)
     return res.data
   },
 

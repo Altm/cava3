@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps.auth import get_db, PermissionChecker
 from app.schemas import serial as schemas
-from app.models.models import TransferDoc, TransferLine
+from app.models.models import TransferDoc, TransferLine, TransferItem
 from app.services.serial_transfers import TransferService
 
 
@@ -49,6 +50,47 @@ def list_transfers(
         query = query.distinct()
     query = query.order_by(TransferDoc.id.desc()).offset(offset).limit(limit)
     return [schemas.TransferDocListOut.model_validate(row) for row in query.all()]
+
+
+@router.get("/{transfer_doc_id}", response_model=schemas.TransferDocDetailOut)
+def get_transfer(
+    transfer_doc_id: int,
+    user=Depends(PermissionChecker(["transfers.write"])),
+    db: Session = Depends(get_db),
+):
+    doc = db.query(TransferDoc).filter(TransferDoc.id == transfer_doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+
+    base_query = (
+        db.query(TransferItem)
+        .join(TransferLine, TransferLine.id == TransferItem.transfer_line_id)
+        .filter(TransferLine.transfer_doc_id == transfer_doc_id)
+    )
+    planned_count = base_query.filter(TransferItem.state == "planned").count()
+    picked_count = base_query.filter(TransferItem.state == "picked").count()
+    removed_count = base_query.filter(TransferItem.state == "removed").count()
+    received_count = (
+        db.query(func.count(TransferItem.id))
+        .join(TransferLine, TransferLine.id == TransferItem.transfer_line_id)
+        .filter(TransferLine.transfer_doc_id == transfer_doc_id, TransferItem.received_at.isnot(None))
+        .scalar()
+        or 0
+    )
+
+    return schemas.TransferDocDetailOut(
+        id=doc.id,
+        from_location_id=doc.from_location_id,
+        to_location_id=doc.to_location_id,
+        status=doc.status,
+        created_by_user_id=doc.created_by_user_id,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+        planned_count=planned_count,
+        picked_count=picked_count,
+        received_count=int(received_count),
+        removed_count=removed_count,
+    )
 
 
 @router.post("/{transfer_doc_id}/plan", response_model=schemas.TransferPlanOut)

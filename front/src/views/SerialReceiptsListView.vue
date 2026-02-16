@@ -52,6 +52,7 @@
               <th>Создан</th>
               <th>Обновлен</th>
               <th>Автор</th>
+              <th>Действие</th>
             </tr>
           </thead>
           <tbody>
@@ -62,12 +63,18 @@
               <td>{{ formatDate(row.created_at) }}</td>
               <td>{{ formatDate(row.updated_at) }}</td>
               <td>{{ row.created_by_user_id ?? '-' }}</td>
+              <td>
+                <RouterLink v-if="canEdit(row.status)" class="btn btn-outline" :to="`/serial/receipts/edit/${row.id}`">
+                  Редактировать
+                </RouterLink>
+                <span v-else>-</span>
+              </td>
             </tr>
             <tr v-if="!rows.length && !loading">
-              <td colspan="6">Нет данных</td>
+              <td colspan="7">Нет данных</td>
             </tr>
             <tr v-if="loading">
-              <td colspan="6">Загрузка...</td>
+              <td colspan="7">Загрузка...</td>
             </tr>
           </tbody>
         </table>
@@ -102,6 +109,8 @@ const locationLabel = (locationId: number) => {
   const location = locations.value.find((l) => l.id === locationId)
   return location ? `${location.name} (${location.code})` : String(locationId)
 }
+
+const canEdit = (status: string) => ['draft', 'generated'].includes(status)
 
 const loadRows = async () => {
   try {
@@ -165,10 +174,15 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid #ccc;
   background: white;
+  color: #111827;
+  text-decoration: none;
   cursor: pointer;
 }
 .btn-primary {

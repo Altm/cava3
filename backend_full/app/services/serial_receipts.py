@@ -53,6 +53,24 @@ class ReceiptService:
         self.db.flush()
         return line
 
+    def remove_line(self, receipt_id: int, line_id: int) -> dict:
+        """
+        Remove receipt line for draft receipt.
+        """
+        receipt = self._get_receipt(receipt_id)
+        if receipt.status != "draft":
+            raise HTTPException(status_code=409, detail="Receipt is not editable")
+        line = (
+            self.db.query(ReceiptLine)
+            .filter(ReceiptLine.id == line_id, ReceiptLine.receipt_id == receipt.id)
+            .first()
+        )
+        if not line:
+            raise HTTPException(status_code=404, detail="Receipt line not found")
+        self.db.delete(line)
+        self.db.flush()
+        return {"receipt_id": receipt.id, "removed_line_id": line_id}
+
     def generate(self, receipt_id: int) -> GenerateResult:
         """
         Generate lots and serialized items for each receipt line.

@@ -110,6 +110,24 @@ const router = createRouter({
       name: 'SerialItemsList',
       component: () => import('@/views/SerialItemsListView.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/serial/receipts/edit/:id',
+      name: 'SerialReceiptEdit',
+      component: () => import('@/views/SerialReceiptEditView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/serial/transfers/edit/:id',
+      name: 'SerialTransferEdit',
+      component: () => import('@/views/SerialTransferEditView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/serial/inventories/edit/:id',
+      name: 'SerialInventoryEdit',
+      component: () => import('@/views/SerialInventoryEditView.vue'),
+      meta: { requiresAuth: true }
     }
   ],
 })

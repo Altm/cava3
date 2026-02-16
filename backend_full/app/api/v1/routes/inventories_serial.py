@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps.auth import get_db, PermissionChecker
 from app.schemas import serial as schemas
-from app.models.models import InventoryDoc
+from app.models.models import InventoryDoc, InventoryItem
 from app.services.serial_inventories import InventoryService
 
 
@@ -41,6 +41,37 @@ def list_inventories(
         query = query.filter(InventoryDoc.created_by_user_id == created_by_user_id)
     query = query.order_by(InventoryDoc.id.desc()).offset(offset).limit(limit)
     return [schemas.InventoryDocListOut.model_validate(row) for row in query.all()]
+
+
+@router.get("/{inventory_doc_id}", response_model=schemas.InventoryDocDetailOut)
+def get_inventory(
+    inventory_doc_id: int,
+    user=Depends(PermissionChecker(["inventories.write"])),
+    db: Session = Depends(get_db),
+):
+    doc = db.query(InventoryDoc).filter(InventoryDoc.id == inventory_doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Inventory doc not found")
+
+    base_query = db.query(InventoryItem).filter(InventoryItem.inventory_doc_id == inventory_doc_id)
+    expected_count = base_query.filter(InventoryItem.state == "expected").count()
+    scanned_count = base_query.filter(InventoryItem.state == "scanned").count()
+    missing_count = base_query.filter(InventoryItem.state == "missing").count()
+    unexpected_count = base_query.filter(InventoryItem.state == "unexpected").count()
+
+    return schemas.InventoryDocDetailOut(
+        id=doc.id,
+        location_id=doc.location_id,
+        status=doc.status,
+        created_by_user_id=doc.created_by_user_id,
+        closed_at=doc.closed_at,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+        expected_count=expected_count,
+        scanned_count=scanned_count,
+        missing_count=missing_count,
+        unexpected_count=unexpected_count,
+    )
 
 
 @router.post("/{inventory_doc_id}/start")
