@@ -1,4 +1,6 @@
 from decimal import Decimal
+import pytest
+from fastapi import HTTPException
 
 from app.models.models import (
     Unit,
@@ -53,12 +55,21 @@ def test_receipt_generate_post_void(db_session):
     rs = ReceiptService(db_session)
     receipt = rs.create(to_location_id=wh.id)
     rs.add_line(receipt.id, product.id, qty=Decimal("3"), unit_id=base_unit.id)
+    with pytest.raises(HTTPException) as exc:
+        rs.list_item_labels(receipt.id)
+    assert exc.value.status_code == 409
+
     gen = rs.generate(receipt.id)
     assert gen.items_created == 3
 
     items = db_session.query(ProductItem).all()
     assert len(items) == 3
     assert {i.status for i in items} == {"receiving"}
+    # legacy/backfill safety: if qr_code is missing, list_item_labels must rebuild from uuid
+    items[0].qr_code = ""
+    labels = rs.list_item_labels(receipt.id)
+    assert len(labels) == 3
+    assert all(label.startswith("ITM:") for label in labels)
 
     post_res = rs.post(receipt.id)
     assert post_res["posted_items"] == 3
@@ -167,4 +178,3 @@ def test_inventory_close_marks_missing_as_lost_and_decrements_stock(db_session):
 
     stock = db_session.query(Stock).filter_by(location_id=wh.id, product_id=product.id).first()
     assert Decimal(stock.quantity) == Decimal("2")
-

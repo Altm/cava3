@@ -246,14 +246,25 @@ class ReceiptService:
 
     def list_item_labels(self, receipt_id: int) -> list[str]:
         receipt = self._get_receipt(receipt_id)
+        if receipt.status == "draft":
+            raise HTTPException(status_code=409, detail="Receipt is draft: generate items first")
         qr_rows = (
-            self.db.query(ProductItem.qr_code)
+            self.db.query(ProductItem.id, ProductItem.qr_code, ProductItem.uuid)
             .join(StockLot, StockLot.id == ProductItem.lot_id)
             .filter(StockLot.receipt_id == receipt.id)
             .order_by(ProductItem.id.asc())
             .all()
         )
-        return [r[0] for r in qr_rows]
+        labels: list[str] = []
+        for item_id, qr_code, item_uuid in qr_rows:
+            label = (qr_code or "").strip()
+            if not label:
+                label = f"ITM:{item_uuid}"
+                self.db.query(ProductItem).filter(ProductItem.id == item_id).update({"qr_code": label})
+            labels.append(label)
+        if labels:
+            self.db.flush()
+        return labels
 
     def _get_receipt(self, receipt_id: int) -> Receipt:
         receipt = self.db.query(Receipt).get(receipt_id)

@@ -89,9 +89,10 @@
     <div class="card">
       <h3>Печать этикеток ITM</h3>
       <div class="form-actions">
-        <button class="btn btn-primary" @click="loadLabels">Получить список QR</button>
+        <button class="btn btn-primary" :disabled="!canLoadLabels" @click="loadLabels">Получить список QR</button>
         <button class="btn btn-outline" :disabled="!labels.length" @click="copyLabels">Скопировать</button>
       </div>
+      <p v-if="receipt?.status === 'draft'" class="hint">Сначала нажмите «Сгенерировать», затем получите список QR.</p>
       <pre v-if="labels.length" class="pre">{{ labels.join('\n') }}</pre>
     </div>
   </div>
@@ -134,6 +135,7 @@ const canAddLine = computed(() => canEditLines.value && line.value.productId > 0
 const canGenerate = computed(() => receipt.value?.status === 'draft')
 const canPost = computed(() => receipt.value?.status === 'generated')
 const canVoid = computed(() => receipt.value != null && ['draft', 'generated', 'posted'].includes(receipt.value.status))
+const canLoadLabels = computed(() => receipt.value != null && ['generated', 'posted'].includes(receipt.value.status))
 
 const formatDate = (value?: string | null) => {
   if (!value) return '-'
@@ -333,6 +335,10 @@ onMounted(async () => {
   padding: 12px;
   border-radius: 6px;
   overflow: auto;
+}
+.hint {
+  color: #4b5563;
+  margin-top: 8px;
 }
 @media (max-width: 1024px) {
   .grid {
