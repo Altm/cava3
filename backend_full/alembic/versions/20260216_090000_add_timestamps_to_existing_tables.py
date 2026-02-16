@@ -96,10 +96,12 @@ def ensure_timestamp_columns(table_name: str) -> None:
 
     # Backfill just in case (covers nullable legacy columns)
     if column_exists(table_name, "created_at") and column_exists(table_name, "updated_at"):
+        quote = op.get_bind().dialect.identifier_preparer.quote
+        table_sql = quote(table_name)
         op.execute(
             sa.text(
                 f"""
-                UPDATE {table_name}
+                UPDATE {table_sql}
                 SET created_at = COALESCE(created_at, now()),
                     updated_at = COALESCE(updated_at, COALESCE(created_at, now()))
                 """
@@ -114,13 +116,16 @@ def ensure_updated_at_trigger(table_name: str) -> None:
         return
     if not column_exists(table_name, "updated_at"):
         return
+    quote = op.get_bind().dialect.identifier_preparer.quote
     trigger_name = f"trg_set_updated_at_{table_name}"
-    op.execute(sa.text(f"DROP TRIGGER IF EXISTS {trigger_name} ON {table_name}"))
+    trigger_sql = quote(trigger_name)
+    table_sql = quote(table_name)
+    op.execute(sa.text(f"DROP TRIGGER IF EXISTS {trigger_sql} ON {table_sql}"))
     op.execute(
         sa.text(
             f"""
-            CREATE TRIGGER {trigger_name}
-            BEFORE UPDATE ON {table_name}
+            CREATE TRIGGER {trigger_sql}
+            BEFORE UPDATE ON {table_sql}
             FOR EACH ROW
             EXECUTE FUNCTION set_updated_at();
             """
@@ -194,8 +199,11 @@ def downgrade() -> None:
     for (table_name,) in result.fetchall():
         if table_name in EXCLUDED_TABLES:
             continue
+        quote = op.get_bind().dialect.identifier_preparer.quote
         trigger_name = f"trg_set_updated_at_{table_name}"
-        op.execute(sa.text(f"DROP TRIGGER IF EXISTS {trigger_name} ON {table_name}"))
+        trigger_sql = quote(trigger_name)
+        table_sql = quote(table_name)
+        op.execute(sa.text(f"DROP TRIGGER IF EXISTS {trigger_sql} ON {table_sql}"))
 
     # Intentionally do not drop timestamp columns in downgrade.
     # Some tables had created_at-like columns before this migration, and
