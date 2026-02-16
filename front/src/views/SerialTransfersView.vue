@@ -110,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { productApi, type Location, type Product, type Unit } from '@/api/productApi'
 import { serialApi } from '@/api/serialApi'
 
@@ -144,6 +144,44 @@ const serialProducts = computed(() => {
 
 const canCreate = computed(() => fromLocationId.value > 0 && toLocationId.value > 0 && fromLocationId.value !== toLocationId.value)
 const canPlan = computed(() => !!transferId.value && plan.value.productId > 0 && plan.value.qtyBase > 0)
+
+const listAvailableProductIds = async (locationId: number) => {
+  const pageSize = 500
+  const availableProductIds = new Set<number>()
+  let offset = 0
+
+  while (true) {
+    const items = await serialApi.listProductItems({
+      location_id: locationId,
+      status: 'in_stock',
+      limit: pageSize,
+      offset
+    })
+    items
+      .filter((item) => item.reserved_transfer_doc_id == null)
+      .forEach((item) => availableProductIds.add(item.product_id))
+    if (items.length < pageSize) break
+    offset += pageSize
+  }
+
+  return availableProductIds
+}
+
+const loadAvailableProductsByLocation = async (locationId: number) => {
+  if (!locationId) {
+    products.value = []
+    plan.value.productId = 0
+    return
+  }
+  const [productsInLocation, availableProductIds] = await Promise.all([
+    productApi.getProducts({ locationId }),
+    listAvailableProductIds(locationId)
+  ])
+  products.value = productsInLocation.filter((product) => availableProductIds.has(product.id))
+  if (!products.value.some((product) => product.id === plan.value.productId)) {
+    plan.value.productId = 0
+  }
+}
 
 const createDoc = async () => {
   try {
@@ -235,8 +273,11 @@ const closeDoc = async () => {
 
 onMounted(async () => {
   locations.value = await productApi.getLocations()
-  products.value = await productApi.getProducts()
   units.value = await productApi.getUnits()
+})
+
+watch(fromLocationId, async (locationId) => {
+  await loadAvailableProductsByLocation(locationId)
 })
 </script>
 

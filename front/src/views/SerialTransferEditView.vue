@@ -103,6 +103,7 @@ const transferId = Number(route.params.id)
 
 const locations = ref<Location[]>([])
 const products = ref<Product[]>([])
+const productsLoadedForLocationId = ref<number | null>(null)
 const units = ref<Unit[]>([])
 const doc = ref<TransferDocDetailOut | null>(null)
 
@@ -130,9 +131,53 @@ const locationLabel = (locationId: number) => {
   return location ? `${location.name} (${location.code})` : String(locationId)
 }
 
+const listAvailableProductIds = async (locationId: number) => {
+  const pageSize = 500
+  const availableProductIds = new Set<number>()
+  let offset = 0
+
+  while (true) {
+    const items = await serialApi.listProductItems({
+      location_id: locationId,
+      status: 'in_stock',
+      limit: pageSize,
+      offset
+    })
+    items
+      .filter((item) => item.reserved_transfer_doc_id == null)
+      .forEach((item) => availableProductIds.add(item.product_id))
+    if (items.length < pageSize) break
+    offset += pageSize
+  }
+
+  return availableProductIds
+}
+
+const loadAvailableProductsByLocation = async (locationId: number) => {
+  if (!locationId) {
+    products.value = []
+    productsLoadedForLocationId.value = null
+    plan.value.productId = 0
+    return
+  }
+  if (productsLoadedForLocationId.value === locationId) {
+    return
+  }
+  const [productsInLocation, availableProductIds] = await Promise.all([
+    productApi.getProducts({ locationId }),
+    listAvailableProductIds(locationId)
+  ])
+  products.value = productsInLocation.filter((product) => availableProductIds.has(product.id))
+  productsLoadedForLocationId.value = locationId
+  if (!products.value.some((product) => product.id === plan.value.productId)) {
+    plan.value.productId = 0
+  }
+}
+
 const reload = async () => {
   try {
     doc.value = await serialApi.getTransfer(transferId)
+    await loadAvailableProductsByLocation(doc.value.from_location_id)
   } catch (e: any) {
     alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
   }
@@ -205,7 +250,6 @@ const closeDoc = async () => {
 
 onMounted(async () => {
   locations.value = await productApi.getLocations()
-  products.value = await productApi.getProducts()
   units.value = await productApi.getUnits()
   await reload()
 })

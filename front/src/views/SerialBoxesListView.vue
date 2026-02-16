@@ -1,6 +1,9 @@
 <template>
   <div class="page">
-    <h2>Список коробок (QR)</h2>
+    <div class="page-head">
+      <h2>Список коробок (QR)</h2>
+      <RouterLink class="btn btn-outline" to="/serial/boxes/manage">Создать коробку</RouterLink>
+    </div>
 
     <div class="card">
       <div class="form-row">
@@ -66,6 +69,7 @@
               <th>Lot</th>
               <th>Локация</th>
               <th>Создан</th>
+              <th>Действие</th>
             </tr>
           </thead>
           <tbody>
@@ -78,12 +82,15 @@
               <td>{{ row.lot_id }}</td>
               <td>{{ locationLabel(row.location_id) }}</td>
               <td>{{ formatDate(row.created_at) }}</td>
+              <td>
+                <RouterLink class="btn btn-outline" :to="`/serial/boxes/manage?box_id=${row.id}`">Редактировать</RouterLink>
+              </td>
             </tr>
             <tr v-if="!rows.length && !loading">
-              <td colspan="8">Нет данных</td>
+              <td colspan="9">Нет данных</td>
             </tr>
             <tr v-if="loading">
-              <td colspan="8">Загрузка...</td>
+              <td colspan="9">Загрузка...</td>
             </tr>
           </tbody>
         </table>
@@ -167,6 +174,16 @@ onMounted(async () => {
 .page {
   padding: 20px;
 }
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.page-head h2 {
+  margin: 0;
+}
 .card {
   border: 1px solid #ddd;
   border-radius: 8px;
@@ -193,10 +210,15 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid #ccc;
   background: white;
+  color: #111827;
+  text-decoration: none;
   cursor: pointer;
 }
 .btn-primary {

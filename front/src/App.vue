@@ -28,6 +28,7 @@ const handleLogout = () => {
         <RouterLink to="/serial/transfers">Перемещение (QR)</RouterLink> |
         <RouterLink to="/serial/inventories">Инвентаризация (QR)</RouterLink> |
         <RouterLink to="/serial/scan">Сканер QR</RouterLink> |
+        <RouterLink to="/serial/boxes/manage">Коробки (QR)</RouterLink> |
         <a href="#" @click="handleLogout">Выйти</a>
       </template>
       <template v-else>

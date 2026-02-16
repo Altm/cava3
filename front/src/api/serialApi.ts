@@ -232,6 +232,10 @@ export const serialApi = {
     const res = await api.post('/boxes', { product_id, lot_id, location_id, sealed })
     return res.data
   },
+  async getBox(box_id: number): Promise<BoxOut> {
+    const res = await api.get(`/boxes/${box_id}`)
+    return res.data
+  },
   async openBox(box_id: number): Promise<BoxOut> {
     const res = await api.post(`/boxes/${box_id}/open`)
     return res.data

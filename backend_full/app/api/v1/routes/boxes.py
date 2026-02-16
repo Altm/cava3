@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps.auth import get_db, PermissionChecker
@@ -52,6 +52,18 @@ def list_boxes(
         query = query.filter(Box.lot_id == lot_id)
     query = query.order_by(Box.id.desc()).offset(offset).limit(limit)
     return [schemas.BoxListOut.model_validate(row) for row in query.all()]
+
+
+@router.get("/{box_id}", response_model=schemas.BoxOut)
+def get_box(
+    box_id: int,
+    user=Depends(PermissionChecker(["boxes.read"])),
+    db: Session = Depends(get_db),
+):
+    box = db.query(Box).filter(Box.id == box_id).first()
+    if not box:
+        raise HTTPException(status_code=404, detail="Box not found")
+    return schemas.BoxOut.model_validate(box)
 
 
 @router.post("/{box_id}/open", response_model=schemas.BoxOut)

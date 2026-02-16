@@ -2,7 +2,10 @@
   <div class="page">
     <div class="page-head">
       <h2>Редактирование приёмки #{{ receiptId }}</h2>
-      <RouterLink class="btn btn-outline" to="/serial/receipts/list">К списку</RouterLink>
+      <div class="head-actions">
+        <RouterLink class="btn btn-outline" :to="`/serial/boxes/manage?receipt_id=${receiptId}`">Управление коробками</RouterLink>
+        <RouterLink class="btn btn-outline" to="/serial/receipts/list">К списку</RouterLink>
+      </div>
     </div>
 
     <div class="grid">
@@ -245,6 +248,11 @@ onMounted(async () => {
 }
 .page-head h2 {
   margin: 0;
+}
+.head-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .grid {
   display: grid;
