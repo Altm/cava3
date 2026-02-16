@@ -3,6 +3,7 @@ frontend/
 front/node_modules
 front/.vscode
 data/product_images
+*.xlsx
 
 # Python
 __pycache__/

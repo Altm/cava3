@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import List
 from sqlalchemy.orm import Session
 from app.common.errors import IdempotencyError
-from app.models.models import SaleEvent, SaleLine, Product, ProductComposite
+from app.models.models import SaleEvent, SaleLine, Product, ProductComposite, Unit
 from app.services.stock_service import StockService
 import structlog
 
@@ -39,11 +39,14 @@ class SalesService:
         self.db.add(sale)
         self.db.flush()
         for line in lines:
+            unit = self.db.query(Unit).filter(Unit.code == line["unit"]).first()
+            if not unit:
+                raise ValueError(f"Unknown unit code: {line['unit']}")
             sale_line = SaleLine(
                 sale_event_id=sale.id,
                 product_id=line["product_id"],
                 quantity=Decimal(str(line["quantity"])),
-                unit_code=line["unit"],
+                unit_id=unit.id,
                 currency=line.get("currency", "USD"),
                 price=Decimal(str(line.get("price", "0"))),
             )
@@ -51,17 +54,17 @@ class SalesService:
         logger.info("sale_ingested", event_id=event_id)
         return sale
 
-    def _expand_components(self, product_id: int, quantity: Decimal, unit: str) -> List[dict]:
+    def _expand_components(self, product_id: int, quantity: Decimal, unit_id: int) -> List[dict]:
         components = self.db.query(ProductComposite).filter_by(parent_product_id=product_id).all()
         if not components:
-            return [{"product_id": product_id, "quantity": quantity, "unit": unit}]
+            return [{"product_id": product_id, "quantity": quantity, "unit_id": unit_id}]
         expanded: List[dict] = []
         for comp in components:
             expanded.append(
                 {
                     "product_id": comp.component_product_id,
                     "quantity": quantity * Decimal(comp.quantity),
-                    "unit": comp.unit_code,
+                    "unit_id": comp.unit_id,
                 }
             )
         return expanded
@@ -79,13 +82,16 @@ class SalesService:
                 self.ingest_sale(event_id, terminal_id, location_id, lines)
             applied_events.append(event_id)
             for line in lines:
-                expanded = self._expand_components(line["product_id"], Decimal(str(line["quantity"])), line["unit"])
+                unit = self.db.query(Unit).filter(Unit.code == line["unit"]).first()
+                if not unit:
+                    raise ValueError(f"Unknown unit code: {line['unit']}")
+                expanded = self._expand_components(line["product_id"], Decimal(str(line["quantity"])), unit.id)
                 for comp_line in expanded:
                     pid = comp_line["product_id"]
-                    delta_counter.setdefault(pid, {"qty": Decimal("0"), "unit": comp_line["unit"]})
+                    delta_counter.setdefault(pid, {"qty": Decimal("0"), "unit_id": comp_line["unit_id"]})
                     delta_counter[pid]["qty"] += Decimal(str(comp_line["quantity"]))
         for product_id, info in delta_counter.items():
-            self.stock_service.adjust_stock(location_id, product_id, -info["qty"], info["unit"])
+            self.stock_service.adjust_stock(location_id, product_id, -info["qty"], info["unit_id"])
         self.db.query(SaleEvent).filter(SaleEvent.event_id.in_(applied_events)).update(
             {"status": "confirmed", "confirmed_at": datetime.utcnow()}, synchronize_session=False
         )

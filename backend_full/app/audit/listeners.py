@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict
+from uuid import UUID
 
 from sqlalchemy import event, inspect
 from sqlalchemy.orm import Session
@@ -16,6 +17,8 @@ def _json_friendly(value: Any) -> Any:
         return str(value)
     if isinstance(value, (datetime, date)):
         return value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
     return value
 
 

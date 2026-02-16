@@ -1,35 +1,65 @@
+from __future__ import annotations
+
 from decimal import Decimal
+
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from app.common.errors import ValidationError
-from app.models.models import Stock, Product
-from app.services.units import UnitConverter
+
+from app.models.models import Product, ProductUnit, Stock
 
 
 class StockService:
-    """Manages stock mutations and validations."""
+    """Manages aggregated stock mutations and validations (unit_id based)."""
 
     def __init__(self, db: Session):
         self.db = db
-        self.converter = UnitConverter(db)
 
     def adjust_stock(self, location_id: int, product_id: int, quantity: Decimal, unit_id: int) -> Stock:
+        """
+        Adjust aggregated stock for a product in a location.
+
+        Inputs:
+        - `quantity`: may be fractional
+        - `unit_id`: unit for `quantity`
+
+        Storage:
+        - Stock is stored in product base unit (`product.base_unit_id`).
+        """
         product = self.db.query(Product).get(product_id)
         if not product:
-            raise ValidationError("Product missing")
+            raise HTTPException(status_code=404, detail="Product missing")
 
-        # Get unit code from unit ID
-        from app.models.models import Unit
-        unit = self.db.query(Unit).get(unit_id)
-        if not unit:
-            raise ValidationError("Unit not found")
+        qty_base = self._to_base(product_id=product.id, from_unit_id=unit_id, qty=quantity)
 
-        quantity_base = self.converter.to_base(unit.code, quantity, product.base_unit_code)
-        stock = self.db.query(Stock).filter_by(location_id=location_id, product_id=product_id).first()
+        q = self.db.query(Stock).filter_by(location_id=location_id, product_id=product_id)
+        if self.db.bind and self.db.bind.dialect.name == "postgresql":
+            q = q.with_for_update()
+        stock = q.first()
         if not stock:
-            stock = Stock(location_id=location_id, product_id=product_id, unit_code=product.base_unit_code, quantity=Decimal("0"))
+            stock = Stock(location_id=location_id, product_id=product_id, unit_id=product.base_unit_id, quantity=Decimal("0"))
             self.db.add(stock)
-        new_qty = stock.quantity + quantity_base
+            self.db.flush()
+
+        new_qty = Decimal(stock.quantity) + qty_base
         if new_qty < 0:
-            raise ValidationError("Insufficient stock")
-        stock.quantity = self.converter.normalize(product.base_unit_code, new_qty)
+            raise HTTPException(status_code=409, detail="Insufficient stock")
+        stock.quantity = new_qty
+        stock.unit_id = product.base_unit_id
         return stock
+
+    def _to_base(self, product_id: int, from_unit_id: int, qty: Decimal) -> Decimal:
+        product = self.db.query(Product).get(product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail="Product missing")
+        if from_unit_id == product.base_unit_id:
+            return qty
+
+        pu = (
+            self.db.query(ProductUnit)
+            .filter(ProductUnit.product_id == product_id, ProductUnit.unit_id == from_unit_id)
+            .first()
+        )
+        if not pu:
+            raise HTTPException(status_code=422, detail="Missing product unit conversion")
+        ratio = Decimal(str(pu.ratio_to_base))
+        return qty * ratio

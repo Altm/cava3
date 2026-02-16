@@ -38,6 +38,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 def has_permission(user: User, permission: str, location_id: int | None = None, db: Session | None = None) -> bool:
     """Check if user has a specific permission"""
+    if getattr(user, "is_superuser", False):
+        return True
     # Check if user ID is in super admin IDs
     settings = get_settings()
     # DEBUG: Print super admin IDs and current user ID

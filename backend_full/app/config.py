@@ -6,7 +6,7 @@ from pydantic import Field
 class Settings(BaseSettings):
     app_name: str = "Cavina Backoffice"
     env: str = Field("DEV", description="Environment name for toggling features")
-    database_url: str = Field(..., env="DATABASE_URL")
+    database_url: str = Field("sqlite:///:memory:", env="DATABASE_URL")
     jwt_secret_key: str = Field("change-me", env="JWT_SECRET_KEY")
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 12

@@ -21,6 +21,25 @@
 - Выполните `pytest`. Используется in-memory SQLite, поэтому внешние сервисы не требуются.
 - Ключевые тесты покрывают идемпотентность, сверку, дробные списания, композитные рецепты, RBAC, аудит и промо-правила.
 
+## Серийный учёт (QR)
+Добавлен поштучный учёт для товаров с дискретной базовой единицей (`unit.is_discrete=true`).
+
+- QR форматы:
+  - `ITM:{UUID}` — единица (`product_item`)
+  - `BOX:{UUID}` — коробка (`box`)
+- `product_item.status`:
+  - `receiving` (сгенерировано в приёмке, ещё не подтверждено)
+  - `in_stock` (в наличии в локации)
+  - `in_transit` (в доставке; локация меняется только при приёмке в баре)
+  - `lost` (недостача в пути / по инвентаризации)
+  - `voided` (погашено при отмене приёмки)
+- Основные API:
+  - `POST /api/v1/receipts` + `/lines` + `/generate` + `/post` + `/void`
+  - `POST /api/v1/boxes` + `/{id}/open` + `/{id}/add-item` + `/{id}/seal`
+  - `POST /api/v1/transfers` + `/{id}/plan` + `/{id}/scan` + `/{id}/ship` + `/{id}/close`
+  - `POST /api/v1/inventories` + `/{id}/start` + `/{id}/scan` + `/{id}/close`
+  - `POST /api/v1/scan/{qr_code}` — универсальный резолвер ITM/BOX
+
 
 ## Cron
 Чистить логи!
