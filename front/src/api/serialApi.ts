@@ -38,6 +38,15 @@ export interface ReceiptOut {
   status: string
 }
 
+export interface ReceiptListOut {
+  id: number
+  to_location_id: number
+  status: string
+  created_by_user_id?: number | null
+  created_at: string
+  updated_at: string
+}
+
 export interface ReceiptLineOut {
   id: number
   receipt_id: number
@@ -58,6 +67,19 @@ export interface BoxOut {
   status: string
 }
 
+export interface BoxListOut {
+  id: number
+  uuid: string
+  qr_code: string
+  product_id: number
+  lot_id: number
+  location_id: number
+  sealed: boolean
+  status: string
+  created_at: string
+  updated_at: string
+}
+
 export interface TransferDocOut {
   id: number
   from_location_id: number
@@ -65,10 +87,45 @@ export interface TransferDocOut {
   status: string
 }
 
+export interface TransferDocListOut {
+  id: number
+  from_location_id: number
+  to_location_id: number
+  status: string
+  created_by_user_id?: number | null
+  created_at: string
+  updated_at: string
+}
+
 export interface InventoryDocOut {
   id: number
   location_id: number
   status: string
+}
+
+export interface InventoryDocListOut {
+  id: number
+  location_id: number
+  status: string
+  created_by_user_id?: number | null
+  closed_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductItemListOut {
+  id: number
+  uuid: string
+  qr_code: string
+  product_id: number
+  lot_id: number
+  location_id: number
+  box_id?: number | null
+  status: string
+  reserved_transfer_doc_id?: number | null
+  lost_reason?: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface ScanOut {
@@ -116,6 +173,17 @@ export const serialApi = {
     const res = await api.get(`/receipts/${receipt_id}/labels/items`)
     return res.data
   },
+  async listReceipts(params?: {
+    status?: string
+    to_location_id?: number
+    product_id?: number
+    created_by_user_id?: number
+    limit?: number
+    offset?: number
+  }): Promise<ReceiptListOut[]> {
+    const res = await api.get('/receipts', { params })
+    return res.data
+  },
 
   // Boxes
   async createBox(product_id: number, lot_id: number, location_id: number, sealed: boolean): Promise<BoxOut> {
@@ -136,6 +204,18 @@ export const serialApi = {
   },
   async boxLabels(box_id: number): Promise<LabelsOut> {
     const res = await api.get(`/boxes/${box_id}/labels`)
+    return res.data
+  },
+  async listBoxes(params?: {
+    status?: string
+    sealed?: boolean
+    location_id?: number
+    product_id?: number
+    lot_id?: number
+    limit?: number
+    offset?: number
+  }): Promise<BoxListOut[]> {
+    const res = await api.get('/boxes', { params })
     return res.data
   },
 
@@ -164,6 +244,18 @@ export const serialApi = {
     const res = await api.post(`/transfers/${transfer_doc_id}/close`)
     return res.data
   },
+  async listTransfers(params?: {
+    status?: string
+    from_location_id?: number
+    to_location_id?: number
+    product_id?: number
+    created_by_user_id?: number
+    limit?: number
+    offset?: number
+  }): Promise<TransferDocListOut[]> {
+    const res = await api.get('/transfers', { params })
+    return res.data
+  },
 
   // Inventories (serialized)
   async createInventory(location_id: number): Promise<InventoryDocOut> {
@@ -182,6 +274,31 @@ export const serialApi = {
     const res = await api.post(`/inventories/${inventory_doc_id}/close`)
     return res.data
   },
+  async listInventories(params?: {
+    status?: string
+    location_id?: number
+    created_by_user_id?: number
+    limit?: number
+    offset?: number
+  }): Promise<InventoryDocListOut[]> {
+    const res = await api.get('/inventories', { params })
+    return res.data
+  },
+
+  // Product items
+  async listProductItems(params?: {
+    status?: string
+    location_id?: number
+    product_id?: number
+    lot_id?: number
+    box_id?: number
+    reserved_transfer_doc_id?: number
+    limit?: number
+    offset?: number
+  }): Promise<ProductItemListOut[]> {
+    const res = await api.get('/scan/items', { params })
+    return res.data
+  },
 
   // Scan resolver
   async scanQr(qr_code: string): Promise<ScanOut> {
@@ -189,4 +306,3 @@ export const serialApi = {
     return res.data
   }
 }
-

@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps.auth import get_db, PermissionChecker
 from app.schemas import serial as schemas
+from app.models.models import Box
 from app.services.serial_boxes import BoxService
 
 
@@ -24,6 +25,33 @@ def create_box(
     )
     db.commit()
     return schemas.BoxOut.model_validate(box)
+
+
+@router.get("", response_model=list[schemas.BoxListOut])
+def list_boxes(
+    status: str | None = Query(default=None),
+    sealed: bool | None = Query(default=None),
+    location_id: int | None = Query(default=None),
+    product_id: int | None = Query(default=None),
+    lot_id: int | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    user=Depends(PermissionChecker(["boxes.read"])),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Box)
+    if status:
+        query = query.filter(Box.status == status)
+    if sealed is not None:
+        query = query.filter(Box.sealed == sealed)
+    if location_id is not None:
+        query = query.filter(Box.location_id == location_id)
+    if product_id is not None:
+        query = query.filter(Box.product_id == product_id)
+    if lot_id is not None:
+        query = query.filter(Box.lot_id == lot_id)
+    query = query.order_by(Box.id.desc()).offset(offset).limit(limit)
+    return [schemas.BoxListOut.model_validate(row) for row in query.all()]
 
 
 @router.post("/{box_id}/open", response_model=schemas.BoxOut)
@@ -71,4 +99,3 @@ def box_labels(
 ):
     service = BoxService(db)
     return schemas.LabelsOut(labels=service.list_box_labels(box_id))
-

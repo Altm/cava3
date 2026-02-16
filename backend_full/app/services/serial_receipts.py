@@ -260,6 +260,13 @@ class ReceiptService:
 
         For serialized processes we require the result to be an integer.
         """
+        product = self._get_product(product_id)
+        if unit_id == product.base_unit_id:
+            qty_base = qty
+            if qty_base != qty_base.to_integral_value():
+                raise HTTPException(status_code=422, detail="Quantity must be integer in base units for serialized receipt")
+            return int(qty_base)
+
         pu = (
             self.db.query(ProductUnit)
             .filter(ProductUnit.product_id == product_id, ProductUnit.unit_id == unit_id)

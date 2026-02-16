@@ -133,13 +133,93 @@
         <pre class="pre">{{ boxAddLog.join('\n') }}</pre>
       </div>
     </div>
+
+    <div class="card">
+      <h3>Просмотр созданных приёмок</h3>
+      <div class="form-actions">
+        <button class="btn btn-outline" @click="toggleReceiptsList">
+          {{ showReceiptsList ? 'Скрыть список' : 'Показать список' }}
+        </button>
+        <button v-if="showReceiptsList" class="btn btn-primary" @click="loadReceiptsList">Обновить</button>
+      </div>
+
+      <div v-if="showReceiptsList">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Статус</label>
+            <select v-model="receiptListFilters.status" class="form-control">
+              <option value="">Все</option>
+              <option value="draft">draft</option>
+              <option value="generated">generated</option>
+              <option value="posted">posted</option>
+              <option value="void">void</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Локация</label>
+            <select v-model.number="receiptListFilters.to_location_id" class="form-control">
+              <option :value="0">Все</option>
+              <option v-for="l in locations" :key="l.id" :value="l.id">{{ l.name }} ({{ l.code }})</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Товар</label>
+            <select v-model.number="receiptListFilters.product_id" class="form-control">
+              <option :value="0">Все</option>
+              <option v-for="p in serialProducts" :key="p.id" :value="p.id">{{ p.name }} (id={{ p.id }})</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Лимит</label>
+            <input v-model.number="receiptListFilters.limit" type="number" min="1" max="500" class="form-control" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" @click="loadReceiptsList">Применить фильтры</button>
+          <button class="btn btn-outline" @click="resetReceiptListFilters">Сбросить</button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Статус</th>
+                <th>Локация</th>
+                <th>Создан</th>
+                <th>Обновлен</th>
+                <th>Автор</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in receiptRows" :key="row.id">
+                <td>{{ row.id }}</td>
+                <td>{{ row.status }}</td>
+                <td>{{ locationLabel(row.to_location_id) }}</td>
+                <td>{{ formatDate(row.created_at) }}</td>
+                <td>{{ formatDate(row.updated_at) }}</td>
+                <td>{{ row.created_by_user_id ?? '-' }}</td>
+              </tr>
+              <tr v-if="!receiptRows.length && !receiptRowsLoading">
+                <td colspan="6">Нет данных</td>
+              </tr>
+              <tr v-if="receiptRowsLoading">
+                <td colspan="6">Загрузка...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { productApi, type Location, type Product, type Unit } from '@/api/productApi'
-import { serialApi, type ReceiptLineOut, type ScanOut } from '@/api/serialApi'
+import { serialApi, type ReceiptLineOut, type ReceiptListOut, type ScanOut } from '@/api/serialApi'
 
 const locations = ref<Location[]>([])
 const products = ref<Product[]>([])
@@ -258,6 +338,58 @@ const boxQr = ref<string>('')
 const boxSealed = ref<boolean | null>(null)
 const addToBoxQr = ref('')
 const boxAddLog = ref<string[]>([])
+
+const showReceiptsList = ref(false)
+const receiptRowsLoading = ref(false)
+const receiptRows = ref<ReceiptListOut[]>([])
+const receiptListFilters = ref({
+  status: '',
+  to_location_id: 0,
+  product_id: 0,
+  limit: 100
+})
+
+const locationLabel = (locationId: number) => {
+  const location = locations.value.find((l) => l.id === locationId)
+  return location ? `${location.name} (${location.code})` : String(locationId)
+}
+
+const formatDate = (value?: string | null) => {
+  if (!value) return '-'
+  return new Date(value).toLocaleString()
+}
+
+const loadReceiptsList = async () => {
+  try {
+    receiptRowsLoading.value = true
+    const params: Record<string, any> = { limit: receiptListFilters.value.limit }
+    if (receiptListFilters.value.status) params.status = receiptListFilters.value.status
+    if (receiptListFilters.value.to_location_id > 0) params.to_location_id = receiptListFilters.value.to_location_id
+    if (receiptListFilters.value.product_id > 0) params.product_id = receiptListFilters.value.product_id
+    receiptRows.value = await serialApi.listReceipts(params)
+  } catch (e: any) {
+    alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
+  } finally {
+    receiptRowsLoading.value = false
+  }
+}
+
+const toggleReceiptsList = async () => {
+  showReceiptsList.value = !showReceiptsList.value
+  if (showReceiptsList.value) {
+    await loadReceiptsList()
+  }
+}
+
+const resetReceiptListFilters = async () => {
+  receiptListFilters.value = {
+    status: '',
+    to_location_id: 0,
+    product_id: 0,
+    limit: 100
+  }
+  await loadReceiptsList()
+}
 
 const resolveBoxCtx = async () => {
   try {
@@ -420,6 +552,21 @@ onMounted(async () => {
   color: #4b5563;
   margin-top: -8px;
 }
+.table-wrap {
+  margin-top: 12px;
+  overflow: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table th,
+.table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 8px;
+  text-align: left;
+  font-size: 0.92rem;
+}
 @media (max-width: 1024px) {
   .grid {
     grid-template-columns: 1fr;
@@ -429,4 +576,3 @@ onMounted(async () => {
   }
 }
 </style>
-
