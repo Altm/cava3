@@ -2,7 +2,7 @@
   <div class="page">
     <div class="page-head">
       <h2>Приёмка (QR)</h2>
-      <button class="btn btn-outline" type="button" @click="openReceiptsListWindow">Таблица приёмок</button>
+      <RouterLink class="btn btn-outline" to="/serial/receipts/list">Таблица приёмок</RouterLink>
     </div>
 
     <div class="grid">
@@ -263,10 +263,6 @@ const boxSealed = ref<boolean | null>(null)
 const addToBoxQr = ref('')
 const boxAddLog = ref<string[]>([])
 
-const openReceiptsListWindow = () => {
-  window.open('/serial/receipts/list', '_blank', 'noopener,noreferrer')
-}
-
 const resolveBoxCtx = async () => {
   try {
     const res = await serialApi.scanQr(boxCtxQr.value.trim())
@@ -388,10 +384,15 @@ onMounted(async () => {
   gap: 12px;
 }
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid #ccc;
   background: white;
+  color: #111827;
+  text-decoration: none;
   cursor: pointer;
 }
 .btn-primary {

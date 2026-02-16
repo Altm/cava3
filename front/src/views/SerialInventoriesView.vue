@@ -2,7 +2,7 @@
   <div class="page">
     <div class="page-head">
       <h2>Инвентаризация (QR)</h2>
-      <button class="btn btn-outline" type="button" @click="openInventoriesListWindow">Таблица инвентаризаций</button>
+      <RouterLink class="btn btn-outline" to="/serial/inventories/list">Таблица инвентаризаций</RouterLink>
     </div>
 
     <div class="grid">
@@ -61,10 +61,6 @@ const scannedCount = ref(0)
 
 const scanQr = ref('')
 const log = ref<string[]>([])
-
-const openInventoriesListWindow = () => {
-  window.open('/serial/inventories/list', '_blank', 'noopener,noreferrer')
-}
 
 const createDoc = async () => {
   try {
@@ -165,10 +161,15 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid #ccc;
   background: white;
+  color: #111827;
+  text-decoration: none;
   cursor: pointer;
 }
 .btn-primary {

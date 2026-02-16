@@ -3,8 +3,8 @@
     <div class="page-head">
       <h2>Сканер QR</h2>
       <div class="form-actions">
-        <button class="btn btn-outline" type="button" @click="openBoxesWindow">Таблица коробок</button>
-        <button class="btn btn-outline" type="button" @click="openItemsWindow">Таблица единиц</button>
+        <RouterLink class="btn btn-outline" to="/serial/scan/boxes">Таблица коробок</RouterLink>
+        <RouterLink class="btn btn-outline" to="/serial/scan/items">Таблица единиц</RouterLink>
       </div>
     </div>
 
@@ -47,13 +47,6 @@ const reset = () => {
   result.value = null
 }
 
-const openBoxesWindow = () => {
-  window.open('/serial/scan/boxes', '_blank', 'noopener,noreferrer')
-}
-
-const openItemsWindow = () => {
-  window.open('/serial/scan/items', '_blank', 'noopener,noreferrer')
-}
 </script>
 
 <style scoped>
@@ -91,10 +84,15 @@ const openItemsWindow = () => {
   flex-wrap: wrap;
 }
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid #ccc;
   background: white;
+  color: #111827;
+  text-decoration: none;
   cursor: pointer;
 }
 .btn-primary {

@@ -2,7 +2,7 @@
   <div class="page">
     <div class="page-head">
       <h2>Перемещение (QR)</h2>
-      <button class="btn btn-outline" type="button" @click="openTransfersListWindow">Таблица перемещений</button>
+      <RouterLink class="btn btn-outline" to="/serial/transfers/list">Таблица перемещений</RouterLink>
     </div>
 
     <div class="grid">
@@ -145,10 +145,6 @@ const serialProducts = computed(() => {
 const canCreate = computed(() => fromLocationId.value > 0 && toLocationId.value > 0 && fromLocationId.value !== toLocationId.value)
 const canPlan = computed(() => !!transferId.value && plan.value.productId > 0 && plan.value.qtyBase > 0)
 
-const openTransfersListWindow = () => {
-  window.open('/serial/transfers/list', '_blank', 'noopener,noreferrer')
-}
-
 const createDoc = async () => {
   try {
     const res = await serialApi.createTransfer(fromLocationId.value, toLocationId.value)
@@ -289,10 +285,15 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid #ccc;
   background: white;
+  color: #111827;
+  text-decoration: none;
   cursor: pointer;
 }
 .btn-primary {
