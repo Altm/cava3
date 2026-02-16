@@ -1,6 +1,9 @@
 <template>
   <div class="page">
-    <h2>Инвентаризация (QR)</h2>
+    <div class="page-head">
+      <h2>Инвентаризация (QR)</h2>
+      <button class="btn btn-outline" type="button" @click="openInventoriesListWindow">Таблица инвентаризаций</button>
+    </div>
 
     <div class="grid">
       <div class="card">
@@ -40,87 +43,13 @@
       </div>
     </div>
 
-    <div class="card">
-      <h3>Просмотр созданных инвентаризаций</h3>
-      <div class="form-actions">
-        <button class="btn btn-outline" @click="toggleInventoriesList">
-          {{ showInventoriesList ? 'Скрыть список' : 'Показать список' }}
-        </button>
-        <button v-if="showInventoriesList" class="btn btn-primary" @click="loadInventoriesList">Обновить</button>
-      </div>
-
-      <div v-if="showInventoriesList">
-        <div class="form-row">
-          <div class="form-group">
-            <label>Статус</label>
-            <select v-model="inventoryListFilters.status" class="form-control">
-              <option value="">Все</option>
-              <option value="draft">draft</option>
-              <option value="counting">counting</option>
-              <option value="closed">closed</option>
-              <option value="void">void</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Локация</label>
-            <select v-model.number="inventoryListFilters.location_id" class="form-control">
-              <option :value="0">Все</option>
-              <option v-for="l in locations" :key="l.id" :value="l.id">{{ l.name }} ({{ l.code }})</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Лимит</label>
-            <input v-model.number="inventoryListFilters.limit" type="number" min="1" max="500" class="form-control" />
-          </div>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-primary" @click="loadInventoriesList">Применить фильтры</button>
-          <button class="btn btn-outline" @click="resetInventoryListFilters">Сбросить</button>
-        </div>
-
-        <div class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Статус</th>
-                <th>Локация</th>
-                <th>Закрыт</th>
-                <th>Создан</th>
-                <th>Обновлен</th>
-                <th>Автор</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in inventoryRows" :key="row.id">
-                <td>{{ row.id }}</td>
-                <td>{{ row.status }}</td>
-                <td>{{ locationLabel(row.location_id) }}</td>
-                <td>{{ formatDate(row.closed_at ?? null) }}</td>
-                <td>{{ formatDate(row.created_at) }}</td>
-                <td>{{ formatDate(row.updated_at) }}</td>
-                <td>{{ row.created_by_user_id ?? '-' }}</td>
-              </tr>
-              <tr v-if="!inventoryRows.length && !inventoryRowsLoading">
-                <td colspan="7">Нет данных</td>
-              </tr>
-              <tr v-if="inventoryRowsLoading">
-                <td colspan="7">Загрузка...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { productApi, type Location } from '@/api/productApi'
-import { serialApi, type InventoryDocListOut } from '@/api/serialApi'
+import { serialApi } from '@/api/serialApi'
 
 const locations = ref<Location[]>([])
 const locationId = ref(0)
@@ -132,23 +61,9 @@ const scannedCount = ref(0)
 
 const scanQr = ref('')
 const log = ref<string[]>([])
-const showInventoriesList = ref(false)
-const inventoryRowsLoading = ref(false)
-const inventoryRows = ref<InventoryDocListOut[]>([])
-const inventoryListFilters = ref({
-  status: '',
-  location_id: 0,
-  limit: 100
-})
 
-const locationLabel = (locationValue: number) => {
-  const location = locations.value.find((l) => l.id === locationValue)
-  return location ? `${location.name} (${location.code})` : String(locationValue)
-}
-
-const formatDate = (value?: string | null) => {
-  if (!value) return '-'
-  return new Date(value).toLocaleString()
+const openInventoriesListWindow = () => {
+  window.open('/serial/inventories/list', '_blank', 'noopener,noreferrer')
 }
 
 const createDoc = async () => {
@@ -200,36 +115,6 @@ const closeDoc = async () => {
   }
 }
 
-const loadInventoriesList = async () => {
-  try {
-    inventoryRowsLoading.value = true
-    const params: Record<string, any> = { limit: inventoryListFilters.value.limit }
-    if (inventoryListFilters.value.status) params.status = inventoryListFilters.value.status
-    if (inventoryListFilters.value.location_id > 0) params.location_id = inventoryListFilters.value.location_id
-    inventoryRows.value = await serialApi.listInventories(params)
-  } catch (e: any) {
-    alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
-  } finally {
-    inventoryRowsLoading.value = false
-  }
-}
-
-const toggleInventoriesList = async () => {
-  showInventoriesList.value = !showInventoriesList.value
-  if (showInventoriesList.value) {
-    await loadInventoriesList()
-  }
-}
-
-const resetInventoryListFilters = async () => {
-  inventoryListFilters.value = {
-    status: '',
-    location_id: 0,
-    limit: 100
-  }
-  await loadInventoriesList()
-}
-
 onMounted(async () => {
   locations.value = await productApi.getLocations()
 })
@@ -238,6 +123,16 @@ onMounted(async () => {
 <style scoped>
 .page {
   padding: 20px;
+}
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.page-head h2 {
+  margin: 0;
 }
 .grid {
   display: grid;
@@ -295,21 +190,6 @@ onMounted(async () => {
   padding: 12px;
   border-radius: 6px;
   overflow: auto;
-}
-.table-wrap {
-  margin-top: 12px;
-  overflow: auto;
-}
-.table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.table th,
-.table td {
-  border-bottom: 1px solid #e5e7eb;
-  padding: 8px;
-  text-align: left;
-  font-size: 0.92rem;
 }
 @media (max-width: 1024px) {
   .grid {

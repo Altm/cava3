@@ -80,6 +80,36 @@ const router = createRouter({
       name: 'SerialScan',
       component: () => import('@/views/SerialScanView.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/serial/receipts/list',
+      name: 'SerialReceiptsList',
+      component: () => import('@/views/SerialReceiptsListView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/serial/transfers/list',
+      name: 'SerialTransfersList',
+      component: () => import('@/views/SerialTransfersListView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/serial/inventories/list',
+      name: 'SerialInventoriesList',
+      component: () => import('@/views/SerialInventoriesListView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/serial/scan/boxes',
+      name: 'SerialBoxesList',
+      component: () => import('@/views/SerialBoxesListView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/serial/scan/items',
+      name: 'SerialItemsList',
+      component: () => import('@/views/SerialItemsListView.vue'),
+      meta: { requiresAuth: true }
     }
   ],
 })
