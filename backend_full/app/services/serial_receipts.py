@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.models.models import Receipt, ReceiptLine, StockLot, ProductItem, Product, Unit, ProductUnit
+from app.models.models import Receipt, ReceiptLine, StockLot, ProductItem, Product, Unit, ProductUnit, Box
 from app.services.serial_stock import SerialStockLedger
 
 
@@ -14,6 +14,27 @@ from app.services.serial_stock import SerialStockLedger
 class GenerateResult:
     lots_created: int
     items_created: int
+
+
+@dataclass(frozen=True)
+class AutoBoxBoxResult:
+    id: int
+    qr_code: str
+    product_id: int
+    lot_id: int
+    location_id: int
+    sealed: bool
+    packed_items: int
+
+
+@dataclass(frozen=True)
+class AutoBoxResult:
+    receipt_id: int
+    items_per_box: int
+    boxes_created: int
+    items_packed: int
+    items_remaining_unboxed: int
+    boxes: list[AutoBoxBoxResult]
 
 
 class ReceiptService:
@@ -265,6 +286,137 @@ class ReceiptService:
         if labels:
             self.db.flush()
         return labels
+
+    def auto_box(
+        self,
+        receipt_id: int,
+        items_per_box: int,
+        max_boxes: int | None = None,
+        include_partial: bool = True,
+        seal_full_boxes: bool = True,
+        product_id: int | None = None,
+        lot_id: int | None = None,
+    ) -> AutoBoxResult:
+        """
+        Automatically create boxes from unboxed receipt items.
+
+        Different box capacities are supported by running this method multiple times
+        with different `items_per_box` (and optional lot/product filters).
+        """
+        receipt = self._get_receipt(receipt_id)
+        if receipt.status not in {"generated", "posted"}:
+            raise HTTPException(status_code=409, detail="Auto boxing is allowed only for generated/posted receipt")
+        if items_per_box <= 0:
+            raise HTTPException(status_code=422, detail="items_per_box must be positive")
+        if max_boxes is not None and max_boxes <= 0:
+            raise HTTPException(status_code=422, detail="max_boxes must be positive")
+
+        if lot_id is not None:
+            lot = self.db.query(StockLot).filter(StockLot.id == lot_id, StockLot.receipt_id == receipt.id).first()
+            if not lot:
+                raise HTTPException(status_code=404, detail="Lot not found for receipt")
+            if product_id is not None and lot.product_id != product_id:
+                raise HTTPException(status_code=422, detail="lot_id does not belong to product_id")
+
+        q = (
+            self.db.query(ProductItem)
+            .join(StockLot, StockLot.id == ProductItem.lot_id)
+            .filter(
+                StockLot.receipt_id == receipt.id,
+                ProductItem.box_id.is_(None),
+                ProductItem.status.in_(("receiving", "in_stock")),
+            )
+        )
+        if product_id is not None:
+            q = q.filter(ProductItem.product_id == product_id)
+        if lot_id is not None:
+            q = q.filter(ProductItem.lot_id == lot_id)
+        q = q.order_by(ProductItem.product_id.asc(), ProductItem.lot_id.asc(), ProductItem.id.asc())
+        if self.db.bind and self.db.bind.dialect.name == "postgresql":
+            q = q.with_for_update()
+        items = q.all()
+        if not items:
+            return AutoBoxResult(
+                receipt_id=receipt.id,
+                items_per_box=items_per_box,
+                boxes_created=0,
+                items_packed=0,
+                items_remaining_unboxed=0,
+                boxes=[],
+            )
+
+        grouped: dict[tuple[int, int, int], list[ProductItem]] = {}
+        for item in items:
+            grouped.setdefault((item.product_id, item.lot_id, item.location_id), []).append(item)
+
+        boxes: list[AutoBoxBoxResult] = []
+        items_packed = 0
+        boxes_created = 0
+        max_boxes_value = max_boxes if max_boxes is not None else 10**9
+
+        for (group_product_id, group_lot_id, group_location_id), group_items in grouped.items():
+            cursor = 0
+            total = len(group_items)
+            while cursor < total and boxes_created < max_boxes_value:
+                left = total - cursor
+                take = items_per_box if left >= items_per_box else left
+                if take < items_per_box and not include_partial:
+                    break
+
+                chunk = group_items[cursor : cursor + take]
+                is_full = take == items_per_box
+                box = Box(
+                    product_id=group_product_id,
+                    lot_id=group_lot_id,
+                    location_id=group_location_id,
+                    sealed=bool(seal_full_boxes and is_full),
+                    status="active",
+                )
+                self.db.add(box)
+                self.db.flush()
+
+                for item in chunk:
+                    item.box_id = box.id
+                self.db.flush()
+
+                boxes.append(
+                    AutoBoxBoxResult(
+                        id=box.id,
+                        qr_code=box.qr_code,
+                        product_id=box.product_id,
+                        lot_id=box.lot_id,
+                        location_id=box.location_id,
+                        sealed=box.sealed,
+                        packed_items=take,
+                    )
+                )
+                boxes_created += 1
+                items_packed += take
+                cursor += take
+
+        rem_q = (
+            self.db.query(ProductItem.id)
+            .join(StockLot, StockLot.id == ProductItem.lot_id)
+            .filter(
+                StockLot.receipt_id == receipt.id,
+                ProductItem.box_id.is_(None),
+                ProductItem.status.in_(("receiving", "in_stock")),
+            )
+        )
+        if product_id is not None:
+            rem_q = rem_q.filter(ProductItem.product_id == product_id)
+        if lot_id is not None:
+            rem_q = rem_q.filter(ProductItem.lot_id == lot_id)
+        items_remaining_unboxed = rem_q.count()
+
+        return AutoBoxResult(
+            receipt_id=receipt.id,
+            items_per_box=items_per_box,
+            boxes_created=boxes_created,
+            items_packed=items_packed,
+            items_remaining_unboxed=items_remaining_unboxed,
+            boxes=boxes,
+        )
 
     def _get_receipt(self, receipt_id: int) -> Receipt:
         receipt = self.db.query(Receipt).get(receipt_id)

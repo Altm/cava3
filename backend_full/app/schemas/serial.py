@@ -62,6 +62,34 @@ class ReceiptGenerateOut(BaseModel):
     items_created: int
 
 
+class ReceiptAutoBoxRequest(BaseModel):
+    items_per_box: int = Field(..., ge=1)
+    max_boxes: Optional[int] = Field(default=None, ge=1)
+    include_partial: bool = True
+    seal_full_boxes: bool = True
+    product_id: Optional[int] = None
+    lot_id: Optional[int] = None
+
+
+class ReceiptAutoBoxBoxOut(BaseModel):
+    id: int
+    qr_code: str
+    product_id: int
+    lot_id: int
+    location_id: int
+    sealed: bool
+    packed_items: int
+
+
+class ReceiptAutoBoxOut(BaseModel):
+    receipt_id: int
+    items_per_box: int
+    boxes_created: int
+    items_packed: int
+    items_remaining_unboxed: int
+    boxes: List[ReceiptAutoBoxBoxOut] = Field(default_factory=list)
+
+
 class BoxCreate(BaseModel):
     product_id: int
     lot_id: int

@@ -228,3 +228,28 @@ def test_product_item_history_contains_transfer_and_summary(db_session):
     assert history.summary.product_id == product.id
     assert history.transfers
     assert history.transfers[0].transfer_doc_id == doc.id
+
+
+def test_receipt_auto_box_supports_multiple_box_sizes(db_session):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, _bar = _seed_locations(db_session)
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("7"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+
+    first = rs.auto_box(receipt.id, items_per_box=3, include_partial=False, seal_full_boxes=True)
+    assert first.boxes_created == 2
+    assert first.items_packed == 6
+    assert first.items_remaining_unboxed == 1
+    assert all(box.packed_items == 3 for box in first.boxes)
+    assert all(box.sealed is True for box in first.boxes)
+
+    second = rs.auto_box(receipt.id, items_per_box=1, include_partial=True, seal_full_boxes=True)
+    assert second.boxes_created == 1
+    assert second.items_packed == 1
+    assert second.items_remaining_unboxed == 0
+    assert second.boxes[0].packed_items == 1
+
+    assert db_session.query(Box).count() == 3

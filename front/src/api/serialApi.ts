@@ -58,6 +58,25 @@ export interface ReceiptLineOut {
   supplier_lot_number?: string | null
 }
 
+export interface ReceiptAutoBoxBoxOut {
+  id: number
+  qr_code: string
+  product_id: number
+  lot_id: number
+  location_id: number
+  sealed: boolean
+  packed_items: number
+}
+
+export interface ReceiptAutoBoxOut {
+  receipt_id: number
+  items_per_box: number
+  boxes_created: number
+  items_packed: number
+  items_remaining_unboxed: number
+  boxes: ReceiptAutoBoxBoxOut[]
+}
+
 export interface BoxOut {
   id: number
   uuid: string
@@ -268,6 +287,20 @@ export const serialApi = {
   },
   async receiptItemLabels(receipt_id: number): Promise<LabelsOut> {
     const res = await api.get(`/receipts/${receipt_id}/labels/items`)
+    return res.data
+  },
+  async receiptAutoBox(
+    receipt_id: number,
+    payload: {
+      items_per_box: number
+      max_boxes?: number
+      include_partial?: boolean
+      seal_full_boxes?: boolean
+      product_id?: number
+      lot_id?: number
+    }
+  ): Promise<ReceiptAutoBoxOut> {
+    const res = await api.post(`/receipts/${receipt_id}/auto-box`, payload)
     return res.data
   },
   async listReceipts(params?: {

@@ -156,3 +156,42 @@ def receipt_item_labels(
     service = ReceiptService(db)
     labels = service.list_item_labels(receipt_id)
     return schemas.LabelsOut(labels=labels)
+
+
+@router.post("/{receipt_id}/auto-box", response_model=schemas.ReceiptAutoBoxOut)
+def receipt_auto_box(
+    receipt_id: int,
+    payload: schemas.ReceiptAutoBoxRequest,
+    user=Depends(PermissionChecker(["receipts.write"])),
+    db: Session = Depends(get_db),
+):
+    service = ReceiptService(db)
+    result = service.auto_box(
+        receipt_id=receipt_id,
+        items_per_box=payload.items_per_box,
+        max_boxes=payload.max_boxes,
+        include_partial=payload.include_partial,
+        seal_full_boxes=payload.seal_full_boxes,
+        product_id=payload.product_id,
+        lot_id=payload.lot_id,
+    )
+    db.commit()
+    return schemas.ReceiptAutoBoxOut(
+        receipt_id=result.receipt_id,
+        items_per_box=result.items_per_box,
+        boxes_created=result.boxes_created,
+        items_packed=result.items_packed,
+        items_remaining_unboxed=result.items_remaining_unboxed,
+        boxes=[
+            schemas.ReceiptAutoBoxBoxOut(
+                id=box.id,
+                qr_code=box.qr_code,
+                product_id=box.product_id,
+                lot_id=box.lot_id,
+                location_id=box.location_id,
+                sealed=box.sealed,
+                packed_items=box.packed_items,
+            )
+            for box in result.boxes
+        ],
+    )

@@ -85,6 +85,52 @@
     </div>
 
     <div class="card">
+      <h3>Автоматическая упаковка в коробки</h3>
+      <p class="hint">
+        Можно запускать несколько раз с разным количеством в коробке — так поддерживаются коробки разного размера.
+      </p>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Количество в коробке</label>
+          <input v-model="autoBox.itemsPerBox" class="form-control" placeholder="например 6" />
+        </div>
+        <div class="form-group">
+          <label>Лимит коробок (опц)</label>
+          <input v-model="autoBox.maxBoxes" class="form-control" placeholder="например 3" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Товар (опц)</label>
+          <select v-model.number="autoBox.productId" class="form-control">
+            <option :value="0">Все товары из приёмки</option>
+            <option v-for="p in serialProducts" :key="p.id" :value="p.id">{{ p.name }} (id={{ p.id }})</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Lot ID (опц)</label>
+          <input v-model="autoBox.lotId" class="form-control" placeholder="например 125" />
+        </div>
+      </div>
+      <div class="form-actions">
+        <label><input v-model="autoBox.includePartial" type="checkbox" /> Создавать неполную коробку</label>
+        <label><input v-model="autoBox.sealFullBoxes" type="checkbox" /> Полные коробки закрывать</label>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" :disabled="!canAutoBox" @click="runAutoBox">Автосоздать коробки</button>
+        <button class="btn btn-outline" :disabled="!autoBoxResult?.boxes?.length" @click="copyAutoBoxLabels">Скопировать QR коробок</button>
+      </div>
+      <div v-if="autoBoxResult" class="meta">
+        <div><b>Создано коробок:</b> {{ autoBoxResult.boxes_created }}</div>
+        <div><b>Упаковано бутылок:</b> {{ autoBoxResult.items_packed }}</div>
+        <div><b>Осталось без коробки:</b> {{ autoBoxResult.items_remaining_unboxed }}</div>
+      </div>
+      <div v-if="autoBoxResult?.boxes?.length" class="labels">
+        <pre class="pre">{{ autoBoxResult.boxes.map((b) => `${b.qr_code} | items=${b.packed_items} | sealed=${b.sealed}`).join('\n') }}</pre>
+      </div>
+    </div>
+
+    <div class="card">
       <h3>Коробки (1 продукт, 1 партия)</h3>
       <p class="hint">
         Чтобы создать коробку, отсканируйте одну бутылку (ITM) — система определит product/lot/location, затем нажмите
@@ -143,7 +189,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { productApi, type Location, type Product, type Unit } from '@/api/productApi'
-import { serialApi, type ReceiptLineOut, type ScanOut } from '@/api/serialApi'
+import { serialApi, type ReceiptAutoBoxOut, type ReceiptLineOut, type ScanOut } from '@/api/serialApi'
 
 const locations = ref<Location[]>([])
 const products = ref<Product[]>([])
@@ -154,11 +200,20 @@ const receiptId = ref<number | null>(null)
 const receiptStatus = ref<string>('')
 const lines = ref<ReceiptLineOut[]>([])
 const labels = ref<string[]>([])
+const autoBoxResult = ref<ReceiptAutoBoxOut | null>(null)
 
 const line = ref({
   productId: 0,
   qty: '1',
   supplierLotNumber: ''
+})
+const autoBox = ref({
+  itemsPerBox: '6',
+  maxBoxes: '',
+  productId: 0,
+  lotId: '',
+  includePartial: true,
+  sealFullBoxes: true,
 })
 
 const serialProducts = computed(() => {
@@ -177,6 +232,7 @@ const baseUnitIdForLine = computed(() => {
 const canAddLine = computed(() => {
   return !!receiptId.value && !!line.value.productId && !!line.value.qty && Number(line.value.qty) > 0 && !!baseUnitIdForLine.value
 })
+const canAutoBox = computed(() => !!receiptId.value && ['generated', 'posted'].includes(receiptStatus.value))
 
 const createReceipt = async () => {
   try {
@@ -185,6 +241,7 @@ const createReceipt = async () => {
     receiptStatus.value = res.status
     lines.value = []
     labels.value = []
+    autoBoxResult.value = null
   } catch (e: any) {
     alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
   }
@@ -206,6 +263,7 @@ const generate = async () => {
   try {
     const res = await serialApi.generateReceipt(receiptId.value)
     receiptStatus.value = 'generated'
+    autoBoxResult.value = null
     alert(`Сгенерировано: lots=${res.lots_created}, items=${res.items_created}`)
   } catch (e: any) {
     alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
@@ -249,6 +307,50 @@ const copyLabels = async () => {
   try {
     await navigator.clipboard.writeText(labels.value.join('\n'))
     alert('Скопировано')
+  } catch {
+    alert('Не удалось скопировать')
+  }
+}
+
+const runAutoBox = async () => {
+  if (!receiptId.value) return
+  const itemsPerBox = Number(autoBox.value.itemsPerBox)
+  if (!Number.isInteger(itemsPerBox) || itemsPerBox <= 0) {
+    alert('Количество в коробке должно быть целым положительным числом')
+    return
+  }
+  const maxBoxesRaw = autoBox.value.maxBoxes.trim()
+  const maxBoxes = maxBoxesRaw ? Number(maxBoxesRaw) : undefined
+  if (maxBoxes !== undefined && (!Number.isInteger(maxBoxes) || maxBoxes <= 0)) {
+    alert('Лимит коробок должен быть целым положительным числом')
+    return
+  }
+  const lotIdRaw = autoBox.value.lotId.trim()
+  const lotId = lotIdRaw ? Number(lotIdRaw) : undefined
+  if (lotId !== undefined && (!Number.isInteger(lotId) || lotId <= 0)) {
+    alert('Lot ID должен быть целым положительным числом')
+    return
+  }
+  try {
+    autoBoxResult.value = await serialApi.receiptAutoBox(receiptId.value, {
+      items_per_box: itemsPerBox,
+      max_boxes: maxBoxes,
+      include_partial: autoBox.value.includePartial,
+      seal_full_boxes: autoBox.value.sealFullBoxes,
+      product_id: autoBox.value.productId > 0 ? autoBox.value.productId : undefined,
+      lot_id: lotId,
+    })
+  } catch (e: any) {
+    alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
+  }
+}
+
+const copyAutoBoxLabels = async () => {
+  if (!autoBoxResult.value?.boxes?.length) return
+  const text = autoBoxResult.value.boxes.map((box) => box.qr_code).join('\n')
+  try {
+    await navigator.clipboard.writeText(text)
+    alert('QR коробок скопированы')
   } catch {
     alert('Не удалось скопировать')
   }
