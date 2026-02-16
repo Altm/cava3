@@ -76,6 +76,13 @@
             </span>
           </td>
           <td>
+            <router-link
+              v-if="hasPermission('product.read')"
+              :to="`/product-view/${product.id}`"
+              class="btn btn-sm btn-secondary"
+            >
+              Просмотр
+            </router-link>
             <button v-if="hasPermission('product.write')" @click="showEditProductModal(product.id)" class="btn btn-sm">Редактировать</button>
             <button v-if="hasPermission('product.delete')" @click="deleteProduct(product.id)" class="btn btn-sm btn-danger">Удалить</button>
           </td>

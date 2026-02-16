@@ -147,6 +147,21 @@ export interface Product {
   productUnits?: ProductUnit[];  // Add product-specific units
 }
 
+export interface ProductMetaView {
+  image?: string | null
+  bodyHtml?: string | null
+  vendor?: string | null
+  type?: string | null
+  tags?: string | null
+  variantBarcode?: string | null
+  seoTitle?: string | null
+  seoDescription?: string | null
+}
+
+export interface ProductView extends Product {
+  meta?: ProductMetaView | null
+}
+
 export interface Location {
   id: number
   name: string
@@ -325,6 +340,11 @@ async updateProduct(id: number, data: ProductForm) {
 
   async getProduct(id: number): Promise<Product> {
     const res = await api.get<Product>(`/products/${id}`)
+    return res.data
+  },
+
+  async getProductView(id: number): Promise<ProductView> {
+    const res = await api.get<ProductView>(`/products/${id}/view`)
     return res.data
   },
 

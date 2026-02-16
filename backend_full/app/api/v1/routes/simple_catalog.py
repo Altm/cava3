@@ -9,7 +9,7 @@ from app.api.v1.deps.auth import get_db, get_current_user, PermissionChecker, al
 from app.models import models
 from app.schemas import simple as schemas
 
-from app.models.models import ProductAttribute, ProductAttributeValue, Location, ProductUnit
+from app.models.models import ProductAttribute, ProductAttributeValue, Location, ProductUnit, ProductMeta
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -323,6 +323,24 @@ def _serialize_product(db_product: models.Product, db: Session) -> schemas.Produ
     )
 
 
+def _serialize_product_view(db_product: models.Product, db: Session) -> schemas.ProductView:
+    base = _serialize_product(db_product, db)
+    meta = db.query(ProductMeta).filter(ProductMeta.product_id == db_product.id).first()
+    meta_out = None
+    if meta:
+        meta_out = schemas.ProductMetaView(
+            image=meta.image,
+            body_html=meta.body_html,
+            vendor=meta.vendor,
+            type=meta.type,
+            tags=meta.tags,
+            variant_barcode=meta.variant_barcode,
+            seo_title=meta.seo_title,
+            seo_description=meta.seo_description,
+        )
+    return schemas.ProductView(**base.model_dump(), meta=meta_out)
+
+
 def _ensure_unit(code: str, db: Session) -> models.Unit:
     unit = db.query(models.Unit).filter(models.Unit.code == code).first()
     if not unit:
@@ -479,6 +497,14 @@ def get_product(product_id: int, user=Depends(PermissionChecker(["product.read"]
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     return _serialize_product(product, db)
+
+
+@router.get("/products/{product_id}/view", response_model=schemas.ProductView)
+def get_product_view(product_id: int, user=Depends(PermissionChecker(["product.read"])), db: Session = Depends(get_db)):
+    product = db.query(models.Product).get(product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return _serialize_product_view(product, db)
 
 
 @router.put("/products/{product_id}", response_model=schemas.Product)

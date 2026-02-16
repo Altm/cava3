@@ -167,6 +167,21 @@ class Product(BaseModel):
         from_attributes = True
 
 
+class ProductMetaView(BaseModel):
+    image: Optional[str] = None
+    body_html: Optional[str] = None
+    vendor: Optional[str] = None
+    type: Optional[str] = None
+    tags: Optional[str] = None
+    variant_barcode: Optional[str] = None
+    seo_title: Optional[str] = None
+    seo_description: Optional[str] = None
+
+
+class ProductView(Product):
+    meta: Optional[ProductMetaView] = None
+
+
 class SaleRequest(BaseModel):
     product_id: int
     quantity: Decimal
