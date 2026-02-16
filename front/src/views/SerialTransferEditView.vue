@@ -151,8 +151,8 @@ const serialProducts = computed(() => {
 
 const canEditTransfer = computed(() => doc.value != null && ['draft', 'picking', 'shipped'].includes(doc.value.status))
 const canPlan = computed(() => doc.value != null && ['draft', 'picking'].includes(doc.value.status) && plan.value.productId > 0 && plan.value.qtyBase > 0)
-const canScanPicking = computed(() => doc.value?.status === 'picking')
-const canScanReceiving = computed(() => doc.value?.status === 'shipped')
+const canScanPicking = computed(() => doc.value != null)
+const canScanReceiving = computed(() => doc.value != null)
 const canShip = computed(() => doc.value?.status === 'picking')
 const canClose = computed(() => doc.value?.status === 'shipped')
 
@@ -236,9 +236,14 @@ const removePlannedByScan = async () => {
 }
 
 const scanPicking = async () => {
+  const qr = scanPickQr.value.trim()
+  if (!qr) {
+    alert('Введите QR для сканирования')
+    return
+  }
   try {
-    const res = await serialApi.scanTransfer(transferId, scanPickQr.value.trim(), 'picking')
-    pickLog.value.unshift(`PICK ${scanPickQr.value.trim()} => ${JSON.stringify(res)}`)
+    const res = await serialApi.scanTransfer(transferId, qr, 'picking')
+    pickLog.value.unshift(`PICK ${qr} => ${JSON.stringify(res)}`)
     scanPickQr.value = ''
     await reload()
   } catch (e: any) {
@@ -247,9 +252,14 @@ const scanPicking = async () => {
 }
 
 const scanReceiving = async () => {
+  const qr = scanRecvQr.value.trim()
+  if (!qr) {
+    alert('Введите QR для сканирования')
+    return
+  }
   try {
-    const res = await serialApi.scanTransfer(transferId, scanRecvQr.value.trim(), 'receiving')
-    recvLog.value.unshift(`RECV ${scanRecvQr.value.trim()} => ${JSON.stringify(res)}`)
+    const res = await serialApi.scanTransfer(transferId, qr, 'receiving')
+    recvLog.value.unshift(`RECV ${qr} => ${JSON.stringify(res)}`)
     scanRecvQr.value = ''
     await reload()
   } catch (e: any) {

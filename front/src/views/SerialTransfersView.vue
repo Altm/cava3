@@ -275,10 +275,18 @@ const removePlannedByScan = async () => {
 }
 
 const scanPicking = async () => {
-  if (!transferId.value) return
+  if (!transferId.value) {
+    alert('Сначала создайте документ перемещения')
+    return
+  }
+  const qr = scanPickQr.value.trim()
+  if (!qr) {
+    alert('Введите QR для сканирования')
+    return
+  }
   try {
-    const res = await serialApi.scanTransfer(transferId.value, scanPickQr.value.trim(), 'picking')
-    pickLog.value.unshift(`PICK ${scanPickQr.value.trim()} => ${JSON.stringify(res)}`)
+    const res = await serialApi.scanTransfer(transferId.value, qr, 'picking')
+    pickLog.value.unshift(`PICK ${qr} => ${JSON.stringify(res)}`)
     scanPickQr.value = ''
     await refreshTransfer()
   } catch (e: any) {
@@ -298,10 +306,18 @@ const ship = async () => {
 }
 
 const scanReceiving = async () => {
-  if (!transferId.value) return
+  if (!transferId.value) {
+    alert('Сначала создайте документ перемещения')
+    return
+  }
+  const qr = scanRecvQr.value.trim()
+  if (!qr) {
+    alert('Введите QR для сканирования')
+    return
+  }
   try {
-    const res = await serialApi.scanTransfer(transferId.value, scanRecvQr.value.trim(), 'receiving')
-    recvLog.value.unshift(`RECV ${scanRecvQr.value.trim()} => ${JSON.stringify(res)}`)
+    const res = await serialApi.scanTransfer(transferId.value, qr, 'receiving')
+    recvLog.value.unshift(`RECV ${qr} => ${JSON.stringify(res)}`)
     scanRecvQr.value = ''
     await refreshTransfer()
   } catch (e: any) {
