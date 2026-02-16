@@ -75,6 +75,7 @@
               <th>Reserved</th>
               <th>Loss reason</th>
               <th>Создан</th>
+              <th>Действие</th>
             </tr>
           </thead>
           <tbody>
@@ -89,12 +90,15 @@
               <td>{{ row.reserved_transfer_doc_id ?? '-' }}</td>
               <td>{{ row.lost_reason ?? '-' }}</td>
               <td>{{ formatDate(row.created_at) }}</td>
+              <td>
+                <RouterLink class="btn btn-outline" :to="`/serial/items/history/${row.id}`">История</RouterLink>
+              </td>
             </tr>
             <tr v-if="!rows.length && !loading">
-              <td colspan="10">Нет данных</td>
+              <td colspan="11">Нет данных</td>
             </tr>
             <tr v-if="loading">
-              <td colspan="10">Загрузка...</td>
+              <td colspan="11">Загрузка...</td>
             </tr>
           </tbody>
         </table>
@@ -208,10 +212,15 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid #ccc;
   background: white;
+  color: #111827;
+  text-decoration: none;
   cursor: pointer;
 }
 .btn-primary {

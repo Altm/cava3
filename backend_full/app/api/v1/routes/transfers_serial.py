@@ -132,6 +132,66 @@ def get_transfer(
     )
 
 
+@router.get("/{transfer_doc_id}/items", response_model=list[schemas.TransferItemMovementOut])
+def list_transfer_items(
+    transfer_doc_id: int,
+    user=Depends(PermissionChecker(["transfers.write"])),
+    db: Session = Depends(get_db),
+):
+    doc = db.query(TransferDoc).filter(TransferDoc.id == transfer_doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+
+    rows = (
+        db.query(
+            TransferItem.id.label("transfer_item_id"),
+            TransferItem.product_item_id,
+            TransferItem.state.label("transfer_item_state"),
+            TransferItem.picked_at.label("shipped_at"),
+            TransferItem.received_at,
+            ProductItem.qr_code.label("product_item_qr_code"),
+            ProductItem.status.label("product_item_status"),
+            ProductItem.lost_reason,
+            ProductItem.lost_doc_type,
+            ProductItem.lost_doc_id,
+            TransferLine.product_id,
+            Product.name.label("product_name"),
+        )
+        .join(TransferLine, TransferLine.id == TransferItem.transfer_line_id)
+        .join(ProductItem, ProductItem.id == TransferItem.product_item_id)
+        .join(Product, Product.id == TransferLine.product_id)
+        .filter(TransferLine.transfer_doc_id == transfer_doc_id)
+        .order_by(TransferItem.id.asc())
+        .all()
+    )
+
+    result: list[schemas.TransferItemMovementOut] = []
+    for row in rows:
+        is_closed_not_received = doc.status == "closed" and row.transfer_item_state == "picked" and row.received_at is None
+        is_lost_item = (
+            row.product_item_status == "lost"
+            and row.lost_reason == "lost_in_transit"
+            and row.lost_doc_type == "transfer"
+            and row.lost_doc_id == doc.id
+        )
+        result.append(
+            schemas.TransferItemMovementOut(
+                transfer_item_id=row.transfer_item_id,
+                product_item_id=row.product_item_id,
+                product_item_qr_code=row.product_item_qr_code,
+                product_id=row.product_id,
+                product_name=row.product_name,
+                transfer_item_state=row.transfer_item_state,
+                transfer_status=doc.status,
+                transfer_created_at=doc.created_at,
+                shipped_at=row.shipped_at,
+                received_at=row.received_at,
+                is_lost=bool(is_closed_not_received or is_lost_item),
+            )
+        )
+    return result
+
+
 @router.post("/{transfer_doc_id}/plan", response_model=schemas.TransferPlanOut)
 def plan_transfer(
     transfer_doc_id: int,

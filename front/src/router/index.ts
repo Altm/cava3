@@ -137,9 +137,21 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/serial/transfers/view/:id',
+      name: 'SerialTransferView',
+      component: () => import('@/views/SerialTransferViewView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/serial/inventories/edit/:id',
       name: 'SerialInventoryEdit',
       component: () => import('@/views/SerialInventoryEditView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/serial/items/history/:id',
+      name: 'SerialItemHistory',
+      component: () => import('@/views/SerialItemHistoryView.vue'),
       meta: { requiresAuth: true }
     }
   ],

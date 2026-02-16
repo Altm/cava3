@@ -129,6 +129,20 @@ export interface TransferPlanOut {
   planned_items: number
 }
 
+export interface TransferItemMovementOut {
+  transfer_item_id: number
+  product_item_id: number
+  product_item_qr_code: string
+  product_id: number
+  product_name: string
+  transfer_item_state: string
+  transfer_status: string
+  transfer_created_at: string
+  shipped_at?: string | null
+  received_at?: string | null
+  is_lost: boolean
+}
+
 export interface InventoryDocOut {
   id: number
   location_id: number
@@ -172,6 +186,43 @@ export interface ProductItemListOut {
   lost_reason?: string | null
   created_at: string
   updated_at: string
+}
+
+export interface ProductStockBalanceOut {
+  location_id: number
+  location_name: string
+  quantity: string
+}
+
+export interface ProductItemTransferHistoryOut {
+  transfer_doc_id: number
+  from_location_id: number
+  to_location_id: number
+  transfer_status: string
+  transfer_item_state: string
+  transfer_created_at: string
+  shipped_at?: string | null
+  received_at?: string | null
+  is_lost: boolean
+}
+
+export interface ProductItemHistorySummaryOut {
+  product_item_id: number
+  product_item_qr_code: string
+  product_item_status: string
+  product_item_location_id: number
+  product_id: number
+  product_name: string
+  product_sku?: string | null
+  lot_id: number
+  current_base_cost: string
+  item_purchase_amount: string
+}
+
+export interface ProductItemHistoryOut {
+  summary: ProductItemHistorySummaryOut
+  stock_balances: ProductStockBalanceOut[]
+  transfers: ProductItemTransferHistoryOut[]
 }
 
 export interface ScanOut {
@@ -322,6 +373,10 @@ export const serialApi = {
     const res = await api.get(`/transfers/${transfer_doc_id}`)
     return res.data
   },
+  async listTransferItems(transfer_doc_id: number): Promise<TransferItemMovementOut[]> {
+    const res = await api.get(`/transfers/${transfer_doc_id}/items`)
+    return res.data
+  },
 
   // Inventories (serialized)
   async createInventory(location_id: number): Promise<InventoryDocOut> {
@@ -367,6 +422,10 @@ export const serialApi = {
     offset?: number
   }): Promise<ProductItemListOut[]> {
     const res = await api.get('/scan/items', { params })
+    return res.data
+  },
+  async getProductItemHistory(product_item_id: number): Promise<ProductItemHistoryOut> {
+    const res = await api.get(`/scan/items/${product_item_id}/history`)
     return res.data
   },
 

@@ -17,6 +17,8 @@ from app.services.serial_receipts import ReceiptService
 from app.services.serial_boxes import BoxService
 from app.services.serial_transfers import TransferService
 from app.services.serial_inventories import InventoryService
+from app.api.v1.routes.transfers_serial import list_transfer_items
+from app.api.v1.routes.scan import get_product_item_history
 
 
 def _seed_serial_product(db_session):
@@ -178,3 +180,51 @@ def test_inventory_close_marks_missing_as_lost_and_decrements_stock(db_session):
 
     stock = db_session.query(Stock).filter_by(location_id=wh.id, product_id=product.id).first()
     assert Decimal(stock.quantity) == Decimal("2")
+
+
+def test_transfer_items_view_marks_lost_rows(db_session):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, bar = _seed_locations(db_session)
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("1"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+
+    ts = TransferService(db_session)
+    doc = ts.create(from_location_id=wh.id, to_location_id=bar.id)
+    ts.plan_fifo(doc.id, product.id, qty_base=1)
+    item = db_session.query(ProductItem).first()
+    ts.scan(doc.id, item.qr_code, mode="picking")
+    ts.ship(doc.id)
+    ts.close(doc.id)
+
+    rows = list_transfer_items(doc.id, user=None, db=db_session)
+    assert len(rows) == 1
+    assert rows[0].transfer_status == "closed"
+    assert rows[0].is_lost is True
+
+
+def test_product_item_history_contains_transfer_and_summary(db_session):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, bar = _seed_locations(db_session)
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("1"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+
+    ts = TransferService(db_session)
+    doc = ts.create(from_location_id=wh.id, to_location_id=bar.id)
+    ts.plan_fifo(doc.id, product.id, qty_base=1)
+    item = db_session.query(ProductItem).first()
+    ts.scan(doc.id, item.qr_code, mode="picking")
+    ts.ship(doc.id)
+
+    history = get_product_item_history(item.id, user=None, db=db_session)
+    assert history.summary.product_item_id == item.id
+    assert history.summary.product_id == product.id
+    assert history.transfers
+    assert history.transfers[0].transfer_doc_id == doc.id

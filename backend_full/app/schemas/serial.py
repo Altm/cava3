@@ -175,6 +175,20 @@ class TransferScan(BaseModel):
     mode: Literal["picking", "receiving"]
 
 
+class TransferItemMovementOut(BaseModel):
+    transfer_item_id: int
+    product_item_id: int
+    product_item_qr_code: str
+    product_id: int
+    product_name: str
+    transfer_item_state: str
+    transfer_status: str
+    transfer_created_at: datetime
+    shipped_at: Optional[datetime] = None
+    received_at: Optional[datetime] = None
+    is_lost: bool = False
+
+
 class InventoryCreate(BaseModel):
     location_id: int
 
@@ -235,6 +249,43 @@ class ProductItemListOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ProductStockBalanceOut(BaseModel):
+    location_id: int
+    location_name: str
+    quantity: Decimal
+
+
+class ProductItemTransferHistoryOut(BaseModel):
+    transfer_doc_id: int
+    from_location_id: int
+    to_location_id: int
+    transfer_status: str
+    transfer_item_state: str
+    transfer_created_at: datetime
+    shipped_at: Optional[datetime] = None
+    received_at: Optional[datetime] = None
+    is_lost: bool = False
+
+
+class ProductItemHistorySummaryOut(BaseModel):
+    product_item_id: int
+    product_item_qr_code: str
+    product_item_status: str
+    product_item_location_id: int
+    product_id: int
+    product_name: str
+    product_sku: Optional[str] = None
+    lot_id: int
+    current_base_cost: Decimal
+    item_purchase_amount: Decimal
+
+
+class ProductItemHistoryOut(BaseModel):
+    summary: ProductItemHistorySummaryOut
+    stock_balances: List[ProductStockBalanceOut] = Field(default_factory=list)
+    transfers: List[ProductItemTransferHistoryOut] = Field(default_factory=list)
 
 
 class ScanOut(BaseModel):
