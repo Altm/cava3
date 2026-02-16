@@ -1,12 +1,34 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy import func
+from typing import Callable
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.v1.deps.auth import get_db, PermissionChecker
+from app.api.v1.deps.auth import PermissionChecker, get_db
+from app.api.v1.deps.uow import get_uow_factory
+from app.application.common import dispatch_command, dispatch_query
+from app.application.common.uow import AbstractUnitOfWork
+from app.application.serial.transfers import (
+    CloseTransferCommand,
+    CloseTransferHandler,
+    CreateTransferCommand,
+    CreateTransferHandler,
+    GetTransferHandler,
+    GetTransferQuery,
+    ListTransferItemsHandler,
+    ListTransferItemsQuery,
+    ListTransfersHandler,
+    ListTransfersQuery,
+    PlanTransferCommand,
+    PlanTransferHandler,
+    RemoveTransferItemCommand,
+    RemoveTransferItemHandler,
+    ScanTransferCommand,
+    ScanTransferHandler,
+    ShipTransferCommand,
+    ShipTransferHandler,
+)
+from app.infrastructure.db.uow import BoundSessionUnitOfWork
 from app.schemas import serial as schemas
-from app.models.models import TransferDoc, TransferLine, TransferItem, Product, ProductItem
-from app.services.serial_transfers import TransferService
-
 
 router = APIRouter(prefix="/transfers", tags=["serial-transfers"])
 
@@ -15,12 +37,13 @@ router = APIRouter(prefix="/transfers", tags=["serial-transfers"])
 def create_transfer(
     payload: schemas.TransferCreate,
     user=Depends(PermissionChecker(["transfers.write"])),
-    db: Session = Depends(get_db),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
-    service = TransferService(db)
-    doc = service.create(payload.from_location_id, payload.to_location_id, created_by_user_id=getattr(user, "id", None))
-    db.commit()
-    return schemas.TransferDocOut.model_validate(doc)
+    return dispatch_command(
+        uow_factory,
+        CreateTransferHandler(),
+        CreateTransferCommand(payload=payload, created_by_user_id=getattr(user, "id", None)),
+    )
 
 
 @router.get("", response_model=list[schemas.TransferDocListOut])
@@ -33,103 +56,30 @@ def list_transfers(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     user=Depends(PermissionChecker(["transfers.write"])),
-    db: Session = Depends(get_db),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
-    query = db.query(TransferDoc)
-    if product_id is not None:
-        query = query.join(TransferLine, TransferLine.transfer_doc_id == TransferDoc.id).filter(TransferLine.product_id == product_id)
-    if status:
-        query = query.filter(TransferDoc.status == status)
-    if from_location_id is not None:
-        query = query.filter(TransferDoc.from_location_id == from_location_id)
-    if to_location_id is not None:
-        query = query.filter(TransferDoc.to_location_id == to_location_id)
-    if created_by_user_id is not None:
-        query = query.filter(TransferDoc.created_by_user_id == created_by_user_id)
-    if product_id is not None:
-        query = query.distinct()
-    query = query.order_by(TransferDoc.id.desc()).offset(offset).limit(limit)
-    return [schemas.TransferDocListOut.model_validate(row) for row in query.all()]
+    return dispatch_query(
+        uow_factory,
+        ListTransfersHandler(),
+        ListTransfersQuery(
+            status=status,
+            from_location_id=from_location_id,
+            to_location_id=to_location_id,
+            product_id=product_id,
+            created_by_user_id=created_by_user_id,
+            limit=limit,
+            offset=offset,
+        ),
+    )
 
 
 @router.get("/{transfer_doc_id}", response_model=schemas.TransferDocDetailOut)
 def get_transfer(
     transfer_doc_id: int,
     user=Depends(PermissionChecker(["transfers.write"])),
-    db: Session = Depends(get_db),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
-    doc = db.query(TransferDoc).filter(TransferDoc.id == transfer_doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail="Transfer not found")
-
-    base_query = (
-        db.query(TransferItem)
-        .join(TransferLine, TransferLine.id == TransferItem.transfer_line_id)
-        .filter(TransferLine.transfer_doc_id == transfer_doc_id)
-    )
-    planned_count = base_query.filter(TransferItem.state == "planned").count()
-    picked_count = base_query.filter(TransferItem.state == "picked").count()
-    removed_count = base_query.filter(TransferItem.state == "removed").count()
-    received_count = (
-        db.query(func.count(TransferItem.id))
-        .join(TransferLine, TransferLine.id == TransferItem.transfer_line_id)
-        .filter(TransferLine.transfer_doc_id == transfer_doc_id, TransferItem.received_at.isnot(None))
-        .scalar()
-        or 0
-    )
-    line_rows = (
-        db.query(
-            TransferLine.id.label("transfer_line_id"),
-            TransferLine.product_id,
-            TransferLine.qty_base,
-            TransferLine.pick_policy,
-            Product.name.label("product_name"),
-        )
-        .join(Product, Product.id == TransferLine.product_id)
-        .filter(TransferLine.transfer_doc_id == transfer_doc_id)
-        .order_by(TransferLine.id.asc())
-        .all()
-    )
-    qr_rows = (
-        db.query(
-            TransferItem.transfer_line_id,
-            ProductItem.qr_code,
-        )
-        .join(ProductItem, ProductItem.id == TransferItem.product_item_id)
-        .join(TransferLine, TransferLine.id == TransferItem.transfer_line_id)
-        .filter(TransferLine.transfer_doc_id == transfer_doc_id, TransferItem.state == "planned")
-        .order_by(TransferItem.transfer_line_id.asc(), TransferItem.id.asc())
-        .all()
-    )
-    planned_qr_codes_by_line: dict[int, list[str]] = {}
-    for transfer_line_id, qr_code in qr_rows:
-        planned_qr_codes_by_line.setdefault(transfer_line_id, []).append(qr_code)
-    transfer_lines = [
-        schemas.TransferPlanLineOut(
-            transfer_line_id=row.transfer_line_id,
-            product_id=row.product_id,
-            product_name=row.product_name,
-            qty_base=row.qty_base,
-            pick_policy=row.pick_policy,
-            planned_qr_codes=planned_qr_codes_by_line.get(row.transfer_line_id, []),
-        )
-        for row in line_rows
-    ]
-
-    return schemas.TransferDocDetailOut(
-        id=doc.id,
-        from_location_id=doc.from_location_id,
-        to_location_id=doc.to_location_id,
-        status=doc.status,
-        created_by_user_id=doc.created_by_user_id,
-        created_at=doc.created_at,
-        updated_at=doc.updated_at,
-        planned_count=planned_count,
-        picked_count=picked_count,
-        received_count=int(received_count),
-        removed_count=removed_count,
-        transfer_lines=transfer_lines,
-    )
+    return dispatch_query(uow_factory, GetTransferHandler(), GetTransferQuery(transfer_doc_id=transfer_doc_id))
 
 
 @router.get("/{transfer_doc_id}/items", response_model=list[schemas.TransferItemMovementOut])
@@ -138,58 +88,8 @@ def list_transfer_items(
     user=Depends(PermissionChecker(["transfers.write"])),
     db: Session = Depends(get_db),
 ):
-    doc = db.query(TransferDoc).filter(TransferDoc.id == transfer_doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail="Transfer not found")
-
-    rows = (
-        db.query(
-            TransferItem.id.label("transfer_item_id"),
-            TransferItem.product_item_id,
-            TransferItem.state.label("transfer_item_state"),
-            TransferItem.picked_at.label("shipped_at"),
-            TransferItem.received_at,
-            ProductItem.qr_code.label("product_item_qr_code"),
-            ProductItem.status.label("product_item_status"),
-            ProductItem.lost_reason,
-            ProductItem.lost_doc_type,
-            ProductItem.lost_doc_id,
-            TransferLine.product_id,
-            Product.name.label("product_name"),
-        )
-        .join(TransferLine, TransferLine.id == TransferItem.transfer_line_id)
-        .join(ProductItem, ProductItem.id == TransferItem.product_item_id)
-        .join(Product, Product.id == TransferLine.product_id)
-        .filter(TransferLine.transfer_doc_id == transfer_doc_id)
-        .order_by(TransferItem.id.asc())
-        .all()
-    )
-
-    result: list[schemas.TransferItemMovementOut] = []
-    for row in rows:
-        is_closed_not_received = doc.status == "closed" and row.transfer_item_state == "picked" and row.received_at is None
-        is_lost_item = (
-            row.product_item_status == "lost"
-            and row.lost_reason == "lost_in_transit"
-            and row.lost_doc_type == "transfer"
-            and row.lost_doc_id == doc.id
-        )
-        result.append(
-            schemas.TransferItemMovementOut(
-                transfer_item_id=row.transfer_item_id,
-                product_item_id=row.product_item_id,
-                product_item_qr_code=row.product_item_qr_code,
-                product_id=row.product_id,
-                product_name=row.product_name,
-                transfer_item_state=row.transfer_item_state,
-                transfer_status=doc.status,
-                transfer_created_at=doc.created_at,
-                shipped_at=row.shipped_at,
-                received_at=row.received_at,
-                is_lost=bool(is_closed_not_received or is_lost_item),
-            )
-        )
-    return result
+    with BoundSessionUnitOfWork(db) as uow:
+        return ListTransferItemsHandler().handle(ListTransferItemsQuery(transfer_doc_id=transfer_doc_id), uow)
 
 
 @router.post("/{transfer_doc_id}/plan", response_model=schemas.TransferPlanOut)
@@ -197,15 +97,12 @@ def plan_transfer(
     transfer_doc_id: int,
     payload: schemas.TransferPlan,
     user=Depends(PermissionChecker(["transfers.write"])),
-    db: Session = Depends(get_db),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
-    service = TransferService(db)
-    result = service.plan_fifo(transfer_doc_id, payload.product_id, payload.qty_base)
-    db.commit()
-    return schemas.TransferPlanOut(
-        transfer_doc_id=transfer_doc_id,
-        transfer_line_id=result.transfer_line_id,
-        planned_items=result.planned_items,
+    return dispatch_command(
+        uow_factory,
+        PlanTransferHandler(),
+        PlanTransferCommand(transfer_doc_id=transfer_doc_id, payload=payload),
     )
 
 
@@ -214,12 +111,13 @@ def remove_transfer_item(
     transfer_doc_id: int,
     payload: schemas.TransferRemoveItem,
     user=Depends(PermissionChecker(["transfers.write"])),
-    db: Session = Depends(get_db),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
-    service = TransferService(db)
-    result = service.remove_planned_item(transfer_doc_id, payload.product_item_id)
-    db.commit()
-    return result
+    return dispatch_command(
+        uow_factory,
+        RemoveTransferItemHandler(),
+        RemoveTransferItemCommand(transfer_doc_id=transfer_doc_id, payload=payload),
+    )
 
 
 @router.post("/{transfer_doc_id}/scan")
@@ -227,33 +125,36 @@ def scan_transfer(
     transfer_doc_id: int,
     payload: schemas.TransferScan,
     user=Depends(PermissionChecker(["transfers.write"])),
-    db: Session = Depends(get_db),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
-    service = TransferService(db)
-    result = service.scan(transfer_doc_id, payload.qr_code, payload.mode)
-    db.commit()
-    return result
+    return dispatch_command(
+        uow_factory,
+        ScanTransferHandler(),
+        ScanTransferCommand(transfer_doc_id=transfer_doc_id, payload=payload),
+    )
 
 
 @router.post("/{transfer_doc_id}/ship")
 def ship_transfer(
     transfer_doc_id: int,
     user=Depends(PermissionChecker(["transfers.write"])),
-    db: Session = Depends(get_db),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
-    service = TransferService(db)
-    result = service.ship(transfer_doc_id)
-    db.commit()
-    return result
+    return dispatch_command(
+        uow_factory,
+        ShipTransferHandler(),
+        ShipTransferCommand(transfer_doc_id=transfer_doc_id),
+    )
 
 
 @router.post("/{transfer_doc_id}/close")
 def close_transfer(
     transfer_doc_id: int,
     user=Depends(PermissionChecker(["transfers.write"])),
-    db: Session = Depends(get_db),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
-    service = TransferService(db)
-    result = service.close(transfer_doc_id)
-    db.commit()
-    return result
+    return dispatch_command(
+        uow_factory,
+        CloseTransferHandler(),
+        CloseTransferCommand(transfer_doc_id=transfer_doc_id),
+    )

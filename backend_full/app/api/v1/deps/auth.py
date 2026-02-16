@@ -42,11 +42,7 @@ def has_permission(user: User, permission: str, location_id: int | None = None, 
         return True
     # Check if user ID is in super admin IDs
     settings = get_settings()
-    # DEBUG: Print super admin IDs and current user ID
-    print(f"DEBUG: Current user ID: {user.id}, Super admin IDs: {settings.super_admin_ids}")
-
     if user.id in settings.super_admin_ids:
-        print(f"DEBUG: User {user.id} is a super admin")
         return True
 
     role_ids = [ur.role_id for ur in db.query(UserRole).filter(UserRole.user_id == user.id).all()]
