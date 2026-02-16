@@ -29,6 +29,7 @@ def scan_qr(
             status=item.status,
             location_id=item.location_id,
             product_id=item.product_id,
+            lot_id=item.lot_id,
             box_id=item.box_id,
             reserved_transfer_doc_id=item.reserved_transfer_doc_id,
         )
@@ -46,4 +47,3 @@ def scan_qr(
         lot_id=box.lot_id,
         sealed=box.sealed,
     )
-

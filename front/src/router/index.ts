@@ -56,6 +56,30 @@ const router = createRouter({
       name: 'UnitManagement',
       component: () => import('@/views/UnitManagement.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/serial/receipts',
+      name: 'SerialReceipts',
+      component: () => import('@/views/SerialReceiptsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/serial/transfers',
+      name: 'SerialTransfers',
+      component: () => import('@/views/SerialTransfersView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/serial/inventories',
+      name: 'SerialInventories',
+      component: () => import('@/views/SerialInventoriesView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/serial/scan',
+      name: 'SerialScan',
+      component: () => import('@/views/SerialScanView.vue'),
+      meta: { requiresAuth: true }
     }
   ],
 })

@@ -24,6 +24,10 @@ const handleLogout = () => {
         <RouterLink to="/product-types">Типы товаров</RouterLink> |
         <RouterLink to="/units">Единицы измерения</RouterLink> |
         <RouterLink to="/sales">Продажи</RouterLink> |
+        <RouterLink to="/serial/receipts">Приёмка (QR)</RouterLink> |
+        <RouterLink to="/serial/transfers">Перемещение (QR)</RouterLink> |
+        <RouterLink to="/serial/inventories">Инвентаризация (QR)</RouterLink> |
+        <RouterLink to="/serial/scan">Сканер QR</RouterLink> |
         <a href="#" @click="handleLogout">Выйти</a>
       </template>
       <template v-else>
