@@ -56,6 +56,29 @@ class ReceiptLineOut(BaseModel):
         from_attributes = True
 
 
+class ReceiptItemContentOut(BaseModel):
+    product_item_id: int
+    product_item_qr_code: str
+    product_item_status: str
+    product_item_created_at: datetime
+    product_item_updated_at: datetime
+    product_id: int
+    product_name: str
+    product_sku: Optional[str] = None
+    purchase_amount: Decimal
+    lot_id: int
+    supplier_lot_number: Optional[str] = None
+    lot_received_at: datetime
+    box_id: Optional[int] = None
+    box_qr_code: Optional[str] = None
+    location_id: int
+    location_name: str
+    location_code: str
+    receipt_id: int
+    receipt_status: str
+    receipt_created_at: datetime
+
+
 class ReceiptGenerateOut(BaseModel):
     receipt_id: int
     lots_created: int

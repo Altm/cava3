@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.deps.auth import get_db, PermissionChecker
 from app.schemas import serial as schemas
-from app.models.models import Receipt, ReceiptLine
+from app.models.models import Receipt, ReceiptLine, ProductItem, StockLot, Product, Box, Location
 from app.services.serial_receipts import ReceiptService
 
 
@@ -77,6 +77,71 @@ def get_receipt_lines(
         .all()
     )
     return [schemas.ReceiptLineOut.model_validate(row) for row in rows]
+
+
+@router.get("/{receipt_id}/items", response_model=list[schemas.ReceiptItemContentOut])
+def get_receipt_items(
+    receipt_id: int,
+    user=Depends(PermissionChecker(["receipts.read"])),
+    db: Session = Depends(get_db),
+):
+    receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    rows = (
+        db.query(
+            ProductItem.id.label("product_item_id"),
+            ProductItem.qr_code.label("product_item_qr_code"),
+            ProductItem.status.label("product_item_status"),
+            ProductItem.created_at.label("product_item_created_at"),
+            ProductItem.updated_at.label("product_item_updated_at"),
+            Product.id.label("product_id"),
+            Product.name.label("product_name"),
+            Product.sku.label("product_sku"),
+            Product.base_cost.label("purchase_amount"),
+            StockLot.id.label("lot_id"),
+            StockLot.supplier_lot_number,
+            StockLot.received_at.label("lot_received_at"),
+            Box.id.label("box_id"),
+            Box.qr_code.label("box_qr_code"),
+            Location.id.label("location_id"),
+            Location.name.label("location_name"),
+            Location.code.label("location_code"),
+        )
+        .join(StockLot, StockLot.id == ProductItem.lot_id)
+        .join(Product, Product.id == ProductItem.product_id)
+        .join(Location, Location.id == ProductItem.location_id)
+        .outerjoin(Box, Box.id == ProductItem.box_id)
+        .filter(StockLot.receipt_id == receipt_id)
+        .order_by(ProductItem.id.asc())
+        .all()
+    )
+    return [
+        schemas.ReceiptItemContentOut(
+            product_item_id=row.product_item_id,
+            product_item_qr_code=row.product_item_qr_code,
+            product_item_status=row.product_item_status,
+            product_item_created_at=row.product_item_created_at,
+            product_item_updated_at=row.product_item_updated_at,
+            product_id=row.product_id,
+            product_name=row.product_name,
+            product_sku=row.product_sku,
+            purchase_amount=Decimal(str(row.purchase_amount)) if row.purchase_amount is not None else Decimal("0"),
+            lot_id=row.lot_id,
+            supplier_lot_number=row.supplier_lot_number,
+            lot_received_at=row.lot_received_at,
+            box_id=row.box_id,
+            box_qr_code=row.box_qr_code,
+            location_id=row.location_id,
+            location_name=row.location_name,
+            location_code=row.location_code,
+            receipt_id=receipt.id,
+            receipt_status=receipt.status,
+            receipt_created_at=receipt.created_at,
+        )
+        for row in rows
+    ]
 
 
 @router.post("/{receipt_id}/lines", response_model=schemas.ReceiptLineOut)

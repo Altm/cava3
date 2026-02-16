@@ -19,6 +19,7 @@ from app.services.serial_transfers import TransferService
 from app.services.serial_inventories import InventoryService
 from app.api.v1.routes.transfers_serial import list_transfer_items
 from app.api.v1.routes.scan import get_product_item_history
+from app.api.v1.routes.receipts import get_receipt_items
 
 
 def _seed_serial_product(db_session):
@@ -253,3 +254,25 @@ def test_receipt_auto_box_supports_multiple_box_sizes(db_session):
     assert second.boxes[0].packed_items == 1
 
     assert db_session.query(Box).count() == 3
+
+
+def test_receipt_items_view_returns_purchase_and_lot_data(db_session):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, _bar = _seed_locations(db_session)
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(
+        receipt.id,
+        product.id,
+        qty=Decimal("2"),
+        unit_id=base_unit.id,
+        supplier_lot_number="SUP-LOT-001",
+    )
+    rs.generate(receipt.id)
+
+    items = get_receipt_items(receipt.id, user=None, db=db_session)
+    assert len(items) == 2
+    assert all(row.receipt_id == receipt.id for row in items)
+    assert all(row.product_id == product.id for row in items)
+    assert all(row.supplier_lot_number == "SUP-LOT-001" for row in items)

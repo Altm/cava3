@@ -58,6 +58,29 @@ export interface ReceiptLineOut {
   supplier_lot_number?: string | null
 }
 
+export interface ReceiptItemContentOut {
+  product_item_id: number
+  product_item_qr_code: string
+  product_item_status: string
+  product_item_created_at: string
+  product_item_updated_at: string
+  product_id: number
+  product_name: string
+  product_sku?: string | null
+  purchase_amount: string
+  lot_id: number
+  supplier_lot_number?: string | null
+  lot_received_at: string
+  box_id?: number | null
+  box_qr_code?: string | null
+  location_id: number
+  location_name: string
+  location_code: string
+  receipt_id: number
+  receipt_status: string
+  receipt_created_at: string
+}
+
 export interface ReceiptAutoBoxBoxOut {
   id: number
   qr_code: string
@@ -320,6 +343,10 @@ export const serialApi = {
   },
   async listReceiptLines(receipt_id: number): Promise<ReceiptLineOut[]> {
     const res = await api.get(`/receipts/${receipt_id}/lines`)
+    return res.data
+  },
+  async listReceiptItems(receipt_id: number): Promise<ReceiptItemContentOut[]> {
+    const res = await api.get(`/receipts/${receipt_id}/items`)
     return res.data
   },
   async removeReceiptLine(receipt_id: number, line_id: number) {

@@ -64,10 +64,13 @@
               <td>{{ formatDate(row.updated_at) }}</td>
               <td>{{ row.created_by_user_id ?? '-' }}</td>
               <td>
+                <RouterLink class="btn btn-outline" :to="`/serial/receipts/view/${row.id}`">
+                  Просмотр содержимого
+                </RouterLink>
                 <RouterLink v-if="canEdit(row.status)" class="btn btn-outline" :to="`/serial/receipts/edit/${row.id}`">
                   Редактировать
                 </RouterLink>
-                <span v-else>-</span>
+                <span v-else></span>
               </td>
             </tr>
             <tr v-if="!rows.length && !loading">
@@ -192,6 +195,9 @@ onMounted(async () => {
 }
 .btn-outline {
   background: transparent;
+}
+.table td .btn + .btn {
+  margin-left: 8px;
 }
 .table-wrap {
   overflow: auto;
