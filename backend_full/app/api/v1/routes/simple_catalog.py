@@ -1,7 +1,10 @@
 import logging
 from decimal import Decimal
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 
@@ -442,6 +445,7 @@ def create_product(product: schemas.ProductCreate, user=Depends(PermissionChecke
 def get_products(
     location_id: Optional[int] = None,
     product_type_id: Optional[int] = None,
+    name: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
     user=Depends(PermissionChecker(["product.read"])),
@@ -451,6 +455,8 @@ def get_products(
 
     if product_type_id:
         query = query.filter(models.Product.product_type_id == product_type_id)
+    if name:
+        query = query.filter(models.Product.name.ilike(f"%{name.strip()}%"))
 
     # Apply location filter if specified
     if location_id:
@@ -470,6 +476,7 @@ def get_products(
 def get_products_count(
     location_id: Optional[int] = None,
     product_type_id: Optional[int] = None,
+    name: Optional[str] = None,
     user=Depends(PermissionChecker(["product.read"])),
     db: Session = Depends(get_db)
 ):
@@ -477,6 +484,8 @@ def get_products_count(
 
     if product_type_id:
         query = query.filter(models.Product.product_type_id == product_type_id)
+    if name:
+        query = query.filter(models.Product.name.ilike(f"%{name.strip()}%"))
 
     if location_id:
         # Subquery to get product IDs that have stock at the specified location
@@ -505,6 +514,46 @@ def get_product_view(product_id: int, user=Depends(PermissionChecker(["product.r
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     return _serialize_product_view(product, db)
+
+
+@router.post("/products/{product_id}/image", response_model=schemas.ProductImageOut)
+async def upload_product_image(
+    product_id: int,
+    file: UploadFile = File(...),
+    user=Depends(PermissionChecker(["product.write"])),
+    db: Session = Depends(get_db),
+):
+    product = db.query(models.Product).get(product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=422, detail="Only image files are allowed")
+
+    suffix = Path(file.filename or "").suffix.lower()
+    allowed_suffixes = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+    if suffix not in allowed_suffixes:
+        suffix = ".jpg"
+
+    images_dir = Path("/app/data/product_images")
+    images_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{product_id}_{uuid4().hex}{suffix}"
+    output_path = images_dir / filename
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="Empty file")
+    output_path.write_bytes(content)
+
+    meta = db.query(ProductMeta).filter(ProductMeta.product_id == product_id).first()
+    if not meta:
+        meta = ProductMeta(product_id=product_id)
+        db.add(meta)
+        db.flush()
+
+    meta.image = filename
+    db.commit()
+
+    return schemas.ProductImageOut(image=filename, image_url=f"/images/{filename}")
 
 
 @router.put("/products/{product_id}", response_model=schemas.Product)

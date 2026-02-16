@@ -1,8 +1,56 @@
 <template>
   <div class="product-form-container">
-    <h2>{{ isEditing ? 'Редактировать товар' : 'Создать товар' }}</h2>
+    <div class="page-head">
+      <h2>{{ isEditing ? 'Редактировать товар' : 'Создать товар' }}</h2>
+      <div class="head-actions">
+        <RouterLink class="btn btn-outline" to="/product-list">К списку</RouterLink>
+        <RouterLink
+          v-if="isEditing && productIdValue"
+          class="btn btn-secondary"
+          :to="`/product-view/${productIdValue}`"
+        >
+          Просмотр
+        </RouterLink>
+      </div>
+    </div>
 
-    <form @submit.prevent="handleSubmit" class="product-form">
+    <div v-if="isEditing" class="preview-grid">
+      <div class="card">
+        <h3>Текущее состояние</h3>
+        <div v-if="productView" class="meta">
+          <div><b>ID:</b> {{ productView.id }}</div>
+          <div><b>Название:</b> {{ productView.name }}</div>
+          <div><b>Тип товара:</b> {{ currentType?.name ?? '-' }}</div>
+          <div><b>Остаток:</b> {{ productView.stock }}</div>
+          <div><b>Стоимость:</b> {{ productView.baseCost }}</div>
+          <div><b>Составной:</b> {{ productView.isComposite ? 'Да' : 'Нет' }}</div>
+          <div><b>Поставщик:</b> {{ productView.meta?.vendor ?? '-' }}</div>
+          <div><b>Теги:</b> {{ productView.meta?.tags ?? '-' }}</div>
+        </div>
+        <div v-else class="muted">Загрузка данных...</div>
+      </div>
+
+      <div class="card">
+        <h3>Фото товара</h3>
+        <div v-if="imageUrl" class="image-wrap">
+          <img :src="imageUrl" :alt="form.name || 'Product image'" class="product-image" />
+        </div>
+        <div v-else class="muted">Фото не загружено</div>
+        <div class="upload-controls">
+          <input type="file" accept="image/*" @change="onImageSelected" class="form-control" />
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="!selectedImageFile || imageUploading || !productIdValue"
+            @click="uploadSelectedImage"
+          >
+            {{ imageUploading ? 'Загрузка...' : 'Загрузить фото' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <form @submit.prevent="handleSubmit" class="product-form card">
       <!-- Тип товара -->
       <div class="form-group">
         <label>Тип товара *</label>
@@ -52,9 +100,10 @@
             type="number"
             step="0.01"
             placeholder="Остаток"
-            required
+            disabled
             class="form-control"
           />
+          <small class="muted">Остаток рассчитывается автоматически и не редактируется вручную.</small>
         </div>
       </div>
 
@@ -239,10 +288,11 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import type {
   ProductType,
   Product,
+  ProductView,
   ProductAttribute,
   ProductComponent as ApiComponent,
   Unit
@@ -257,12 +307,17 @@ const props = defineProps<{
 const emit = defineEmits(['close', 'saved'])
 
 const router = useRouter()
+const route = useRoute()
 const isEditing = computed(() => !!props.productId)
+const productIdValue = computed(() => (props.productId ? Number(props.productId) : null))
 
 // Состояние
 const productTypes = ref<ProductType[]>([])
 const allProducts = ref<Product[]>([])
 const units = ref<Unit[]>([])  // Add units state
+const productView = ref<ProductView | null>(null)
+const selectedImageFile = ref<File | null>(null)
+const imageUploading = ref(false)
 const form = ref({
   productTypeId: 0,
   name: '',
@@ -295,8 +350,25 @@ const simpleProducts = computed(() =>
   allProducts.value.filter(p => !p.isComposite)
 )
 
+const imageUrl = computed(() => {
+  const raw = productView.value?.meta?.image?.trim()
+  if (!raw) return ''
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
+  const normalized = raw
+    .replace(/^\/app\/public\/images\//, '')
+    .replace(/^app\/public\/images\//, '')
+    .replace(/^\/+/, '')
+  if (normalized.startsWith('images/')) return `/${normalized}`
+  return `/images/${normalized}`
+})
+
 // Действия
-const cancel = () => emit('close')
+const cancel = () => {
+  emit('close')
+  if (route.path.startsWith('/product-form')) {
+    router.push('/product-list')
+  }
+}
 
 const onTypeChange = () => {
   form.value.attributes = {}
@@ -313,6 +385,94 @@ const addComponent = () => {
 
 const removeComponent = (index: number) => {
   form.value.components.splice(index, 1)
+}
+
+const onImageSelected = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  selectedImageFile.value = target.files?.[0] ?? null
+}
+
+const uploadSelectedImage = async () => {
+  if (!productIdValue.value || !selectedImageFile.value) return
+  try {
+    imageUploading.value = true
+    const uploaded = await productApi.uploadProductImage(productIdValue.value, selectedImageFile.value)
+    if (!productView.value) {
+      productView.value = await productApi.getProductView(productIdValue.value)
+    } else {
+      const nextMeta = { ...(productView.value.meta ?? {}) }
+      nextMeta.image = uploaded.image
+      productView.value = { ...productView.value, meta: nextMeta }
+    }
+    selectedImageFile.value = null
+    alert('Фото загружено')
+  } catch (e) {
+    console.error('Ошибка загрузки фото:', e)
+    alert('Не удалось загрузить фото')
+  } finally {
+    imageUploading.value = false
+  }
+}
+
+const toInitialAttributes = (product: ProductView, type: ProductType): Record<string, any> => {
+  const initialAttributes: Record<string, any> = {}
+  for (const def of type.attributes || []) {
+    const apiAttr = (product.attributes || []).find(
+      (a: ProductAttribute) => a.productAttributeId === def.id
+    )
+    let value: any = null
+    if (apiAttr) {
+      switch (def.dataType) {
+        case 'number':
+          value = parseFloat(apiAttr.value) || 0
+          break
+        case 'boolean':
+          value = apiAttr.value === 'true'
+          break
+        case 'string':
+          value = apiAttr.value
+          break
+        default:
+          value = apiAttr.value
+      }
+    } else {
+      value = def.dataType === 'number' ? 0 : def.dataType === 'boolean' ? false : ''
+    }
+    initialAttributes[def.code] = value
+  }
+  return initialAttributes
+}
+
+const loadProductForEdit = async (productId: number) => {
+  const product = await productApi.getProductView(productId)
+  productView.value = product
+  const type = productTypes.value.find(t => t.id === product.productTypeId)
+
+  if (!type) {
+    alert('Тип товара не найден')
+    emit('close')
+    return
+  }
+
+  const initialComponents = (product.components || []).map((comp: ApiComponent) => ({
+    componentProductId: comp.componentProductId,
+    quantity: comp.quantity
+  }))
+  const productType = productTypes.value.find(t => t.id === product.productTypeId)
+  const isProductTypeComposite = productType ? productType.isComposite : false
+  const productUnits = product.productUnits || []
+
+  form.value = {
+    productTypeId: Number(product.productTypeId),
+    name: product.name,
+    baseCost: product.baseCost,
+    stock: product.stock,
+    baseUnitId: product.baseUnitId || 0,
+    isComposite: isProductTypeComposite,
+    attributes: toInitialAttributes(product, type),
+    components: isProductTypeComposite ? initialComponents : [],
+    productUnits
+  }
 }
 
 // Сохранение
@@ -368,6 +528,7 @@ const handleSubmit = async () => {
         ...form.value,
         isComposite: form.value.isComposite
       })
+      await loadProductForEdit(Number(props.productId))
       alert('Товар обновлён!')
     } else {
       // Pass the form data with isComposite field
@@ -387,16 +548,13 @@ const handleSubmit = async () => {
 // Загрузка данных
 onMounted(async () => {
   try {
-    // Загружаем типы, все товары и единицы измерения параллельно
     const [typesRes, productsRes, unitsRes] = await Promise.all([
       productApi.getProductTypes(),
       productApi.getProducts(),
-      productApi.getUnits()  // Load units
+      productApi.getUnits()
     ])
 
-    units.value = unitsRes  // Store units
-
-    // Нормализуем типы (если нужно — см. ваш TODO)
+    units.value = unitsRes
     productTypes.value = typesRes.map(type => ({
       ...type,
       attributes: type.attributes?.map(attr => ({
@@ -404,87 +562,23 @@ onMounted(async () => {
         dataType: (attr as any).data_type || attr.dataType
       })) || []
     }))
-
     allProducts.value = productsRes
 
     if (isEditing.value && props.productId) {
-      const product = await productApi.getProduct(props.productId)
-      const type = productTypes.value.find(t => t.id === product.productTypeId)
-
-      if (!type) {
-        alert('Тип товара не найден')
-        emit('close')
-        return
-      }
-
-      // Преобразуем атрибуты из массива в объект { code: value }
-      const initialAttributes: Record<string, any> = {}
-      if (type.attributes) {
-        for (const def of type.attributes) {
-          const apiAttr = (product.attributes || []).find(
-            (a: ProductAttribute) => a.productAttributeId === def.id
-          )
-          let value: any = null
-          if (apiAttr) {
-            switch (def.dataType) {
-              case 'number':
-                value = parseFloat(apiAttr.value) || 0
-                break
-              case 'boolean':
-                value = apiAttr.value === 'true'
-                break
-              case 'string':
-                value = apiAttr.value
-                break
-              default:
-                value = apiAttr.value
-            }
-          } else {
-            // Дефолтные значения
-            value = def.dataType === 'number' ? 0 : def.dataType === 'boolean' ? false : ''
-          }
-          initialAttributes[def.code] = value
-        }
-      }
-
-      // Преобразуем компоненты
-      const initialComponents = (product.components || []).map((comp: ApiComponent) => ({
-        componentProductId: comp.componentProductId,
-        quantity: comp.quantity
-      }))
-
-      // Get the composite flag from the product type
-      const productType = productTypes.value.find(t => t.id === product.productTypeId);
-      const isProductTypeComposite = productType ? productType.isComposite : false;
-
-      // Get product-specific units if available
-      const productUnits = product.productUnits || [];
-
-      // Устанавливаем форму
-      form.value = {
-        productTypeId: Number(product.productTypeId), // ← гарантируем number
-        name: product.name,
-        baseCost: product.baseCost,
-        stock: product.stock,
-        baseUnitId: product.baseUnitId || 0,  // Set base unit ID
-        isComposite: isProductTypeComposite,  // Use the composite flag from the product type
-        attributes: initialAttributes,
-        components: isProductTypeComposite ? initialComponents : [],  // Only include components if product type is composite
-        productUnits: productUnits  // Add product-specific units
-      }
+      await loadProductForEdit(Number(props.productId))
     } else {
-      // Новый товар — начальное состояние
       form.value = {
         productTypeId: 0,
         name: '',
         baseCost: 0,
         stock: 0,
-        baseUnitId: 0,  // Default base unit ID
-        isComposite: false,  // Default to non-composite for new products
+        baseUnitId: 0,
+        isComposite: false,
         attributes: {},
         components: [],
-        productUnits: []  // Initialize with empty product units
+        productUnits: []
       }
+      productView.value = null
     }
   } catch (e) {
     console.error('Ошибка загрузки данных:', e)
@@ -496,74 +590,15 @@ onMounted(async () => {
 // Watch for changes in props.productId to reload data when editing different products
 watch(() => props.productId, async (newId) => {
   if (newId) {
-    // Reload data for the new product ID
     try {
-      const product = await productApi.getProduct(newId)
-      const type = productTypes.value.find(t => t.id === product.productTypeId)
-
-      if (!type) {
-        alert('Тип товара не найден')
-        emit('close')
-        return
-      }
-
-      // Преобразуем атрибуты из массива в объект { code: value }
-      const initialAttributes: Record<string, any> = {}
-      if (type.attributes) {
-        for (const def of type.attributes) {
-          const apiAttr = (product.attributes || []).find(
-            (a: ProductAttribute) => a.productAttributeId === def.id
-          )
-          let value: any = null
-          if (apiAttr) {
-            switch (def.dataType) {
-              case 'number':
-                value = parseFloat(apiAttr.value) || 0
-                break
-              case 'boolean':
-                value = apiAttr.value === 'true'
-                break
-              case 'string':
-                value = apiAttr.value
-                break
-              default:
-                value = apiAttr.value
-            }
-          } else {
-            // Дефолтные значения
-            value = def.dataType === 'number' ? 0 : def.dataType === 'boolean' ? false : ''
-          }
-          initialAttributes[def.code] = value
-        }
-      }
-
-      // Преобразуем компоненты
-      const initialComponents = (product.components || []).map((comp: ApiComponent) => ({
-        componentProductId: comp.componentProductId,
-        quantity: comp.quantity
-      }))
-
-      // Get the composite flag from the product type
-      const productType = productTypes.value.find(t => t.id === product.productTypeId);
-      const isProductTypeComposite = productType ? productType.isComposite : false;
-
-      // Устанавливаем форму
-      form.value = {
-        productTypeId: Number(product.productTypeId), // ← гарантируем number
-        name: product.name,
-        baseCost: product.baseCost,
-        stock: product.stock,
-        baseUnitId: product.baseUnitId || 0,  // Set base unit ID
-        isComposite: isProductTypeComposite,  // Use the composite flag from the product type
-        attributes: initialAttributes,
-        components: isProductTypeComposite ? initialComponents : [],  // Only include components if product type is composite
-        productUnits: productUnits  // Add product-specific units
-      }
+      await loadProductForEdit(Number(newId))
     } catch (e) {
       console.error('Ошибка загрузки данных:', e)
       alert('Не удалось загрузить данные товара')
       emit('close')
     }
+  } else {
+    productView.value = null
   }
 })
 
@@ -584,8 +619,64 @@ const removeProductUnit = (index: number) => {
 <style scoped>
 .product-form-container {
   padding: 20px;
-  max-width: 800px;
+  max-width: 1100px;
   margin: 0 auto;
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.head-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fff;
+}
+
+.meta {
+  display: grid;
+  gap: 6px;
+}
+
+.image-wrap {
+  max-width: 460px;
+  margin-bottom: 10px;
+}
+
+.product-image {
+  width: 100%;
+  max-height: 380px;
+  object-fit: contain;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.upload-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.muted {
+  color: #6b7280;
 }
 
 .form-group {
@@ -718,5 +809,15 @@ label {
   margin-top: 20px;
   display: flex;
   gap: 10px;
+}
+
+@media (max-width: 1024px) {
+  .preview-grid {
+    grid-template-columns: 1fr;
+  }
+  .upload-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 </style>

@@ -162,6 +162,11 @@ export interface ProductView extends Product {
   meta?: ProductMetaView | null
 }
 
+export interface ProductImageOut {
+  image: string
+  imageUrl: string
+}
+
 export interface Location {
   id: number
   name: string
@@ -201,10 +206,11 @@ export const productApi = {
     return res.data
   },
 
-  async getProducts(params?: { locationId?: number; productTypeId?: number; skip?: number; limit?: number }): Promise<Product[]> {
+  async getProducts(params?: { locationId?: number; productTypeId?: number; name?: string; skip?: number; limit?: number }): Promise<Product[]> {
     const queryParams = new URLSearchParams();
     if (params?.locationId) queryParams.append('location_id', params.locationId.toString());
     if (params?.productTypeId) queryParams.append('product_type_id', params.productTypeId.toString());
+    if (params?.name && params.name.trim()) queryParams.append('name', params.name.trim());
     if (params?.skip !== undefined) queryParams.append('skip', params.skip.toString());
     if (params?.limit !== undefined) queryParams.append('limit', params.limit.toString());
 
@@ -215,10 +221,11 @@ export const productApi = {
     return res.data;
   },
 
-  async getProductsCount(params?: { locationId?: number; productTypeId?: number }): Promise<number> {
+  async getProductsCount(params?: { locationId?: number; productTypeId?: number; name?: string }): Promise<number> {
     const queryParams = new URLSearchParams();
     if (params?.locationId) queryParams.append('location_id', params.locationId.toString());
     if (params?.productTypeId) queryParams.append('product_type_id', params.productTypeId.toString());
+    if (params?.name && params.name.trim()) queryParams.append('name', params.name.trim());
 
     const queryString = queryParams.toString();
     const url = queryString ? `/products-count/?${queryString}` : '/products-count/';
@@ -345,6 +352,15 @@ async updateProduct(id: number, data: ProductForm) {
 
   async getProductView(id: number): Promise<ProductView> {
     const res = await api.get<ProductView>(`/products/${id}/view`)
+    return res.data
+  },
+
+  async uploadProductImage(id: number, file: File): Promise<ProductImageOut> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await api.post<ProductImageOut>(`/products/${id}/image`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
     return res.data
   },
 

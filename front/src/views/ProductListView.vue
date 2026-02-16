@@ -13,7 +13,7 @@
           <label>Локация:</label>
           <select
             v-model="filters.locationId"
-            @change="loadProducts"
+            @change="onFilterChange"
           >
             <option value="">Все локации</option>
             <option
@@ -30,7 +30,7 @@
           <label>Тип товара:</label>
           <select
             v-model="filters.productTypeId"
-            @change="loadProducts"
+            @change="onFilterChange"
           >
             <option value="">Все типы</option>
             <option
@@ -43,6 +43,21 @@
           </select>
         </div>
 
+        <div class="form-group">
+          <label>Название:</label>
+          <input
+            v-model="filters.name"
+            list="product-name-suggestions"
+            placeholder="Введите название товара"
+            @input="onNameInput"
+            @paste="onNameInput"
+          />
+          <datalist id="product-name-suggestions">
+            <option v-for="name in nameSuggestions" :key="name" :value="name" />
+          </datalist>
+        </div>
+
+        <button @click="triggerNameSearch" type="button" class="btn btn-primary">Поиск</button>
         <button @click="resetFilters" type="button">Сбросить</button>
       </form>
     </div>
@@ -132,8 +147,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import type { Product, ProductType, Location } from '@/api/productApi'
 import { productApi } from '@/api/productApi'
@@ -147,10 +161,10 @@ const hasPermission = (permission: string): boolean => {
   return authStore.hasPermission(permission);
 };
 
-const router = useRouter()
 const products = ref<Product[]>([])
 const productTypes = ref<ProductType[]>([])
 const locations = ref<Location[]>([])
+const nameSuggestions = ref<string[]>([])
 const loading = ref(true)
 
 // Modal state
@@ -161,6 +175,7 @@ const editingProductId = ref<number | null>(null)
 const filters = ref({
   locationId: null as number | null,
   productTypeId: null as number | null,
+  name: '',
 })
 
 // Pagination
@@ -182,6 +197,7 @@ const loadProducts = async () => {
     products.value = await productApi.getProducts({
       locationId: filters.value.locationId || undefined,
       productTypeId: filters.value.productTypeId || undefined,
+      name: filters.value.name || undefined,
       skip,
       limit: pagination.value.pageSize
     })
@@ -189,7 +205,8 @@ const loadProducts = async () => {
     // Load total count for pagination
     pagination.value.total = await productApi.getProductsCount({
       locationId: filters.value.locationId || undefined,
-      productTypeId: filters.value.productTypeId || undefined
+      productTypeId: filters.value.productTypeId || undefined,
+      name: filters.value.name || undefined
     })
   } catch (error) {
     console.error('Error loading products:', error)
@@ -260,25 +277,49 @@ const deleteProduct = async (productId: number) => {
 const resetFilters = () => {
   filters.value.locationId = null
   filters.value.productTypeId = null
+  filters.value.name = ''
+  nameSuggestions.value = []
+  pagination.value.currentPage = 1
   loadProducts()
 }
 
-const handleSizeChange = (val: number) => {
-  pagination.value.pageSize = val
-  loadProducts()
+const loadNameSuggestions = async () => {
+  const query = filters.value.name.trim()
+  if (!query) {
+    nameSuggestions.value = []
+    return
+  }
+  try {
+    const rows = await productApi.getProducts({
+      locationId: filters.value.locationId || undefined,
+      productTypeId: filters.value.productTypeId || undefined,
+      name: query,
+      skip: 0,
+      limit: 10
+    })
+    nameSuggestions.value = [...new Set(rows.map((product) => product.name))]
+  } catch (error) {
+    console.error('Error loading name suggestions:', error)
+  }
+}
+
+const onFilterChange = async () => {
+  pagination.value.currentPage = 1
+  await Promise.all([loadProducts(), loadNameSuggestions()])
+}
+
+const onNameInput = async () => {
+  await onFilterChange()
+}
+
+const triggerNameSearch = async () => {
+  await onFilterChange()
 }
 
 const handleCurrentChange = (val: number) => {
   pagination.value.currentPage = val
   loadProducts()
 }
-
-// Watch for filter changes and reload products
-watch(filters, () => {
-  // Reset to first page when filters change
-  pagination.value.currentPage = 1
-  loadProducts()
-}, { deep: true })
 
 onMounted(async () => {
   await Promise.all([

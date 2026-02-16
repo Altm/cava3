@@ -182,6 +182,11 @@ class ProductView(Product):
     meta: Optional[ProductMetaView] = None
 
 
+class ProductImageOut(BaseModel):
+    image: str
+    image_url: str
+
+
 class SaleRequest(BaseModel):
     product_id: int
     quantity: Decimal

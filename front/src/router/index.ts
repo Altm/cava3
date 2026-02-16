@@ -36,7 +36,7 @@ const router = createRouter({
       path: '/product-form/:id',
       name: 'EditProduct',
       component: ProductForm,
-      props: true,
+      props: (route) => ({ productId: Number(route.params.id) }),
       meta: { requiresAuth: true }
     },
     {
