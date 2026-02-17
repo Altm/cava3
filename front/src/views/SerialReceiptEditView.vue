@@ -28,10 +28,15 @@
         <h3>Добавить строку</h3>
         <div class="form-group">
           <label>Товар</label>
-          <select v-model.number="line.productId" class="form-control" :disabled="!canEditLines">
-            <option :value="0">Выберите товар</option>
-            <option v-for="p in serialProducts" :key="p.id" :value="p.id">{{ p.name }} (id={{ p.id }})</option>
-          </select>
+          <input
+            v-model="lineProductQuery"
+            list="receipt-edit-products-line-list"
+            class="form-control"
+            :disabled="!canEditLines"
+            placeholder="Начните вводить название товара"
+            @input="syncLineProductByQuery"
+          />
+          <small v-if="line.productId" class="hint">Выбран product_id={{ line.productId }}</small>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -114,10 +119,14 @@
       <div class="form-row">
         <div class="form-group">
           <label>Товар (опц)</label>
-          <select v-model.number="autoBox.productId" class="form-control">
-            <option :value="0">Все товары из приёмки</option>
-            <option v-for="p in serialProducts" :key="p.id" :value="p.id">{{ p.name }} (id={{ p.id }})</option>
-          </select>
+          <input
+            v-model="autoBoxProductQuery"
+            list="receipt-edit-products-auto-list"
+            class="form-control"
+            placeholder="Все товары из приёмки"
+            @input="syncAutoBoxProductByQuery"
+          />
+          <small v-if="autoBox.productId" class="hint">Выбран product_id={{ autoBox.productId }}</small>
         </div>
         <div class="form-group">
           <label>Lot ID (опц)</label>
@@ -139,14 +148,30 @@
       </div>
       <pre v-if="autoBoxResult?.boxes?.length" class="pre">{{ autoBoxResult.boxes.map((b) => `${b.qr_code} | items=${b.packed_items} | sealed=${b.sealed}`).join('\n') }}</pre>
     </div>
+
+    <datalist id="receipt-edit-products-line-list">
+      <option
+        v-for="p in lineAutocomplete.productOptions.value"
+        :key="`line-${p.id}`"
+        :value="lineAutocomplete.formatProductOption(p)"
+      />
+    </datalist>
+    <datalist id="receipt-edit-products-auto-list">
+      <option
+        v-for="p in autoBoxAutocomplete.productOptions.value"
+        :key="`auto-${p.id}`"
+        :value="autoBoxAutocomplete.formatProductOption(p)"
+      />
+    </datalist>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { productApi, type Location, type Product, type Unit } from '@/api/productApi'
 import { serialApi, type ReceiptAutoBoxOut, type ReceiptDetailOut, type ReceiptLineOut } from '@/api/serialApi'
+import { useProductAutocomplete } from '@/composables/useProductAutocomplete'
 
 const route = useRoute()
 const receiptId = Number(route.params.id)
@@ -172,11 +197,15 @@ const line = ref({
   qty: '1',
   supplierLotNumber: ''
 })
+const lineProductQuery = ref('')
+const autoBoxProductQuery = ref('')
 
 const serialProducts = computed(() => {
   const baseUnitsById = new Map(units.value.map((u) => [u.id, u]))
   return products.value.filter((p) => !!baseUnitsById.get(p.baseUnitId)?.isDiscrete)
 })
+const lineAutocomplete = useProductAutocomplete(serialProducts, lineProductQuery)
+const autoBoxAutocomplete = useProductAutocomplete(serialProducts, autoBoxProductQuery)
 
 const baseUnitIdForLine = computed(() => {
   const product = products.value.find((x) => x.id === line.value.productId)
@@ -190,6 +219,14 @@ const canPost = computed(() => receipt.value?.status === 'generated')
 const canVoid = computed(() => receipt.value != null && ['draft', 'generated', 'posted'].includes(receipt.value.status))
 const canLoadLabels = computed(() => receipt.value != null && ['generated', 'posted'].includes(receipt.value.status))
 const canAutoBox = computed(() => receipt.value != null && ['generated', 'posted'].includes(receipt.value.status))
+
+const syncLineProductByQuery = () => {
+  line.value.productId = lineAutocomplete.parseProductIdFromQuery(lineProductQuery.value)
+}
+
+const syncAutoBoxProductByQuery = () => {
+  autoBox.value.productId = autoBoxAutocomplete.parseProductIdFromQuery(autoBoxProductQuery.value)
+}
 
 const formatDate = (value?: string | null) => {
   if (!value) return '-'
@@ -333,6 +370,20 @@ onMounted(async () => {
   units.value = await productApi.getUnits()
   await reload()
 })
+
+watch(
+  () => line.value.productId,
+  (productId) => {
+    lineAutocomplete.syncQueryBySelectedProductId(productId)
+  }
+)
+
+watch(
+  () => autoBox.value.productId,
+  (productId) => {
+    autoBoxAutocomplete.syncQueryBySelectedProductId(productId)
+  }
+)
 </script>
 
 <style scoped>

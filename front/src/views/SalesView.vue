@@ -4,12 +4,14 @@
     <form @submit.prevent="handleSale">
       <div>
         <label>Товар:</label>
-        <select v-model="saleForm.productId" @change="onProductChange" required>
-          <option value="">Выберите товар</option>
-          <option v-for="product in products" :key="product.id" :value="product.id">
-            {{ product.name }} (остаток: {{ product.stock }}) {{ getGlassesPerBottleText(product) }}
-          </option>
-        </select>
+        <input
+          v-model="productQuery"
+          list="sales-products-list"
+          placeholder="Начните вводить название товара"
+          required
+          @input="syncSaleProductByQuery"
+        />
+        <small v-if="saleForm.productId !== null">Выбран product_id={{ saleForm.productId }}</small>
       </div>
 
       <div>
@@ -45,13 +47,22 @@
       <p>{{ saleResult.message }}</p>
       <p><strong>Общая стоимость:</strong> {{ saleResult.totalCost }}</p>
     </div>
+
+    <datalist id="sales-products-list">
+      <option
+        v-for="product in productAutocomplete.productOptions.value"
+        :key="product.id"
+        :value="productAutocomplete.formatProductOption(product)"
+      />
+    </datalist>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import type { Product } from '@/api/productApi'
 import { productApi } from '@/api/productApi'
+import { useProductAutocomplete } from '@/composables/useProductAutocomplete'
 
 interface SaleForm {
   productId: number | null
@@ -69,6 +80,16 @@ const products = ref<Product[]>([])
 const productTypes = ref<ProductType[]>([])
 const saleResult = ref<SaleResponse | null>(null)
 const glassesPerBottle = ref<number | null>(null)
+const productQuery = ref('')
+const productAutocomplete = useProductAutocomplete(products, productQuery, {
+  formatOption: (product) => `${product.name} (id=${product.id}, остаток=${product.stock})`,
+})
+
+const syncSaleProductByQuery = () => {
+  const parsedProductId = productAutocomplete.parseProductIdFromQuery(productQuery.value)
+  saleForm.value.productId = parsedProductId > 0 ? parsedProductId : null
+  onProductChange()
+}
 
 // Helper to get attribute definitions for a product type
 const productTypeAttributes = computed(() => {
@@ -172,7 +193,10 @@ const onProductChange = () => {
 
     glassesPerBottle.value = null;
     saleForm.value.saleType = 'full';
+    return;
   }
+  glassesPerBottle.value = null
+  saleForm.value.saleType = 'full'
 }
 
 const handleSale = async () => {
@@ -194,6 +218,7 @@ const handleSale = async () => {
     loadProducts()
     // Reset form
     saleForm.value = { productId: null, quantity: 1, saleType: 'full' }
+    productQuery.value = ''
     glassesPerBottle.value = null
   } catch (error) {
     console.error('Ошибка при продаже:', error)
@@ -215,6 +240,13 @@ onMounted(async () => {
     loadProductTypes()
   ]);
 })
+
+watch(
+  () => saleForm.value.productId,
+  (productId) => {
+    productAutocomplete.syncQueryBySelectedProductId(productId)
+  }
+)
 
 const loadProductTypes = async () => {
   try {

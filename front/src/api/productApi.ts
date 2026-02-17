@@ -212,7 +212,8 @@ export const productApi = {
     if (params?.productTypeId) queryParams.append('product_type_id', params.productTypeId.toString());
     if (params?.name && params.name.trim()) queryParams.append('name', params.name.trim());
     if (params?.skip !== undefined) queryParams.append('skip', params.skip.toString());
-    if (params?.limit !== undefined) queryParams.append('limit', params.limit.toString());
+    const effectiveLimit = params?.limit ?? 1000;
+    queryParams.append('limit', effectiveLimit.toString());
 
     const queryString = queryParams.toString();
     const url = queryString ? `/products/?${queryString}` : '/products/';

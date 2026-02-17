@@ -30,10 +30,14 @@
         <h3>Планирование (FIFO)</h3>
         <div class="form-group">
           <label>Товар</label>
-          <select v-model.number="plan.productId" class="form-control">
-            <option :value="0">Выберите товар</option>
-            <option v-for="p in serialProducts" :key="p.id" :value="p.id">{{ p.name }} (id={{ p.id }})</option>
-          </select>
+          <input
+            v-model="planProductQuery"
+            list="transfer-edit-products-list"
+            class="form-control"
+            placeholder="Начните вводить название товара"
+            @input="syncPlanProductByQuery"
+          />
+          <small v-if="plan.productId" class="hint">Выбран product_id={{ plan.productId }}</small>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -119,14 +123,23 @@
         <pre v-if="recvLog.length" class="pre">{{ recvLog.join('\n') }}</pre>
       </div>
     </div>
+
+    <datalist id="transfer-edit-products-list">
+      <option
+        v-for="p in planAutocomplete.productOptions.value"
+        :key="p.id"
+        :value="planAutocomplete.formatProductOption(p)"
+      />
+    </datalist>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { productApi, type Location, type Product, type Unit } from '@/api/productApi'
 import { serialApi, type TransferDocDetailOut } from '@/api/serialApi'
+import { useProductAutocomplete } from '@/composables/useProductAutocomplete'
 
 const route = useRoute()
 const transferId = Number(route.params.id)
@@ -138,6 +151,7 @@ const units = ref<Unit[]>([])
 const doc = ref<TransferDocDetailOut | null>(null)
 
 const plan = ref({ productId: 0, qtyBase: 1 })
+const planProductQuery = ref('')
 const scanPickQr = ref('')
 const scanRecvQr = ref('')
 const removeItmQr = ref('')
@@ -148,6 +162,7 @@ const serialProducts = computed(() => {
   const baseUnitsById = new Map(units.value.map((u) => [u.id, u]))
   return products.value.filter((p) => !!baseUnitsById.get(p.baseUnitId)?.isDiscrete)
 })
+const planAutocomplete = useProductAutocomplete(serialProducts, planProductQuery)
 
 const canEditTransfer = computed(() => doc.value != null && ['draft', 'picking', 'shipped'].includes(doc.value.status))
 const canPlan = computed(() => doc.value != null && ['draft', 'picking'].includes(doc.value.status) && plan.value.productId > 0 && plan.value.qtyBase > 0)
@@ -155,6 +170,10 @@ const canScanPicking = computed(() => doc.value != null)
 const canScanReceiving = computed(() => doc.value != null)
 const canShip = computed(() => doc.value?.status === 'picking')
 const canClose = computed(() => doc.value?.status === 'shipped')
+
+const syncPlanProductByQuery = () => {
+  plan.value.productId = planAutocomplete.parseProductIdFromQuery(planProductQuery.value)
+}
 
 const locationLabel = (locationId: number) => {
   const location = locations.value.find((l) => l.id === locationId)
@@ -293,6 +312,13 @@ onMounted(async () => {
   units.value = await productApi.getUnits()
   await reload()
 })
+
+watch(
+  () => plan.value.productId,
+  (productId) => {
+    planAutocomplete.syncQueryBySelectedProductId(productId)
+  }
+)
 </script>
 
 <style scoped>

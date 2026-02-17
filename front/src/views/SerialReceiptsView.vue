@@ -35,12 +35,14 @@
 
         <div class="form-group">
           <label>Товар</label>
-          <select v-model.number="line.productId" class="form-control">
-            <option :value="0">Выберите товар</option>
-            <option v-for="p in serialProducts" :key="p.id" :value="p.id">
-              {{ p.name }} (id={{ p.id }})
-            </option>
-          </select>
+          <input
+            v-model="lineProductQuery"
+            list="receipt-products-line-list"
+            class="form-control"
+            placeholder="Начните вводить название товара"
+            @input="syncLineProductByQuery"
+          />
+          <small v-if="line.productId" class="hint">Выбран product_id={{ line.productId }}</small>
         </div>
 
         <div class="form-row">
@@ -102,10 +104,14 @@
       <div class="form-row">
         <div class="form-group">
           <label>Товар (опц)</label>
-          <select v-model.number="autoBox.productId" class="form-control">
-            <option :value="0">Все товары из приёмки</option>
-            <option v-for="p in serialProducts" :key="p.id" :value="p.id">{{ p.name }} (id={{ p.id }})</option>
-          </select>
+          <input
+            v-model="autoBoxProductQuery"
+            list="receipt-products-auto-list"
+            class="form-control"
+            placeholder="Все товары из приёмки"
+            @input="syncAutoBoxProductByQuery"
+          />
+          <small v-if="autoBox.productId" class="hint">Выбран product_id={{ autoBox.productId }}</small>
         </div>
         <div class="form-group">
           <label>Lot ID (опц)</label>
@@ -183,13 +189,29 @@
       </div>
     </div>
 
+    <datalist id="receipt-products-line-list">
+      <option
+        v-for="p in lineAutocomplete.productOptions.value"
+        :key="`line-${p.id}`"
+        :value="lineAutocomplete.formatProductOption(p)"
+      />
+    </datalist>
+    <datalist id="receipt-products-auto-list">
+      <option
+        v-for="p in autoBoxAutocomplete.productOptions.value"
+        :key="`auto-${p.id}`"
+        :value="autoBoxAutocomplete.formatProductOption(p)"
+      />
+    </datalist>
+
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { productApi, type Location, type Product, type Unit } from '@/api/productApi'
 import { serialApi, type ReceiptAutoBoxOut, type ReceiptLineOut, type ScanOut } from '@/api/serialApi'
+import { useProductAutocomplete } from '@/composables/useProductAutocomplete'
 
 const locations = ref<Location[]>([])
 const products = ref<Product[]>([])
@@ -207,6 +229,7 @@ const line = ref({
   qty: '1',
   supplierLotNumber: ''
 })
+const lineProductQuery = ref('')
 const autoBox = ref({
   itemsPerBox: '6',
   maxBoxes: '',
@@ -215,6 +238,7 @@ const autoBox = ref({
   includePartial: true,
   sealFullBoxes: true,
 })
+const autoBoxProductQuery = ref('')
 
 const serialProducts = computed(() => {
   const baseUnitsById = new Map(units.value.map((u) => [u.id, u]))
@@ -223,6 +247,8 @@ const serialProducts = computed(() => {
     return !!u?.isDiscrete
   })
 })
+const lineAutocomplete = useProductAutocomplete(serialProducts, lineProductQuery)
+const autoBoxAutocomplete = useProductAutocomplete(serialProducts, autoBoxProductQuery)
 
 const baseUnitIdForLine = computed(() => {
   const p = products.value.find((x) => x.id === line.value.productId)
@@ -233,6 +259,14 @@ const canAddLine = computed(() => {
   return !!receiptId.value && !!line.value.productId && !!line.value.qty && Number(line.value.qty) > 0 && !!baseUnitIdForLine.value
 })
 const canAutoBox = computed(() => !!receiptId.value && ['generated', 'posted'].includes(receiptStatus.value))
+
+const syncLineProductByQuery = () => {
+  line.value.productId = lineAutocomplete.parseProductIdFromQuery(lineProductQuery.value)
+}
+
+const syncAutoBoxProductByQuery = () => {
+  autoBox.value.productId = autoBoxAutocomplete.parseProductIdFromQuery(autoBoxProductQuery.value)
+}
 
 const createReceipt = async () => {
   try {
@@ -439,6 +473,20 @@ onMounted(async () => {
   products.value = await productApi.getProducts()
   units.value = await productApi.getUnits()
 })
+
+watch(
+  () => line.value.productId,
+  (productId) => {
+    lineAutocomplete.syncQueryBySelectedProductId(productId)
+  }
+)
+
+watch(
+  () => autoBox.value.productId,
+  (productId) => {
+    autoBoxAutocomplete.syncQueryBySelectedProductId(productId)
+  }
+)
 </script>
 
 <style scoped>

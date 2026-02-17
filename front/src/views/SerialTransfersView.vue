@@ -40,10 +40,14 @@
         <h3>Планирование (FIFO)</h3>
         <div class="form-group">
           <label>Товар</label>
-          <select v-model.number="plan.productId" class="form-control">
-            <option :value="0">Выберите товар</option>
-            <option v-for="p in serialProducts" :key="p.id" :value="p.id">{{ p.name }} (id={{ p.id }})</option>
-          </select>
+          <input
+            v-model="planProductQuery"
+            list="transfer-products-list"
+            class="form-control"
+            placeholder="Начните вводить название товара"
+            @input="syncPlanProductByQuery"
+          />
+          <small v-if="plan.productId" class="hint">Выбран product_id={{ plan.productId }}</small>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -136,6 +140,14 @@
       </div>
     </div>
 
+    <datalist id="transfer-products-list">
+      <option
+        v-for="p in planAutocomplete.productOptions.value"
+        :key="p.id"
+        :value="planAutocomplete.formatProductOption(p)"
+      />
+    </datalist>
+
   </div>
 </template>
 
@@ -143,6 +155,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { productApi, type Location, type Product, type Unit } from '@/api/productApi'
 import { serialApi, type TransferDocDetailOut } from '@/api/serialApi'
+import { useProductAutocomplete } from '@/composables/useProductAutocomplete'
 
 const locations = ref<Location[]>([])
 const products = ref<Product[]>([])
@@ -155,6 +168,7 @@ const transferStatus = ref('')
 const transferDetail = ref<TransferDocDetailOut | null>(null)
 
 const plan = ref({ productId: 0, qtyBase: 1 })
+const planProductQuery = ref('')
 const plannedTotal = ref(0)
 const pickedTotal = ref(0)
 const receivedTotal = ref(0)
@@ -173,6 +187,7 @@ const serialProducts = computed(() => {
     return !!u?.isDiscrete
   })
 })
+const planAutocomplete = useProductAutocomplete(serialProducts, planProductQuery)
 
 const canCreate = computed(() => fromLocationId.value > 0 && toLocationId.value > 0 && fromLocationId.value !== toLocationId.value)
 const canPlan = computed(
@@ -182,6 +197,10 @@ const canPlan = computed(
     plan.value.productId > 0 &&
     plan.value.qtyBase > 0
 )
+
+const syncPlanProductByQuery = () => {
+  plan.value.productId = planAutocomplete.parseProductIdFromQuery(planProductQuery.value)
+}
 
 const listAvailableProductIds = async (locationId: number) => {
   const pageSize = 500
@@ -345,6 +364,13 @@ onMounted(async () => {
 watch(fromLocationId, async (locationId) => {
   await loadAvailableProductsByLocation(locationId)
 })
+
+watch(
+  () => plan.value.productId,
+  (productId) => {
+    planAutocomplete.syncQueryBySelectedProductId(productId)
+  }
+)
 </script>
 
 <style scoped>

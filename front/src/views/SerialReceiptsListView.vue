@@ -25,10 +25,14 @@
       <div class="form-row">
         <div class="form-group">
           <label>Товар</label>
-          <select v-model.number="filters.product_id" class="form-control">
-            <option :value="0">Все</option>
-            <option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }} (id={{ p.id }})</option>
-          </select>
+          <input
+            v-model="productQuery"
+            list="receipts-list-products"
+            class="form-control"
+            placeholder="Все товары"
+            @input="syncProductFilterByQuery"
+          />
+          <small v-if="filters.product_id > 0" class="hint">Выбран product_id={{ filters.product_id }}</small>
         </div>
         <div class="form-group">
           <label>Лимит</label>
@@ -83,18 +87,28 @@
         </table>
       </div>
     </div>
+
+    <datalist id="receipts-list-products">
+      <option
+        v-for="p in productAutocomplete.productOptions.value"
+        :key="p.id"
+        :value="productAutocomplete.formatProductOption(p)"
+      />
+    </datalist>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { productApi, type Location, type Product } from '@/api/productApi'
 import { serialApi, type ReceiptListOut } from '@/api/serialApi'
+import { useProductAutocomplete } from '@/composables/useProductAutocomplete'
 
 const locations = ref<Location[]>([])
 const products = ref<Product[]>([])
 const rows = ref<ReceiptListOut[]>([])
 const loading = ref(false)
+const productQuery = ref('')
 
 const filters = ref({
   status: '',
@@ -102,6 +116,11 @@ const filters = ref({
   product_id: 0,
   limit: 100
 })
+const productAutocomplete = useProductAutocomplete(products, productQuery)
+
+const syncProductFilterByQuery = () => {
+  filters.value.product_id = productAutocomplete.parseProductIdFromQuery(productQuery.value)
+}
 
 const formatDate = (value?: string | null) => {
   if (!value) return '-'
@@ -145,6 +164,13 @@ onMounted(async () => {
   products.value = await productApi.getProducts()
   await loadRows()
 })
+
+watch(
+  () => filters.value.product_id,
+  (productId) => {
+    productAutocomplete.syncQueryBySelectedProductId(productId)
+  }
+)
 </script>
 
 <style scoped>
