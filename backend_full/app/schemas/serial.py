@@ -44,6 +44,10 @@ class ReceiptLineCreate(BaseModel):
     supplier_lot_number: Optional[str] = None
 
 
+class ReceiptLineUpdate(BaseModel):
+    qty: Decimal
+
+
 class ReceiptLineOut(BaseModel):
     id: int
     receipt_id: int

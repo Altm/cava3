@@ -353,6 +353,10 @@ export const serialApi = {
     const res = await api.post(`/receipts/${receipt_id}/lines/${line_id}/remove`)
     return res.data
   },
+  async updateReceiptLine(receipt_id: number, line_id: number, qty: string) {
+    const res = await api.post(`/receipts/${receipt_id}/lines/${line_id}/update`, { qty })
+    return res.data as ReceiptLineOut
+  },
 
   // Boxes
   async createBox(product_id: number, lot_id: number, location_id: number, sealed: boolean): Promise<BoxOut> {

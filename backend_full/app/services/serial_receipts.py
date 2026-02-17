@@ -92,6 +92,26 @@ class ReceiptService:
         self.db.flush()
         return {"receipt_id": receipt.id, "removed_line_id": line_id}
 
+    def update_line(self, receipt_id: int, line_id: int, qty: Decimal) -> ReceiptLine:
+        """
+        Update receipt line quantity for draft receipt.
+        """
+        receipt = self._get_receipt(receipt_id)
+        if receipt.status != "draft":
+            raise HTTPException(status_code=409, detail="Receipt is not editable")
+        if qty <= 0:
+            raise HTTPException(status_code=422, detail="Quantity must be positive")
+        line = (
+            self.db.query(ReceiptLine)
+            .filter(ReceiptLine.id == line_id, ReceiptLine.receipt_id == receipt.id)
+            .first()
+        )
+        if not line:
+            raise HTTPException(status_code=404, detail="Receipt line not found")
+        line.qty = qty
+        self.db.flush()
+        return line
+
     def generate(self, receipt_id: int) -> GenerateResult:
         """
         Generate lots and serialized items for each receipt line.

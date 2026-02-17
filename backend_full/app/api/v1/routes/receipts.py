@@ -30,6 +30,8 @@ from app.application.serial.receipts import (
     ReceiptItemLabelsQuery,
     RemoveReceiptLineCommand,
     RemoveReceiptLineHandler,
+    UpdateReceiptLineCommand,
+    UpdateReceiptLineHandler,
     VoidReceiptCommand,
     VoidReceiptHandler,
 )
@@ -130,6 +132,21 @@ def remove_receipt_line(
         uow_factory,
         RemoveReceiptLineHandler(),
         RemoveReceiptLineCommand(receipt_id=receipt_id, line_id=line_id),
+    )
+
+
+@router.post("/{receipt_id}/lines/{line_id}/update", response_model=schemas.ReceiptLineOut)
+def update_receipt_line(
+    receipt_id: int,
+    line_id: int,
+    payload: schemas.ReceiptLineUpdate,
+    user=Depends(PermissionChecker(["receipts.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    return dispatch_command(
+        uow_factory,
+        UpdateReceiptLineHandler(),
+        UpdateReceiptLineCommand(receipt_id=receipt_id, line_id=line_id, payload=payload),
     )
 
 

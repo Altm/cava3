@@ -57,6 +57,13 @@ class RemoveReceiptLineCommand:
 
 
 @dataclass(frozen=True)
+class UpdateReceiptLineCommand:
+    receipt_id: int
+    line_id: int
+    payload: schemas.ReceiptLineUpdate
+
+
+@dataclass(frozen=True)
 class GenerateReceiptCommand:
     receipt_id: int
 
@@ -215,6 +222,16 @@ class AddReceiptLineHandler:
 class RemoveReceiptLineHandler:
     def handle(self, command: RemoveReceiptLineCommand, uow: AbstractUnitOfWork) -> dict:
         return _service(uow.session).remove_line(receipt_id=command.receipt_id, line_id=command.line_id)
+
+
+class UpdateReceiptLineHandler:
+    def handle(self, command: UpdateReceiptLineCommand, uow: AbstractUnitOfWork) -> schemas.ReceiptLineOut:
+        line = _service(uow.session).update_line(
+            receipt_id=command.receipt_id,
+            line_id=command.line_id,
+            qty=Decimal(str(command.payload.qty)),
+        )
+        return schemas.ReceiptLineOut.model_validate(line)
 
 
 class GenerateReceiptHandler:

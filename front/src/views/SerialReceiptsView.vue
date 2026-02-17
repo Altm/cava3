@@ -65,10 +65,42 @@
           <button class="btn btn-primary" :disabled="!canAddLine" @click="addLine">Добавить строку</button>
         </div>
 
-        <div v-if="lines.length" class="list">
-          <div v-for="l in lines" :key="l.id" class="list-item">
-            <div>line#{{ l.id }}: product={{ l.product_id }}, qty={{ l.qty }}, unit={{ l.unit_id }}</div>
-          </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Товар</th>
+                <th>Qty</th>
+                <th>Unit</th>
+                <th>Партия поставщика</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in lines" :key="row.id">
+                <td>{{ row.id }}</td>
+                <td>{{ productLabel(row.product_id) }}</td>
+                <td>
+                  <input
+                    v-model="lineQtyDraft[row.id]"
+                    class="form-control"
+                    :disabled="!canEditLines"
+                    inputmode="decimal"
+                  />
+                </td>
+                <td>{{ row.unit_id }}</td>
+                <td>{{ row.supplier_lot_number ?? '-' }}</td>
+                <td>
+                  <button class="btn btn-outline" :disabled="!canEditLines" @click="updateLine(row.id)">Сохранить</button>
+                  <button class="btn btn-danger" :disabled="!canEditLines" @click="removeLine(row.id)">Удалить</button>
+                </td>
+              </tr>
+              <tr v-if="!lines.length">
+                <td colspan="6">Нет строк</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -221,6 +253,7 @@ const toLocationId = ref<number>(0)
 const receiptId = ref<number | null>(null)
 const receiptStatus = ref<string>('')
 const lines = ref<ReceiptLineOut[]>([])
+const lineQtyDraft = ref<Record<number, string>>({})
 const labels = ref<string[]>([])
 const autoBoxResult = ref<ReceiptAutoBoxOut | null>(null)
 
@@ -255,8 +288,9 @@ const baseUnitIdForLine = computed(() => {
   return p?.baseUnitId ?? ''
 })
 
+const canEditLines = computed(() => !!receiptId.value && receiptStatus.value === 'draft')
 const canAddLine = computed(() => {
-  return !!receiptId.value && !!line.value.productId && !!line.value.qty && Number(line.value.qty) > 0 && !!baseUnitIdForLine.value
+  return canEditLines.value && !!line.value.productId && !!line.value.qty && Number(line.value.qty) > 0 && !!baseUnitIdForLine.value
 })
 const canAutoBox = computed(() => !!receiptId.value && ['generated', 'posted'].includes(receiptStatus.value))
 
@@ -268,12 +302,32 @@ const syncAutoBoxProductByQuery = () => {
   autoBox.value.productId = autoBoxAutocomplete.parseProductIdFromQuery(autoBoxProductQuery.value)
 }
 
+const productLabel = (productId: number) => {
+  const product = products.value.find((p) => p.id === productId)
+  return product ? `${product.name} (${productId})` : String(productId)
+}
+
+const syncLineQtyDraft = () => {
+  const next: Record<number, string> = {}
+  for (const row of lines.value) {
+    next[row.id] = String(row.qty)
+  }
+  lineQtyDraft.value = next
+}
+
+const reloadLines = async () => {
+  if (!receiptId.value) return
+  lines.value = await serialApi.listReceiptLines(receiptId.value)
+  syncLineQtyDraft()
+}
+
 const createReceipt = async () => {
   try {
     const res = await serialApi.createReceipt(toLocationId.value)
     receiptId.value = res.id
     receiptStatus.value = res.status
     lines.value = []
+    lineQtyDraft.value = {}
     labels.value = []
     autoBoxResult.value = null
   } catch (e: any) {
@@ -285,8 +339,34 @@ const addLine = async () => {
   if (!receiptId.value) return
   try {
     const unitId = Number(baseUnitIdForLine.value)
-    const res = await serialApi.addReceiptLine(receiptId.value, line.value.productId, line.value.qty, unitId, line.value.supplierLotNumber || undefined)
-    lines.value.push(res)
+    await serialApi.addReceiptLine(receiptId.value, line.value.productId, line.value.qty, unitId, line.value.supplierLotNumber || undefined)
+    await reloadLines()
+  } catch (e: any) {
+    alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
+  }
+}
+
+const updateLine = async (lineId: number) => {
+  if (!receiptId.value) return
+  const qty = (lineQtyDraft.value[lineId] ?? '').trim()
+  if (!qty || Number(qty) <= 0) {
+    alert('Количество должно быть положительным числом')
+    return
+  }
+  try {
+    await serialApi.updateReceiptLine(receiptId.value, lineId, qty)
+    await reloadLines()
+  } catch (e: any) {
+    alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
+  }
+}
+
+const removeLine = async (lineId: number) => {
+  if (!receiptId.value) return
+  if (!confirm(`Удалить строку #${lineId}?`)) return
+  try {
+    await serialApi.removeReceiptLine(receiptId.value, lineId)
+    await reloadLines()
   } catch (e: any) {
     alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
   }
@@ -563,14 +643,21 @@ watch(
   font-size: 0.95rem;
   color: #111827;
 }
-.list {
-  margin-top: 10px;
-  border-top: 1px dashed #ddd;
-  padding-top: 10px;
+.table-wrap {
+  overflow: auto;
+  margin-top: 12px;
 }
-.list-item {
-  padding: 6px 0;
-  border-bottom: 1px dashed #eee;
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table th,
+.table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 8px;
+  text-align: left;
+  font-size: 0.92rem;
+  vertical-align: middle;
 }
 .labels {
   margin-top: 12px;
