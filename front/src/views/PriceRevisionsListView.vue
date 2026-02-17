@@ -39,6 +39,7 @@
               <th>ID</th>
               <th>Локация</th>
               <th>Режим</th>
+              <th>Расчёт</th>
               <th>Название</th>
               <th>Начало</th>
               <th>Конец</th>
@@ -52,6 +53,7 @@
               <td>{{ row.id }}</td>
               <td>{{ row.locationName || row.locationId }}</td>
               <td>{{ row.mode }}</td>
+              <td>{{ row.calculatorName ? `${row.calculatorName} v${row.calculatorVersion || '-'}` : '-' }}</td>
               <td>{{ row.name || '-' }}</td>
               <td>{{ formatDate(row.effectiveFrom) }}</td>
               <td>{{ row.effectiveTo ? formatDate(row.effectiveTo) : 'по настоящее время' }}</td>
@@ -60,10 +62,10 @@
               <td><button class="btn btn-outline" @click="loadDetail(row.id)">Просмотр</button></td>
             </tr>
             <tr v-if="!rows.length && !loading">
-              <td colspan="9">Нет данных</td>
+              <td colspan="10">Нет данных</td>
             </tr>
             <tr v-if="loading">
-              <td colspan="9">Загрузка...</td>
+              <td colspan="10">Загрузка...</td>
             </tr>
           </tbody>
         </table>
@@ -76,6 +78,8 @@
         <span><b>Локация:</b> {{ detail.locationName || detail.locationId }}</span>
         <span><b>Дата:</b> {{ formatDate(detail.createdAt) }}</span>
         <span><b>Режим:</b> {{ detail.mode }}</span>
+        <span><b>Расчёт:</b> {{ detail.calculatorName ? `${detail.calculatorName} v${detail.calculatorVersion || '-'}` : '-' }}</span>
+        <span><b>Hash:</b> {{ detail.calculatorSourceHash || '-' }}</span>
         <span><b>Автор:</b> {{ detail.createdByUserId ?? '-' }}</span>
       </div>
       <div class="table-wrap">

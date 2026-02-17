@@ -53,20 +53,22 @@
       <template v-if="form.mode === 'calculator'">
         <div class="form-row">
           <div class="form-group">
-            <label>Файл калькулятора</label>
-            <select v-model="form.calculatorFile" class="form-control">
-              <option value="">Выберите файл</option>
-              <option v-for="file in calculatorFiles" :key="file" :value="file">{{ file }}</option>
+            <label>Расчёт (название + версия)</label>
+            <select v-model.number="form.calculatorVersionId" class="form-control">
+              <option :value="0">Выберите версию расчёта</option>
+              <option v-for="calculator in calculators" :key="calculator.versionId" :value="calculator.versionId">
+                {{ calculator.calculatorName }} v{{ calculator.calculatorVersion }}
+              </option>
             </select>
           </div>
           <div class="form-group">
-            <label>Класс</label>
-            <select v-model="form.calculatorClass" class="form-control">
-              <option value="">Выберите класс</option>
-              <option v-for="calculator in filteredCalculators" :key="`${calculator.file}:${calculator.className}`" :value="calculator.className">
-                {{ calculator.className }} — {{ calculator.description || '-' }}
-              </option>
-            </select>
+            <label>Реализация</label>
+            <div class="hint-box">
+              <div><b>Код:</b> {{ selectedCalculator?.calculatorCode || '-' }}</div>
+              <div><b>Файл:</b> {{ selectedCalculator?.file || '-' }}</div>
+              <div><b>Класс:</b> {{ selectedCalculator?.className || '-' }}</div>
+              <div><b>Hash:</b> {{ selectedCalculator?.sourceHash || '-' }}</div>
+            </div>
           </div>
         </div>
         <div class="form-row">
@@ -99,6 +101,8 @@
           <span><b>Локация:</b> {{ currentPrice.locationName || currentPrice.locationId }}</span>
           <span><b>Ревизия:</b> {{ currentPrice.revisionId ?? '-' }}</span>
           <span><b>Название:</b> {{ currentPrice.revisionName ?? '-' }}</span>
+          <span><b>Расчёт:</b> {{ currentPrice.revisionCalculatorName || '-' }} {{ currentPrice.revisionCalculatorVersion ? `v${currentPrice.revisionCalculatorVersion}` : '' }}</span>
+          <span><b>Hash:</b> {{ currentPrice.revisionCalculatorSourceHash || '-' }}</span>
           <span><b>Создана:</b> {{ formatDate(currentPrice.revisionCreatedAt) }}</span>
         </div>
         <div class="table-wrap">
@@ -197,18 +201,13 @@ const form = ref({
   currency: 'EUR',
   percentDelta: '5',
   amountDelta: '10',
-  calculatorFile: '',
-  calculatorClass: '',
+  calculatorVersionId: 0,
   calculatorParamsJson: '{"multiplier":"1.00","offset":"0"}',
 })
 
-const calculatorFiles = computed(() => {
-  return [...new Set(calculators.value.map((row) => row.file))]
-})
-
-const filteredCalculators = computed(() => {
-  if (!form.value.calculatorFile) return calculators.value
-  return calculators.value.filter((row) => row.file === form.value.calculatorFile)
+const selectedCalculator = computed(() => {
+  if (!form.value.calculatorVersionId) return null
+  return calculators.value.find((row) => row.versionId === form.value.calculatorVersionId) || null
 })
 
 const formatDate = (value?: string | null) => {
@@ -246,6 +245,10 @@ const createRevision = async () => {
     alert('Выберите локацию')
     return
   }
+  if (form.value.mode === 'calculator' && !form.value.calculatorVersionId) {
+    alert('Выберите версию расчёта')
+    return
+  }
   try {
     saving.value = true
     const payload: any = {
@@ -260,8 +263,9 @@ const createRevision = async () => {
     } else if (form.value.mode === 'fixed') {
       payload.amountDelta = form.value.amountDelta
     } else {
-      payload.calculatorFile = form.value.calculatorFile
-      payload.calculatorClass = form.value.calculatorClass
+      payload.calculatorVersionId = form.value.calculatorVersionId || undefined
+      payload.calculatorFile = selectedCalculator.value?.file
+      payload.calculatorClass = selectedCalculator.value?.className
       payload.calculatorParams = parseCalculatorParams()
     }
 
@@ -307,9 +311,8 @@ onMounted(async () => {
     if (!form.value.locationId && locations.value.length) {
       form.value.locationId = locations.value[0].id
     }
-    if (!form.value.calculatorFile && calculators.value.length) {
-      form.value.calculatorFile = calculators.value[0].file
-      form.value.calculatorClass = calculators.value[0].className
+    if (!form.value.calculatorVersionId && calculators.value.length) {
+      form.value.calculatorVersionId = calculators.value[0].versionId
     }
     await loadCurrent()
   } catch (error: any) {
@@ -361,6 +364,13 @@ onMounted(async () => {
   padding: 8px;
   border: 1px solid #ccc;
   border-radius: 6px;
+}
+.hint-box {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 0.85rem;
+  background: #f9fafb;
 }
 .form-actions {
   display: flex;

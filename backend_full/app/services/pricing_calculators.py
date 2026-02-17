@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import inspect
 from dataclasses import dataclass
@@ -14,9 +15,14 @@ from app.pricing_calculators.base import BasePriceCalculator
 
 @dataclass(frozen=True)
 class CalculatorDescriptor:
+    code: str
+    name: str
+    version: str
     file: str
     class_name: str
     description: str
+    source_hash: str
+    changelog: str | None = None
 
 
 def calculators_root() -> Path:
@@ -56,6 +62,10 @@ def _iter_calculator_classes(module: ModuleType) -> list[type[BasePriceCalculato
     return classes
 
 
+def _source_hash(file_path: Path) -> str:
+    return hashlib.sha256(file_path.read_bytes()).hexdigest()
+
+
 def list_available_calculators() -> list[CalculatorDescriptor]:
     root = calculators_root()
     if not root.exists():
@@ -65,12 +75,21 @@ def list_available_calculators() -> list[CalculatorDescriptor]:
         if file_path.name.startswith("_") or file_path.name == "base.py":
             continue
         module = _load_module(file_path)
+        file_hash = _source_hash(file_path)
         for cls in _iter_calculator_classes(module):
+            code = str(getattr(cls, "calculator_code", f"{file_path.stem}.{cls.__name__}".lower()))
+            name = str(getattr(cls, "calculator_name", cls.__name__))
+            version = str(getattr(cls, "calculator_version", getattr(module, "__version__", "1.0.0")))
             descriptors.append(
                 CalculatorDescriptor(
+                    code=code,
+                    name=name,
+                    version=version,
                     file=file_path.name,
                     class_name=cls.__name__,
                     description=str(getattr(cls, "description", cls.__doc__ or "")),
+                    source_hash=file_hash,
+                    changelog=getattr(cls, "changelog", None),
                 )
             )
     return descriptors
@@ -108,4 +127,3 @@ def run_calculator(
         raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Calculator execution failed: {exc}") from exc
-

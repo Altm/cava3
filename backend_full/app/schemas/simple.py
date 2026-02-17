@@ -18,6 +18,11 @@ class Location(LocationBase):
 
 
 class PriceCalculatorOut(BaseModel):
+    version_id: int
+    calculator_code: str
+    calculator_name: str
+    calculator_version: str
+    source_hash: str
     file: str
     class_name: str
     description: Optional[str] = None
@@ -30,6 +35,7 @@ class PriceRevisionCreate(BaseModel):
     currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
     percent_delta: Optional[Decimal] = None
     amount_delta: Optional[Decimal] = None
+    calculator_version_id: Optional[int] = None
     calculator_file: Optional[str] = None
     calculator_class: Optional[str] = None
     calculator_params: Dict[str, Any] = Field(default_factory=dict)
@@ -65,6 +71,10 @@ class PriceRevisionListOut(BaseModel):
     currency: str
     percent_delta: Optional[Decimal] = None
     amount_delta: Optional[Decimal] = None
+    calculator_version_id: Optional[int] = None
+    calculator_name: Optional[str] = None
+    calculator_version: Optional[str] = None
+    calculator_source_hash: Optional[str] = None
     calculator_file: Optional[str] = None
     calculator_class: Optional[str] = None
     created_by_user_id: Optional[int] = None
@@ -83,6 +93,10 @@ class PriceRevisionDetailOut(BaseModel):
     currency: str
     percent_delta: Optional[Decimal] = None
     amount_delta: Optional[Decimal] = None
+    calculator_version_id: Optional[int] = None
+    calculator_name: Optional[str] = None
+    calculator_version: Optional[str] = None
+    calculator_source_hash: Optional[str] = None
     calculator_file: Optional[str] = None
     calculator_class: Optional[str] = None
     calculator_params: Dict[str, Any] = Field(default_factory=dict)
@@ -96,6 +110,9 @@ class PriceCurrentOut(BaseModel):
     location_name: Optional[str] = None
     revision_id: Optional[int] = None
     revision_name: Optional[str] = None
+    revision_calculator_name: Optional[str] = None
+    revision_calculator_version: Optional[str] = None
+    revision_calculator_source_hash: Optional[str] = None
     revision_created_at: Optional[datetime] = None
     items: List[PriceRevisionItemOut] = Field(default_factory=list)
 

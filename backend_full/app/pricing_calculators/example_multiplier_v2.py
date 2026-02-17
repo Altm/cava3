@@ -6,14 +6,14 @@ from typing import Any
 from app.pricing_calculators.base import BasePriceCalculator
 
 
-class ExampleMultiplierCalculator(BasePriceCalculator):
-    """Example: amount * multiplier + offset."""
+class ExampleMultiplierCalculatorV2(BasePriceCalculator):
+    """Example v2: amount * multiplier + offset + floor."""
 
     calculator_code = "example_multiplier"
     calculator_name = "Example Multiplier"
-    calculator_version = "1.0.0"
-    description = "amount * multiplier + offset"
-    changelog = "Initial version"
+    calculator_version = "1.1.0"
+    description = "amount * multiplier + offset + floor"
+    changelog = "Added optional floor guard"
 
     def calculate(
         self,
@@ -24,4 +24,6 @@ class ExampleMultiplierCalculator(BasePriceCalculator):
     ) -> Decimal:
         multiplier = Decimal(str(params.get("multiplier", "1")))
         offset = Decimal(str(params.get("offset", "0")))
-        return (current_amount * multiplier) + offset
+        floor = Decimal(str(params.get("floor", "0")))
+        amount = (current_amount * multiplier) + offset
+        return amount if amount >= floor else floor

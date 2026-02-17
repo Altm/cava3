@@ -52,9 +52,15 @@ class GetCurrentPriceQuery:
 
 class ListPriceCalculatorsHandler:
     def handle(self, query: ListPriceCalculatorsQuery, uow: AbstractUnitOfWork) -> list[schemas.PriceCalculatorOut]:
-        rows = list_available_calculators()
+        db = uow.session
+        rows = _sync_calculator_registry(db)
         return [
             schemas.PriceCalculatorOut(
+                version_id=row.version_id,
+                calculator_code=row.calculator_code,
+                calculator_name=row.calculator_name,
+                calculator_version=row.calculator_version,
+                source_hash=row.source_hash,
                 file=row.file,
                 class_name=row.class_name,
                 description=row.description,
@@ -78,11 +84,28 @@ class CreatePriceRevisionHandler:
             raise HTTPException(status_code=400, detail="percent_delta is required for percent mode")
         if mode == "fixed" and payload.amount_delta is None:
             raise HTTPException(status_code=400, detail="amount_delta is required for fixed mode")
-        if mode == "calculator" and (not payload.calculator_file or not payload.calculator_class):
-            raise HTTPException(status_code=400, detail="calculator_file and calculator_class are required for calculator mode")
 
         base_currency = (payload.currency or settings.default_currency or "USD").upper()
         calculator_params = payload.calculator_params or {}
+        calculator_version: Optional[models.PriceCalculatorVersion] = None
+        calculator_name_snapshot: Optional[str] = None
+        calculator_version_snapshot: Optional[str] = None
+        calculator_source_hash_snapshot: Optional[str] = None
+        calculator_file: Optional[str] = payload.calculator_file
+        calculator_class: Optional[str] = payload.calculator_class
+        if mode == "calculator":
+            calculators = _sync_calculator_registry(db)
+            if not calculators:
+                raise HTTPException(status_code=409, detail="No calculator versions available")
+            calculator_version = _resolve_calculator_version(
+                db=db,
+                payload=payload,
+            )
+            calculator_file = calculator_version.file_path
+            calculator_class = calculator_version.class_name
+            calculator_name_snapshot = calculator_version.calculator.name
+            calculator_version_snapshot = calculator_version.version
+            calculator_source_hash_snapshot = calculator_version.source_hash
 
         products = (
             db.query(models.Product)
@@ -122,9 +145,13 @@ class CreatePriceRevisionHandler:
             percent_delta=payload.percent_delta,
             amount_delta=payload.amount_delta,
             currency=base_currency,
-            calculator_file=payload.calculator_file,
-            calculator_class=payload.calculator_class,
+            calculator_file=calculator_file,
+            calculator_class=calculator_class,
             calculator_params=calculator_params,
+            calculator_version_id=calculator_version.id if calculator_version else None,
+            calculator_name_snapshot=calculator_name_snapshot,
+            calculator_version_snapshot=calculator_version_snapshot,
+            calculator_source_hash_snapshot=calculator_source_hash_snapshot,
             created_by_user_id=command.created_by_user_id,
         )
         db.add(revision)
@@ -151,8 +178,8 @@ class CreatePriceRevisionHandler:
                 next_amount = previous_amount + delta
             else:
                 next_amount = run_calculator(
-                    file_name=str(payload.calculator_file),
-                    class_name=str(payload.calculator_class),
+                    file_name=str(calculator_file),
+                    class_name=str(calculator_class),
                     current_amount=previous_amount,
                     params=calculator_params,
                     context={
@@ -232,6 +259,10 @@ class CreatePriceRevisionHandler:
             currency=revision.currency,
             percent_delta=revision.percent_delta,
             amount_delta=revision.amount_delta,
+            calculator_version_id=revision.calculator_version_id,
+            calculator_name=revision.calculator_name_snapshot,
+            calculator_version=revision.calculator_version_snapshot,
+            calculator_source_hash=revision.calculator_source_hash_snapshot,
             calculator_file=revision.calculator_file,
             calculator_class=revision.calculator_class,
             calculator_params=revision.calculator_params or {},
@@ -298,6 +329,10 @@ class ListPriceRevisionsHandler:
                 currency=revision.currency,
                 percent_delta=revision.percent_delta,
                 amount_delta=revision.amount_delta,
+                calculator_version_id=revision.calculator_version_id,
+                calculator_name=revision.calculator_name_snapshot,
+                calculator_version=revision.calculator_version_snapshot,
+                calculator_source_hash=revision.calculator_source_hash_snapshot,
                 calculator_file=revision.calculator_file,
                 calculator_class=revision.calculator_class,
                 created_by_user_id=revision.created_by_user_id,
@@ -333,6 +368,10 @@ class GetPriceRevisionHandler:
             currency=revision.currency,
             percent_delta=revision.percent_delta,
             amount_delta=revision.amount_delta,
+            calculator_version_id=revision.calculator_version_id,
+            calculator_name=revision.calculator_name_snapshot,
+            calculator_version=revision.calculator_version_snapshot,
+            calculator_source_hash=revision.calculator_source_hash_snapshot,
             calculator_file=revision.calculator_file,
             calculator_class=revision.calculator_class,
             calculator_params=revision.calculator_params or {},
@@ -407,9 +446,137 @@ class GetCurrentPriceHandler:
             location_name=location.name,
             revision_id=revision.id if revision else None,
             revision_name=revision.name if revision else None,
+            revision_calculator_name=revision.calculator_name_snapshot if revision else None,
+            revision_calculator_version=revision.calculator_version_snapshot if revision else None,
+            revision_calculator_source_hash=revision.calculator_source_hash_snapshot if revision else None,
             revision_created_at=revision.created_at if revision else None,
             items=items,
         )
+
+
+@dataclass(frozen=True)
+class _CalculatorVersionRow:
+    version_id: int
+    calculator_code: str
+    calculator_name: str
+    calculator_version: str
+    source_hash: str
+    file: str
+    class_name: str
+    description: Optional[str]
+
+
+def _sync_calculator_registry(db) -> list[_CalculatorVersionRow]:
+    descriptors = list_available_calculators()
+    existing_calculators = {
+        row.code: row
+        for row in db.query(models.PriceCalculator).all()
+    }
+    for descriptor in descriptors:
+        calculator = existing_calculators.get(descriptor.code)
+        if not calculator:
+            calculator = models.PriceCalculator(
+                code=descriptor.code,
+                name=descriptor.name,
+                description=descriptor.description or None,
+                is_active=True,
+            )
+            db.add(calculator)
+            db.flush()
+            existing_calculators[descriptor.code] = calculator
+        else:
+            calculator.name = descriptor.name
+            calculator.description = descriptor.description or None
+            calculator.is_active = True
+
+        version = (
+            db.query(models.PriceCalculatorVersion)
+            .filter(
+                models.PriceCalculatorVersion.calculator_id == calculator.id,
+                models.PriceCalculatorVersion.version == descriptor.version,
+            )
+            .first()
+        )
+        if not version:
+            version = models.PriceCalculatorVersion(
+                calculator_id=calculator.id,
+                version=descriptor.version,
+                file_path=descriptor.file,
+                class_name=descriptor.class_name,
+                source_hash=descriptor.source_hash,
+                changelog=descriptor.changelog,
+                is_active=True,
+            )
+            db.add(version)
+            db.flush()
+        else:
+            version.file_path = descriptor.file
+            version.class_name = descriptor.class_name
+            version.source_hash = descriptor.source_hash
+            version.changelog = descriptor.changelog
+            version.is_active = True
+    db.flush()
+    rows = (
+        db.query(models.PriceCalculatorVersion, models.PriceCalculator)
+        .join(models.PriceCalculator, models.PriceCalculator.id == models.PriceCalculatorVersion.calculator_id)
+        .filter(
+            models.PriceCalculatorVersion.is_active == True,  # noqa: E712
+            models.PriceCalculator.is_active == True,  # noqa: E712
+        )
+        .order_by(models.PriceCalculator.name.asc(), models.PriceCalculatorVersion.version.desc())
+        .all()
+    )
+    return [
+        _CalculatorVersionRow(
+            version_id=version.id,
+            calculator_code=calculator.code,
+            calculator_name=calculator.name,
+            calculator_version=version.version,
+            source_hash=version.source_hash,
+            file=version.file_path,
+            class_name=version.class_name,
+            description=calculator.description,
+        )
+        for version, calculator in rows
+    ]
+
+
+def _resolve_calculator_version(*, db, payload: schemas.PriceRevisionCreate) -> models.PriceCalculatorVersion:
+    if payload.calculator_version_id is not None:
+        version = (
+            db.query(models.PriceCalculatorVersion)
+            .join(models.PriceCalculator, models.PriceCalculator.id == models.PriceCalculatorVersion.calculator_id)
+            .filter(
+                models.PriceCalculatorVersion.id == payload.calculator_version_id,
+                models.PriceCalculatorVersion.is_active == True,  # noqa: E712
+                models.PriceCalculator.is_active == True,  # noqa: E712
+            )
+            .first()
+        )
+        if not version:
+            raise HTTPException(status_code=404, detail="Calculator version not found")
+        return version
+
+    if payload.calculator_file and payload.calculator_class:
+        version = (
+            db.query(models.PriceCalculatorVersion)
+            .join(models.PriceCalculator, models.PriceCalculator.id == models.PriceCalculatorVersion.calculator_id)
+            .filter(
+                models.PriceCalculatorVersion.file_path == payload.calculator_file,
+                models.PriceCalculatorVersion.class_name == payload.calculator_class,
+                models.PriceCalculatorVersion.is_active == True,  # noqa: E712
+                models.PriceCalculator.is_active == True,  # noqa: E712
+            )
+            .order_by(models.PriceCalculatorVersion.updated_at.desc(), models.PriceCalculatorVersion.id.desc())
+            .first()
+        )
+        if version:
+            return version
+
+    raise HTTPException(
+        status_code=400,
+        detail="calculator_version_id is required for calculator mode",
+    )
 
 
 def _load_revision_lines(db, revision_id: int) -> list[schemas.PriceRevisionItemOut]:

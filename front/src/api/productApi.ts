@@ -305,6 +305,11 @@ export interface Location {
 export type PriceRevisionMode = 'percent' | 'fixed' | 'calculator'
 
 export interface PriceCalculatorInfo {
+  versionId: number
+  calculatorCode: string
+  calculatorName: string
+  calculatorVersion: string
+  sourceHash: string
   file: string
   className: string
   description?: string | null
@@ -317,6 +322,7 @@ export interface PriceRevisionCreateRequest {
   currency?: string
   percentDelta?: string | number
   amountDelta?: string | number
+  calculatorVersionId?: number
   calculatorFile?: string
   calculatorClass?: string
   calculatorParams?: Record<string, any>
@@ -352,6 +358,10 @@ export interface PriceRevisionListItem {
   currency: string
   percentDelta?: string | null
   amountDelta?: string | null
+  calculatorVersionId?: number | null
+  calculatorName?: string | null
+  calculatorVersion?: string | null
+  calculatorSourceHash?: string | null
   calculatorFile?: string | null
   calculatorClass?: string | null
   createdByUserId?: number | null
@@ -370,6 +380,10 @@ export interface PriceRevisionDetail {
   currency: string
   percentDelta?: string | null
   amountDelta?: string | null
+  calculatorVersionId?: number | null
+  calculatorName?: string | null
+  calculatorVersion?: string | null
+  calculatorSourceHash?: string | null
   calculatorFile?: string | null
   calculatorClass?: string | null
   calculatorParams: Record<string, any>
@@ -383,6 +397,9 @@ export interface CurrentPriceOut {
   locationName?: string | null
   revisionId?: number | null
   revisionName?: string | null
+  revisionCalculatorName?: string | null
+  revisionCalculatorVersion?: string | null
+  revisionCalculatorSourceHash?: string | null
   revisionCreatedAt?: string | null
   items: PriceRevisionItem[]
 }
@@ -681,6 +698,7 @@ async updateProduct(id: number, data: ProductForm) {
       currency: payload.currency,
       percent_delta: payload.percentDelta,
       amount_delta: payload.amountDelta,
+      calculator_version_id: payload.calculatorVersionId,
       calculator_file: payload.calculatorFile,
       calculator_class: payload.calculatorClass,
       calculator_params: payload.calculatorParams ?? {},

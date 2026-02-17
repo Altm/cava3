@@ -7,7 +7,11 @@ from typing import Any
 class BasePriceCalculator:
     """Base contract for file-based price calculators."""
 
+    calculator_code: str = "base_calculator"
+    calculator_name: str = "Base Calculator"
+    calculator_version: str = "1.0.0"
     description: str = "Custom calculator"
+    changelog: str | None = None
 
     def calculate(
         self,
@@ -17,4 +21,3 @@ class BasePriceCalculator:
         context: dict[str, Any],
     ) -> Decimal:
         raise NotImplementedError
-

@@ -180,14 +180,17 @@ def test_price_revision_calculator_mode(db_session):
     db_session.flush()
 
     with BoundSessionUnitOfWork(db_session) as uow:
+        calculators = ListPriceCalculatorsHandler().handle(ListPriceCalculatorsQuery(), uow)
+    calculator = [row for row in calculators if row.calculator_code == "example_multiplier" and row.calculator_version == "1.0.0"][0]
+
+    with BoundSessionUnitOfWork(db_session) as uow:
         detail = CreatePriceRevisionHandler().handle(
             CreatePriceRevisionCommand(
                 payload=schemas.PriceRevisionCreate(
                     location_id=location.id,
                     name="calculator",
                     mode="calculator",
-                    calculator_file="example_multiplier.py",
-                    calculator_class="ExampleMultiplierCalculator",
+                    calculator_version_id=calculator.version_id,
                     calculator_params={"multiplier": "1.1", "offset": "2"},
                 ),
                 created_by_user_id=3,
@@ -195,6 +198,10 @@ def test_price_revision_calculator_mode(db_session):
             uow,
         )
 
+    assert detail.calculator_version_id == calculator.version_id
+    assert detail.calculator_name == "Example Multiplier"
+    assert detail.calculator_version == "1.0.0"
+    assert detail.calculator_source_hash
     line = [item for item in detail.items if item.product_id == product1.id and item.unit_id == unit.id][0]
     assert line.amount == Decimal("112.00")
 
@@ -203,7 +210,20 @@ def test_price_calculators_list_contains_example(db_session):
     with BoundSessionUnitOfWork(db_session) as uow:
         rows = ListPriceCalculatorsHandler().handle(ListPriceCalculatorsQuery(), uow)
 
-    assert any(row.file == "example_multiplier.py" and row.class_name == "ExampleMultiplierCalculator" for row in rows)
+    assert any(
+        row.calculator_code == "example_multiplier"
+        and row.calculator_version == "1.0.0"
+        and row.file == "example_multiplier.py"
+        and row.class_name == "ExampleMultiplierCalculator"
+        for row in rows
+    )
+    assert any(
+        row.calculator_code == "example_multiplier"
+        and row.calculator_version == "1.1.0"
+        and row.file == "example_multiplier_v2.py"
+        and row.class_name == "ExampleMultiplierCalculatorV2"
+        for row in rows
+    )
 
 
 def test_price_revision_uses_only_in_stock_products(db_session):

@@ -285,6 +285,50 @@ class Location(Base):
     stocks = relationship("Stock", back_populates="location")
 
 
+class PriceCalculator(Base):
+    """Registry entry for logical price calculation algorithm."""
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, comment="Stable calculator code")
+    name: Mapped[str] = mapped_column(String(255), nullable=False, comment="Display name")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Calculator description")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=func.true(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    versions: Mapped[list["PriceCalculatorVersion"]] = relationship(
+        "PriceCalculatorVersion",
+        back_populates="calculator",
+        cascade="all, delete-orphan",
+    )
+
+
+class PriceCalculatorVersion(Base):
+    """Versioned runtime implementation of calculator logic."""
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    calculator_id: Mapped[int] = mapped_column(
+        ForeignKey("price_calculator.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="Calculator registry entry",
+    )
+    version: Mapped[str] = mapped_column(String(64), nullable=False, comment="Semantic/functional version")
+    file_path: Mapped[str] = mapped_column(String(255), nullable=False, comment="Python module file path")
+    class_name: Mapped[str] = mapped_column(String(255), nullable=False, comment="Python calculator class")
+    source_hash: Mapped[str] = mapped_column(String(128), nullable=False, comment="SHA256 hash of source file")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=func.true(), nullable=False)
+    changelog: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Version changelog")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    calculator: Mapped["PriceCalculator"] = relationship("PriceCalculator", back_populates="versions")
+    revisions: Mapped[list["PriceListRevision"]] = relationship("PriceListRevision", back_populates="calculator_version")
+
+    __table_args__ = (
+        UniqueConstraint("calculator_id", "version", name="uq_price_calculator_version_unique"),
+    )
+
+
 class PriceList(Base):
     """Prices per location and product."""
 
@@ -341,6 +385,26 @@ class PriceListRevision(Base):
         nullable=True,
         comment="Calculator params payload",
     )
+    calculator_version_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("price_calculator_version.id"),
+        nullable=True,
+        comment="Resolved calculator version id for mode=calculator",
+    )
+    calculator_name_snapshot: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Calculator display name at calculation time",
+    )
+    calculator_version_snapshot: Mapped[Optional[str]] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="Calculator version at calculation time",
+    )
+    calculator_source_hash_snapshot: Mapped[Optional[str]] = mapped_column(
+        String(128),
+        nullable=True,
+        comment="Calculator source hash at calculation time",
+    )
     created_by_user_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("user.id"),
         nullable=True,
@@ -353,6 +417,10 @@ class PriceListRevision(Base):
         "PriceListRevisionItem",
         back_populates="revision",
         cascade="all, delete-orphan",
+    )
+    calculator_version: Mapped[Optional["PriceCalculatorVersion"]] = relationship(
+        "PriceCalculatorVersion",
+        back_populates="revisions",
     )
 
 
