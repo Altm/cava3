@@ -17,6 +17,76 @@ class Location(LocationBase):
         from_attributes = True
 
 
+class PriceCalculatorOut(BaseModel):
+    file: str
+    class_name: str
+    description: Optional[str] = None
+
+
+class PriceRevisionCreate(BaseModel):
+    location_id: int
+    name: Optional[str] = None
+    mode: str = Field(..., pattern=r"^(percent|fixed|calculator)$")
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    percent_delta: Optional[Decimal] = None
+    amount_delta: Optional[Decimal] = None
+    calculator_file: Optional[str] = None
+    calculator_class: Optional[str] = None
+    calculator_params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PriceRevisionItemOut(BaseModel):
+    product_id: int
+    product_name: str
+    unit_id: int
+    unit_code: str
+    currency: str
+    amount: Decimal
+    previous_amount: Optional[Decimal] = None
+
+
+class PriceRevisionListOut(BaseModel):
+    id: int
+    location_id: int
+    location_name: Optional[str] = None
+    name: Optional[str] = None
+    mode: str
+    currency: str
+    percent_delta: Optional[Decimal] = None
+    amount_delta: Optional[Decimal] = None
+    calculator_file: Optional[str] = None
+    calculator_class: Optional[str] = None
+    created_by_user_id: Optional[int] = None
+    created_at: datetime
+    items_count: int
+
+
+class PriceRevisionDetailOut(BaseModel):
+    id: int
+    location_id: int
+    location_name: Optional[str] = None
+    name: Optional[str] = None
+    mode: str
+    currency: str
+    percent_delta: Optional[Decimal] = None
+    amount_delta: Optional[Decimal] = None
+    calculator_file: Optional[str] = None
+    calculator_class: Optional[str] = None
+    calculator_params: Dict[str, Any] = Field(default_factory=dict)
+    created_by_user_id: Optional[int] = None
+    created_at: datetime
+    items: List[PriceRevisionItemOut] = Field(default_factory=list)
+
+
+class PriceCurrentOut(BaseModel):
+    location_id: int
+    location_name: Optional[str] = None
+    revision_id: Optional[int] = None
+    revision_name: Optional[str] = None
+    revision_created_at: Optional[datetime] = None
+    items: List[PriceRevisionItemOut] = Field(default_factory=list)
+
+
 class UnitBase(BaseModel):
     code: str
     description: str

@@ -304,6 +304,86 @@ class PriceList(Base):
     unit: Mapped["Unit"] = relationship("Unit", back_populates="price_lists")
 
 
+class PriceListRevision(Base):
+    """Price list revision header with generation strategy metadata."""
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    location_id: Mapped[int] = mapped_column(ForeignKey("location.id"), nullable=False, comment="Target location")
+    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="Human-readable revision name")
+    mode: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        comment="Generation mode: percent|fixed|calculator",
+    )
+    percent_delta: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 4),
+        nullable=True,
+        comment="Percent delta for mode=percent",
+    )
+    amount_delta: Mapped[Optional[Decimal]] = mapped_column(
+        DECIMAL(18, 2),
+        nullable=True,
+        comment="Fixed amount delta for mode=fixed",
+    )
+    currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False, comment="Currency code")
+    calculator_file: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Calculator file path (relative to pricing calculators folder)",
+    )
+    calculator_class: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Calculator class name",
+    )
+    calculator_params: Mapped[Optional[dict]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Calculator params payload",
+    )
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("user.id"),
+        nullable=True,
+        comment="User who created this revision",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    items: Mapped[list["PriceListRevisionItem"]] = relationship(
+        "PriceListRevisionItem",
+        back_populates="revision",
+        cascade="all, delete-orphan",
+    )
+
+
+class PriceListRevisionItem(Base):
+    """Snapshot line of a generated price revision."""
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    revision_id: Mapped[int] = mapped_column(
+        ForeignKey("price_list_revision.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="Revision header reference",
+    )
+    product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), nullable=False, comment="Product reference")
+    unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id"), nullable=False, comment="Unit reference")
+    currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False, comment="Currency code")
+    previous_amount: Mapped[Optional[Decimal]] = mapped_column(
+        DECIMAL(18, 2),
+        nullable=True,
+        comment="Amount before recalculation",
+    )
+    amount: Mapped[Decimal] = mapped_column(DECIMAL(18, 2), nullable=False, comment="Calculated amount")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    revision: Mapped["PriceListRevision"] = relationship("PriceListRevision", back_populates="items")
+
+    __table_args__ = (
+        UniqueConstraint("revision_id", "product_id", "unit_id", name="uq_price_list_revision_item_unique"),
+    )
+
+
 class Terminal(Base):
     """Terminals allowed to send sales events."""
 

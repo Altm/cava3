@@ -143,6 +143,8 @@
    - затем добор поштучно FIFO.
 5. Частично разлитые item не участвуют в перемещениях и продаже целой коробкой/бутылкой.
 6. Цена продажи берётся из `price_list`, при отсутствии — из `product.base_cost`.
+7. Добавлен интерфейс управления прайсами с историей ревизий и файловыми калькуляторами.
+8. В прайс попадают только товары, которые **сейчас в наличии** в выбранной локации (`stock.quantity > 0`).
 
 ---
 
@@ -169,6 +171,32 @@
 
 ---
 
+## Управление прайсами
+
+1. Откройте раздел **Прайсы**.
+2. Выберите локацию, для которой формируется прайс.
+3. Создайте ревизию одним из режимов:
+   - **Процент на все товары** (пример: `+5%`);
+   - **Фиксированная добавка** (пример: `+10` в валюте);
+   - **Файл-калькулятор** (`calculator_file` + `calculator_class` + `calculator_params` JSON).
+4. После создания:
+   - значения записываются в текущий `price_list`;
+   - сохраняется полная история в `price_list_revision` и `price_list_revision_item`.
+
+### Важные правила
+
+- Прайс создаётся только для товаров с остатком в локации (`stock.quantity > 0`).
+- При запросе текущего прайса возвращается **последняя ревизия** для локации.
+- Если ревизий нет, отдаются текущие строки `price_list`, также только для товаров в наличии.
+
+### Папка калькуляторов
+
+- Калькуляторы лежат в `backend_full/app/pricing_calculators`.
+- Каждый калькулятор — класс-наследник `BasePriceCalculator`.
+- Пример: `backend_full/app/pricing_calculators/example_multiplier.py`.
+
+---
+
 ## Изменения в данных
 
 | Сущность | Поле | Назначение |
@@ -177,6 +205,8 @@
 | `product_item_pour` | `product_item_id` | Ссылка на конкретный item. |
 | `product_item_pour` | `glasses_total` | Сколько бокалов в полной бутылке (для item). |
 | `product_item_pour` | `glasses_sold` | Сколько бокалов уже продано из item. |
+| `price_list_revision` | `location_id`, `mode`, `percent_delta`, `amount_delta`, `calculator_file`, `calculator_class`, `calculator_params` | Заголовок ревизии прайса и параметры пересчёта. |
+| `price_list_revision_item` | `revision_id`, `product_id`, `unit_id`, `previous_amount`, `amount` | Строки ревизии с историей значений до/после. |
 
 ---
 
@@ -197,6 +227,18 @@
 ### Продажи
 - `POST /api/v1/simple-catalog/sales/checkout`  
   Единый checkout продаж (товар / `ITM` / `BOX` / бокалы), с отправкой итогового payload в `/api/v1/sales/register-sales-transactions`.
+
+### Прайсы
+- `GET /api/v1/simple-catalog/prices/calculators`  
+  Список доступных файловых калькуляторов.
+- `POST /api/v1/simple-catalog/prices/revisions`  
+  Создать новую ревизию прайса для локации и применить её к текущим ценам.
+- `GET /api/v1/simple-catalog/prices/revisions`  
+  История ревизий прайса (с фильтром по локации).
+- `GET /api/v1/simple-catalog/prices/revisions/{revision_id}`  
+  Детальный состав конкретной ревизии.
+- `GET /api/v1/simple-catalog/prices/current?location_id=...`  
+  Текущий прайс локации (последняя ревизия).
 
 ---
 

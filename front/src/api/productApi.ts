@@ -302,6 +302,78 @@ export interface Location {
   code: string
 }
 
+export type PriceRevisionMode = 'percent' | 'fixed' | 'calculator'
+
+export interface PriceCalculatorInfo {
+  file: string
+  className: string
+  description?: string | null
+}
+
+export interface PriceRevisionCreateRequest {
+  locationId: number
+  name?: string
+  mode: PriceRevisionMode
+  currency?: string
+  percentDelta?: string | number
+  amountDelta?: string | number
+  calculatorFile?: string
+  calculatorClass?: string
+  calculatorParams?: Record<string, any>
+}
+
+export interface PriceRevisionItem {
+  productId: number
+  productName: string
+  unitId: number
+  unitCode: string
+  currency: string
+  amount: string
+  previousAmount?: string | null
+}
+
+export interface PriceRevisionListItem {
+  id: number
+  locationId: number
+  locationName?: string | null
+  name?: string | null
+  mode: PriceRevisionMode
+  currency: string
+  percentDelta?: string | null
+  amountDelta?: string | null
+  calculatorFile?: string | null
+  calculatorClass?: string | null
+  createdByUserId?: number | null
+  createdAt: string
+  itemsCount: number
+}
+
+export interface PriceRevisionDetail {
+  id: number
+  locationId: number
+  locationName?: string | null
+  name?: string | null
+  mode: PriceRevisionMode
+  currency: string
+  percentDelta?: string | null
+  amountDelta?: string | null
+  calculatorFile?: string | null
+  calculatorClass?: string | null
+  calculatorParams: Record<string, any>
+  createdByUserId?: number | null
+  createdAt: string
+  items: PriceRevisionItem[]
+}
+
+export interface CurrentPriceOut {
+  locationId: number
+  locationName?: string | null
+  revisionId?: number | null
+  revisionName?: string | null
+  revisionCreatedAt?: string | null
+  items: PriceRevisionItem[]
+}
+
 export interface ProductWithStockByLocation {
   id: number
   productTypeId: number
@@ -540,6 +612,48 @@ async updateProduct(id: number, data: ProductForm) {
 
   async createLocation(locationData: Omit<Location, 'id'>): Promise<Location> {
     const res = await api.post<Location>('/locations/', locationData)
+    return res.data
+  },
+
+  async getPriceCalculators(): Promise<PriceCalculatorInfo[]> {
+    const res = await api.get<PriceCalculatorInfo[]>('/prices/calculators')
+    return res.data
+  },
+
+  async createPriceRevision(payload: PriceRevisionCreateRequest): Promise<PriceRevisionDetail> {
+    const requestPayload = {
+      location_id: payload.locationId,
+      name: payload.name,
+      mode: payload.mode,
+      currency: payload.currency,
+      percent_delta: payload.percentDelta,
+      amount_delta: payload.amountDelta,
+      calculator_file: payload.calculatorFile,
+      calculator_class: payload.calculatorClass,
+      calculator_params: payload.calculatorParams ?? {},
+    }
+    const res = await api.post<PriceRevisionDetail>('/prices/revisions', requestPayload)
+    return res.data
+  },
+
+  async listPriceRevisions(params?: { locationId?: number; limit?: number; offset?: number }): Promise<PriceRevisionListItem[]> {
+    const queryParams = new URLSearchParams()
+    if (params?.locationId) queryParams.append('location_id', String(params.locationId))
+    if (params?.limit !== undefined) queryParams.append('limit', String(params.limit))
+    if (params?.offset !== undefined) queryParams.append('offset', String(params.offset))
+    const query = queryParams.toString()
+    const url = query ? `/prices/revisions?${query}` : '/prices/revisions'
+    const res = await api.get<PriceRevisionListItem[]>(url)
+    return res.data
+  },
+
+  async getPriceRevision(revisionId: number): Promise<PriceRevisionDetail> {
+    const res = await api.get<PriceRevisionDetail>(`/prices/revisions/${revisionId}`)
+    return res.data
+  },
+
+  async getCurrentPrices(locationId: number): Promise<CurrentPriceOut> {
+    const res = await api.get<CurrentPriceOut>('/prices/current', { params: { location_id: locationId } })
     return res.data
   },
 

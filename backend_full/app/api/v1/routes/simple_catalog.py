@@ -48,6 +48,18 @@ from app.application.simple_catalog.products import (
     UploadProductImageCommand,
     UploadProductImageHandler,
 )
+from app.application.simple_catalog.prices import (
+    CreatePriceRevisionCommand,
+    CreatePriceRevisionHandler,
+    GetCurrentPriceHandler,
+    GetCurrentPriceQuery,
+    GetPriceRevisionHandler,
+    GetPriceRevisionQuery,
+    ListPriceCalculatorsHandler,
+    ListPriceCalculatorsQuery,
+    ListPriceRevisionsHandler,
+    ListPriceRevisionsQuery,
+)
 from app.application.simple_catalog.sales import (
     ConfirmSaleCommand,
     ConfirmSaleHandler,
@@ -338,6 +350,77 @@ def create_location(
 ):
     """Создаёт новую локацию."""
     return dispatch_command(uow_factory, CreateLocationHandler(), CreateLocationCommand(payload=location))
+
+
+@router.get("/prices/calculators", response_model=List[schemas.PriceCalculatorOut])
+def list_price_calculators(
+    user=Depends(PermissionChecker(["product.read"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Возвращает список доступных файловых калькуляторов цен."""
+    return dispatch_query(
+        uow_factory,
+        ListPriceCalculatorsHandler(),
+        ListPriceCalculatorsQuery(),
+    )
+
+
+@router.post("/prices/revisions", response_model=schemas.PriceRevisionDetailOut)
+def create_price_revision(
+    payload: schemas.PriceRevisionCreate,
+    user=Depends(PermissionChecker(["product.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Создаёт новую ревизию прайса для локации и обновляет текущие цены."""
+    return dispatch_command(
+        uow_factory,
+        CreatePriceRevisionHandler(),
+        CreatePriceRevisionCommand(payload=payload, created_by_user_id=getattr(user, "id", None)),
+    )
+
+
+@router.get("/prices/revisions", response_model=List[schemas.PriceRevisionListOut])
+def list_price_revisions(
+    location_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
+    user=Depends(PermissionChecker(["product.read"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Возвращает историю ревизий прайсов."""
+    return dispatch_query(
+        uow_factory,
+        ListPriceRevisionsHandler(),
+        ListPriceRevisionsQuery(location_id=location_id, limit=limit, offset=offset),
+    )
+
+
+@router.get("/prices/revisions/{revision_id}", response_model=schemas.PriceRevisionDetailOut)
+def get_price_revision(
+    revision_id: int,
+    user=Depends(PermissionChecker(["product.read"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Возвращает содержимое выбранной ревизии прайса."""
+    return dispatch_query(
+        uow_factory,
+        GetPriceRevisionHandler(),
+        GetPriceRevisionQuery(revision_id=revision_id),
+    )
+
+
+@router.get("/prices/current", response_model=schemas.PriceCurrentOut)
+def get_current_prices(
+    location_id: int,
+    user=Depends(PermissionChecker(["product.read"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Возвращает последний (текущий) прайс для локации."""
+    return dispatch_query(
+        uow_factory,
+        GetCurrentPriceHandler(),
+        GetCurrentPriceQuery(location_id=location_id),
+    )
 
 
 @router.post("/sales/")
