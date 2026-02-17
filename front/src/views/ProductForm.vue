@@ -205,8 +205,14 @@
       <div id="product-units" class="form-group">
         <label>Привязка юнитов к товару</label>
         <small class="muted">
-          Настройте базовый/составные юниты и коэффициенты. Этот блок доступен и при создании, и при редактировании.
+          По умолчанию можно подставить юниты из типа товара. При строгом режиме типа разрешены только юниты из типа.
         </small>
+        <div class="inline-actions">
+          <button type="button" class="btn btn-outline btn-sm" :disabled="!currentType" @click="applyTypeUnitsToForm">
+            Подставить из типа
+          </button>
+          <span v-if="currentType?.strictUnitsByType" class="tag tag-warning">Строгий режим юнитов по типу</span>
+        </div>
         <div class="product-units-section">
           <div v-for="(pu, index) in form.productUnits" :key="index" class="product-unit-item">
             <div class="form-row">
@@ -395,6 +401,17 @@ const ensureBaseUnitBinding = () => {
   })
 }
 
+const applyTypeUnitsToForm = () => {
+  const typeUnits = currentType.value?.productTypeUnits || []
+  const normalized = typeUnits.map((row: any) => ({
+    unit_id: Number(row.unit_id ?? row.unitId ?? 0),
+    ratio_to_base: Number(row.ratio_to_base ?? row.ratioToBase ?? 1),
+    discrete_step: row.discrete_step ?? row.discreteStep ?? null,
+  })).filter((row) => row.unit_id > 0)
+  form.value.productUnits = normalized
+  ensureBaseUnitBinding()
+}
+
 const imageUrl = computed(() => {
   const raw = productView.value?.meta?.image?.trim()
   if (!raw) return ''
@@ -421,6 +438,9 @@ const onTypeChange = () => {
   const selectedType = productTypes.value.find(t => t.id === form.value.productTypeId);
   if (selectedType && !selectedType.isComposite) {
     form.value.components = []
+  }
+  if (!isEditing.value || !form.value.productUnits.length) {
+    applyTypeUnitsToForm()
   }
 }
 
@@ -546,6 +566,15 @@ const handleSubmit = async () => {
     // Get the composite flag from the selected product type
     const selectedType = productTypes.value.find(t => t.id === form.value.productTypeId);
     const isProductTypeComposite = selectedType ? selectedType.isComposite : false;
+    if (selectedType?.strictUnitsByType) {
+      const allowedUnitIds = new Set<number>((selectedType.productTypeUnits || []).map((row: any) => Number(row.unitId ?? row.unit_id)))
+      if (form.value.baseUnitId) allowedUnitIds.add(Number(form.value.baseUnitId))
+      const invalidUnit = form.value.productUnits.find((row) => row.unit_id && !allowedUnitIds.has(Number(row.unit_id)))
+      if (invalidUnit) {
+        alert(`Юнит ${invalidUnit.unit_id} не разрешён типом товара (строгий режим).`)
+        return
+      }
+    }
 
     const payload: any = {
       product_type_id: form.value.productTypeId,
@@ -610,7 +639,13 @@ onMounted(async () => {
       attributes: type.attributes?.map(attr => ({
         ...attr,
         dataType: (attr as any).data_type || attr.dataType
-      })) || []
+      })) || [],
+      productTypeUnits: (type.productTypeUnits || []).map((row: any) => ({
+        ...row,
+        unitId: row.unitId ?? row.unit_id,
+        ratioToBase: row.ratioToBase ?? row.ratio_to_base,
+        discreteStep: row.discreteStep ?? row.discrete_step ?? null,
+      })),
     }))
     allProducts.value = productsRes
 
@@ -821,6 +856,26 @@ label {
   padding: 15px;
   border-radius: 4px;
   background-color: #f9f9f9;
+}
+
+.inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.tag-warning {
+  background: #fff7ed;
+  color: #9a3412;
 }
 
 .product-unit-item {

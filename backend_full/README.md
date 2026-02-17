@@ -39,6 +39,16 @@
 - handlers вызывают `app/services/*` и/или ORM-модели напрямую;
 - это позволяет развивать рефакторинг поэтапно без поломки API.
 
+Дополнительно по pricing:
+- добавлено версионирование расчётов;
+- ревизии прайса хранят снапшот `name/version/source_hash` использованного алгоритма;
+- основной контракт создания ревизии для `mode=calculator` переведён на `calculator_version_id`.
+
+Дополнительно по юнитам:
+- добавлены дефолтные юниты типа товара (`product_type_unit`);
+- добавлен флаг `product_type.strict_units_by_type`;
+- при создании/обновлении товара юниты могут наследоваться из типа автоматически, при strict режиме запрещены юниты вне списка типа.
+
 ---
 
 ## Текущая структура и назначение
@@ -63,6 +73,7 @@
 - `app/models/models.py` — SQLAlchemy модели.
 - `app/schemas/{simple.py,serial.py}` — Pydantic-схемы API.
 - `app/services/*` — доменные сервисы (receipt/transfer/inventory/stock/sales и др.).
+- `app/pricing_calculators/*` — файловые реализации расчётов с версиями.
 
 ### Cross-cutting
 - `app/audit/*` — аудит и request-логирование.
@@ -100,6 +111,33 @@
   - `transfers` — перемещения
   - `inventories` — инвентаризация
   - `scan` — универсальное чтение QR + история единицы
+
+---
+
+## Прайсы: версия расчёта
+
+### Таблицы
+- `price_calculator` — логический реестр расчётов (`code`, `name`, `description`, `is_active`).
+- `price_calculator_version` — версия реализации (`version`, `file_path`, `class_name`, `source_hash`, `changelog`, `is_active`).
+
+### Расширение `price_list_revision`
+- `calculator_version_id` — ссылка на выбранную версию расчёта.
+- `calculator_name_snapshot` — имя расчёта на момент пересчёта.
+- `calculator_version_snapshot` — версия на момент пересчёта.
+- `calculator_source_hash_snapshot` — hash исходника на момент пересчёта.
+
+### Runtime flow
+1. `GET /api/v1/simple-catalog/prices/calculators` синхронизирует версии из `app/pricing_calculators/*` в БД.
+2. `POST /api/v1/simple-catalog/prices/revisions` для `mode=calculator` использует `calculator_version_id`.
+3. Для совместимости при устаревшем `calculator_version_id` выполняется fallback по `calculator_file + calculator_class`.
+4. В `prices/current`, `prices/revisions`, `prices/revisions/{id}` возвращаются версия и hash расчёта.
+
+### Примеры версий
+- `app/pricing_calculators/example_multiplier.py` → `example_multiplier`, `Example Multiplier`, `1.0.0`.
+- `app/pricing_calculators/example_multiplier_v2.py` → `example_multiplier`, `Example Multiplier`, `1.1.0` (добавлен параметр `floor`).
+
+### Валидация JSON параметров
+- На фронте добавлена явная проверка `calculator_params` с понятной ошибкой при невалидном JSON.
 
 ---
 
@@ -147,3 +185,13 @@
 - Все write-операции — через `dispatch_command` + UoW commit.
 - Ошибки поднимать через `HTTPException`/доменные ошибки, не через `print`.
 - По возможности переиспользовать существующие сервисы, чтобы не дублировать SQL-логику.
+
+---
+
+## Миграции для новых изменений
+
+- `20260218_120000_add_stock_lot_purchase_price.py`
+- `20260218_130000_add_price_calculator_versions.py`
+
+Запуск:
+- `docker compose exec backend_full alembic upgrade head`

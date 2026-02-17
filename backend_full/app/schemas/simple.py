@@ -189,8 +189,23 @@ class ProductUnitCreate(BaseModel):
 
 
 class ProductUnit(ProductUnitCreate):
-    id: int
+    id: Optional[int] = None
     product_id: int
+    source: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ProductTypeUnitCreate(BaseModel):
+    unit_id: int
+    ratio_to_base: Decimal = Field(..., gt=0)
+    discrete_step: Optional[Decimal] = None
+
+
+class ProductTypeUnit(ProductTypeUnitCreate):
+    id: Optional[int] = None
+    product_type_id: int
 
     class Config:
         from_attributes = True
@@ -227,19 +242,24 @@ class ProductTypeCreate(BaseModel):
     name: str
     description: Optional[str] = None
     is_composite: bool = False
+    strict_units_by_type: bool = False
     attributes: List[ProductAttributeCreate] = []
+    product_type_units: List[ProductTypeUnitCreate] = []
 
 
 class ProductTypeUpdate(BaseModel):
     name: str
     description: Optional[str] = None
     is_composite: bool = False
+    strict_units_by_type: bool = False
     attributes: List[ProductAttributeCreate] = []
+    product_type_units: List[ProductTypeUnitCreate] = []
 
 
 class ProductType(ProductTypeCreate):
     id: int
     attributes: List[ProductAttribute] = []
+    product_type_units: List[ProductTypeUnit] = []
 
     class Config:
         from_attributes = True

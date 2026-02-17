@@ -73,10 +73,11 @@
                 <th>Юнит</th>
                 <th>Коэффициент к базе</th>
                 <th>Роль</th>
+                <th>Источник</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="unit in sortedProductUnits" :key="unit.id">
+              <tr v-for="unit in sortedProductUnits" :key="unit.id ?? `u-${unit.unitId}-${unit.ratioToBase}`">
                 <td>{{ unitLabel(unit.unitId) }}</td>
                 <td>{{ unit.ratioToBase }}</td>
                 <td>
@@ -84,9 +85,10 @@
                     {{ unit.unitId === product.baseUnitId ? 'Базовый' : 'Составной' }}
                   </span>
                 </td>
+                <td>{{ unitSourceLabel(unit.source) }}</td>
               </tr>
               <tr v-if="!sortedProductUnits.length">
-                <td colspan="3">Нет данных по юнитам товара</td>
+                <td colspan="4">Нет данных по юнитам товара</td>
               </tr>
             </tbody>
           </table>
@@ -217,6 +219,13 @@ const sortedProductUnits = computed(() => {
 const unitLabel = (unitId: number) => {
   const unit = units.value.find((row) => row.id === unitId)
   return unit ? `${unit.code} (${unit.description})` : String(unitId)
+}
+
+const unitSourceLabel = (source?: string | null) => {
+  if (source === 'type') return 'Тип товара'
+  if (source === 'product') return 'Товар'
+  if (source === 'base') return 'Базовый fallback'
+  return '-'
 }
 
 const attributeMap = computed(() => {

@@ -145,6 +145,10 @@
 6. Цена продажи берётся из `price_list`, при отсутствии — из `product.base_cost`.
 7. Добавлен интерфейс управления прайсами с историей ревизий и файловыми калькуляторами.
 8. В прайс попадают только товары, которые **сейчас в наличии** в выбранной локации (`stock.quantity > 0`).
+9. Добавлены юниты на уровне типа товара:
+   - `product_type_unit` хранит дефолтные юниты типа;
+   - в `product_type.strict_units_by_type` можно включить строгий режим;
+   - при создании/обновлении товара юниты автоматически подставляются из типа, если в payload юниты не переданы.
 
 ---
 
@@ -178,7 +182,7 @@
 3. Создайте ревизию одним из режимов:
    - **Процент на все товары** (пример: `+5%`);
    - **Фиксированная добавка** (пример: `+10` в валюте);
-   - **Файл-калькулятор** (`calculator_file` + `calculator_class` + `calculator_params` JSON).
+   - **Версионированный расчёт** (`calculator_version_id` + `calculator_params` JSON).
 4. После создания:
    - значения записываются в текущий `price_list`;
    - сохраняется полная история в `price_list_revision` и `price_list_revision_item`.
@@ -188,12 +192,26 @@
 - Прайс создаётся только для товаров с остатком в локации (`stock.quantity > 0`).
 - При запросе текущего прайса возвращается **последняя ревизия** для локации.
 - Если ревизий нет, отдаются текущие строки `price_list`, также только для товаров в наличии.
+- Для режима расчёта сохраняется снапшот:
+  - название расчёта,
+  - версия,
+  - hash исходника (`SHA256`).
+- Если на фронте выбран устаревший `calculator_version_id`, backend делает fallback по `calculator_file + calculator_class`.
 
-### Папка калькуляторов
+### Версии расчётов
 
 - Калькуляторы лежат в `backend_full/app/pricing_calculators`.
 - Каждый калькулятор — класс-наследник `BasePriceCalculator`.
-- Пример: `backend_full/app/pricing_calculators/example_multiplier.py`.
+- Для каждого класса задаются метаданные:
+  - `calculator_code`,
+  - `calculator_name`,
+  - `calculator_version`,
+  - `changelog`.
+- Примеры версий:
+  - `backend_full/app/pricing_calculators/example_multiplier.py` → `example_multiplier`, `Example Multiplier`, `1.0.0`;
+  - `backend_full/app/pricing_calculators/example_multiplier_v2.py` → `example_multiplier`, `Example Multiplier`, `1.1.0`.
+- При каждом запросе списка калькуляторов backend синхронизирует файловые версии в БД.
+- В UI поле **Параметры (JSON)** валидируется, при ошибке парсинга показывается человекочитаемая подсказка.
 
 ---
 
@@ -206,7 +224,11 @@
 | `product_item_pour` | `glasses_total` | Сколько бокалов в полной бутылке (для item). |
 | `product_item_pour` | `glasses_sold` | Сколько бокалов уже продано из item. |
 | `price_list_revision` | `location_id`, `mode`, `percent_delta`, `amount_delta`, `calculator_file`, `calculator_class`, `calculator_params` | Заголовок ревизии прайса и параметры пересчёта. |
+| `price_list_revision` | `calculator_version_id` | Версия расчёта, использованная для ревизии. |
+| `price_list_revision` | `calculator_name_snapshot`, `calculator_version_snapshot`, `calculator_source_hash_snapshot` | Снапшот метаданных расчёта на момент пересчёта. |
 | `price_list_revision_item` | `revision_id`, `product_id`, `unit_id`, `previous_amount`, `amount` | Строки ревизии с историей значений до/после. |
+| `price_calculator` | `code`, `name`, `description`, `is_active` | Реестр логических расчётов. |
+| `price_calculator_version` | `calculator_id`, `version`, `file_path`, `class_name`, `source_hash`, `changelog`, `is_active` | Версии реализаций расчётов. |
 
 ---
 
@@ -230,15 +252,24 @@
 
 ### Прайсы
 - `GET /api/v1/simple-catalog/prices/calculators`  
-  Список доступных файловых калькуляторов.
+  Список доступных версий расчётов (`version_id`, `calculator_code`, `calculator_name`, `calculator_version`, `source_hash`, `file`, `class_name`).
 - `POST /api/v1/simple-catalog/prices/revisions`  
-  Создать новую ревизию прайса для локации и применить её к текущим ценам.
+  Создать новую ревизию прайса для локации и применить её к текущим ценам.  
+  Для `mode=calculator` используйте `calculator_version_id` (основной путь).
 - `GET /api/v1/simple-catalog/prices/revisions`  
   История ревизий прайса (с фильтром по локации).
 - `GET /api/v1/simple-catalog/prices/revisions/{revision_id}`  
-  Детальный состав конкретной ревизии.
+  Детальный состав конкретной ревизии + метаданные версии расчёта.
 - `GET /api/v1/simple-catalog/prices/current?location_id=...`  
-  Текущий прайс локации (последняя ревизия).
+  Текущий прайс локации (последняя ревизия) + метаданные версии расчёта.
+
+---
+
+## Миграции (обязательно)
+
+- Для поддержки версий расчётов примените миграции:
+  - `20260218_120000_add_stock_lot_purchase_price.py`
+  - `20260218_130000_add_price_calculator_versions.py`
 
 ---
 

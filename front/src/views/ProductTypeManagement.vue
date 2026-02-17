@@ -15,6 +15,7 @@
           <th>Описание</th>
           <th>Составной</th>
           <th>Атрибуты</th>
+          <th>Юниты типа</th>
           <th>Действия</th>
         </tr>
       </thead>
@@ -32,6 +33,12 @@
             <span v-for="attr in productType.attributes" :key="attr.id" class="tag">
               {{ attr.name }}
             </span>
+          </td>
+          <td>
+            <span v-for="unit in productType.productTypeUnits || []" :key="`ptu-${productType.id}-${unit.unitId}`" class="tag">
+              {{ unitDisplay(unit.unitId) }} × {{ unit.ratioToBase }}
+            </span>
+            <span v-if="!(productType.productTypeUnits || []).length" class="tag tag-muted">—</span>
           </td>
           <td>
             <button v-if="hasPermission('product_type.write')" @click="editProductType(productType)" class="btn btn-sm">Редактировать</button>
@@ -61,6 +68,13 @@
             <label>
               <input type="checkbox" v-model="form.isComposite" />
               Составной тип
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label>
+              <input type="checkbox" v-model="form.strictUnitsByType" />
+              Строгие юниты по типу (товару разрешены только юниты типа)
             </label>
           </div>
 
@@ -111,7 +125,7 @@
                     :key="unit.id"
                     :value="unit.id"
                   >
-                    {{ unit.name }} ({{ unit.symbol }})
+                    {{ unitDisplay(unit.id) }}
                   </option>
                 </select>
               </div>
@@ -131,6 +145,40 @@
                   placeholder="Порядок отображения"
                   min="1"
                 />
+              </div>
+            </div>
+          </div>
+
+          <h4>Юниты типа</h4>
+          <button type="button" @click="addTypeUnit" class="btn btn-secondary">Добавить юнит типа</button>
+          <div v-for="(unitRow, index) in form.productTypeUnits" :key="`type-unit-${index}`" class="attribute-card">
+            <div class="card-header">
+              <span>Юнит {{ index + 1 }}</span>
+              <button
+                type="button"
+                @click="removeTypeUnit(index)"
+                class="btn btn-sm btn-danger"
+              >
+                Удалить
+              </button>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Единица</label>
+                <select v-model.number="unitRow.unitId" required>
+                  <option :value="0">Выберите единицу</option>
+                  <option v-for="unit in units" :key="unit.id" :value="unit.id">
+                    {{ unitDisplay(unit.id) }}
+                  </option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Коэффициент к базе</label>
+                <input v-model.number="unitRow.ratioToBase" type="number" min="0.000001" step="0.000001" required />
+              </div>
+              <div class="form-group">
+                <label>Дискретный шаг</label>
+                <input v-model.number="unitRow.discreteStep" type="number" min="0" step="0.000001" />
               </div>
             </div>
           </div>
@@ -171,8 +219,9 @@ const form = ref({
   name: '',
   description: '',
   isComposite: false,
+  strictUnitsByType: false,
   attributes: [{ name: '', code: '', dataType: 'string', unitId: null, isRequired: false, sortOrder: 1 }] as AttributeDefinition[],
-  unitConversions: [] as Array<{ fromUnit: string, toUnit: string, ratio: number }>
+  productTypeUnits: [] as Array<{ unitId: number; ratioToBase: number; discreteStep: number | null }>
 })
 
 // Units (will be loaded from API)
@@ -191,16 +240,13 @@ const loadProductTypes = async () => {
 }
 
 const loadUnits = async () => {
-  // Note: We'll need to add a units endpoint to the API later
-  // For now, we'll use mock data
-  units.value = [
-    { code: 'unit', name: 'Штука', symbol: 'шт' },
-    { code: 'bottle', name: 'Бутылка', symbol: 'бут' },
-    { code: 'glass', name: 'Бокал', symbol: 'бок' },
-    { code: 'kg', name: 'Килограмм', symbol: 'кг' },
-    { code: 'liter', name: 'Литр', symbol: 'л' },
-    { code: 'box', name: 'Ящик', symbol: 'ящ' }
-  ]
+  units.value = await productApi.getUnits()
+}
+
+const unitDisplay = (unitId: number) => {
+  const unit = units.value.find((row: any) => row.id === unitId)
+  if (!unit) return `#${unitId}`
+  return unit.description ? `${unit.description} (${unit.code})` : unit.code
 }
 
 const showCreateDialog = () => {
@@ -215,6 +261,7 @@ const editProductType = (productType: ProductType) => {
   form.value.name = productType.name
   form.value.description = productType.description || ''
   form.value.isComposite = productType.isComposite
+  form.value.strictUnitsByType = !!productType.strictUnitsByType
 
   // Initialize attributes
   form.value.attributes = productType.attributes && productType.attributes.length > 0
@@ -225,8 +272,11 @@ const editProductType = (productType: ProductType) => {
       }))]
     : []
 
-  // Initialize unit conversions (currently empty since API doesn't support this yet)
-  form.unitConversions = []
+  form.value.productTypeUnits = (productType.productTypeUnits || []).map((row: any) => ({
+    unitId: Number(row.unitId ?? row.unit_id ?? 0),
+    ratioToBase: Number(row.ratioToBase ?? row.ratio_to_base ?? 1),
+    discreteStep: row.discreteStep ?? row.discrete_step ?? null,
+  }))
 
   dialogVisible.value = true
 }
@@ -264,8 +314,17 @@ const resetForm = () => {
   form.value.name = ''
   form.value.description = ''
   form.value.isComposite = false
+  form.value.strictUnitsByType = false
   form.value.attributes = []
-  form.value.unitConversions = []
+  form.value.productTypeUnits = []
+}
+
+const addTypeUnit = () => {
+  form.value.productTypeUnits.push({ unitId: 0, ratioToBase: 1, discreteStep: null })
+}
+
+const removeTypeUnit = (index: number) => {
+  form.value.productTypeUnits.splice(index, 1)
 }
 
 const saveProductType = async () => {
@@ -276,6 +335,7 @@ const saveProductType = async () => {
         name: form.value.name,
         description: form.value.description,
         is_composite: form.value.isComposite,
+        strict_units_by_type: form.value.strictUnitsByType,
         attributes: form.value.attributes
           .filter(attr => attr.code.trim() !== '')  // Filter out attributes with empty codes
           .map(attr => ({
@@ -286,7 +346,14 @@ const saveProductType = async () => {
             unit_id: attr.unitId || null,
             is_required: attr.isRequired,
             sort_order: attr.sortOrder || 1
-          }))
+          })),
+        product_type_units: form.value.productTypeUnits
+          .filter((row) => row.unitId > 0 && row.ratioToBase > 0)
+          .map((row) => ({
+            unit_id: row.unitId,
+            ratio_to_base: row.ratioToBase,
+            discrete_step: row.discreteStep ?? null,
+          })),
       }
 
       // Use productApi for consistency
@@ -297,6 +364,7 @@ const saveProductType = async () => {
         name: form.value.name,
         description: form.value.description,
         is_composite: form.value.isComposite,
+        strict_units_by_type: form.value.strictUnitsByType,
         attributes: form.value.attributes.map(attr => ({
           product_type_id: 0, // Will be set by backend
           name: attr.name,
@@ -305,7 +373,14 @@ const saveProductType = async () => {
           unit_id: attr.unitId || null,
           is_required: attr.isRequired,
           sort_order: attr.sortOrder || 1
-        }))
+        })),
+        product_type_units: form.value.productTypeUnits
+          .filter((row) => row.unitId > 0 && row.ratioToBase > 0)
+          .map((row) => ({
+            unit_id: row.unitId,
+            ratio_to_base: row.ratioToBase,
+            discrete_step: row.discreteStep ?? null,
+          })),
       }
 
       // Use productApi for consistency
@@ -394,6 +469,11 @@ const closeDialog = () => {
   padding: 2px 6px;
   border-radius: 4px;
   margin-right: 4px;
+}
+
+.tag-muted {
+  background-color: #f3f4f6;
+  color: #6b7280;
 }
 
 .tag-success {

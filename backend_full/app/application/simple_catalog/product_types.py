@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import List
 
 from fastapi import HTTPException
@@ -36,6 +37,59 @@ class DeleteProductTypeCommand:
     product_type_id: int
 
 
+def _serialize_type_units(rows: list[models.ProductTypeUnit]) -> list[schemas.ProductTypeUnit]:
+    return [
+        schemas.ProductTypeUnit(
+            id=row.id,
+            product_type_id=row.product_type_id,
+            unit_id=row.unit_id,
+            ratio_to_base=row.ratio_to_base,
+            discrete_step=row.discrete_step,
+        )
+        for row in sorted(
+            rows,
+            key=lambda unit: (unit.ratio_to_base, unit.unit_id),
+            reverse=True,
+        )
+    ]
+
+
+def _sync_type_units(
+    db,
+    *,
+    product_type_id: int,
+    payload_units: list[schemas.ProductTypeUnitCreate],
+) -> None:
+    desired_by_unit_id: dict[int, tuple[Decimal, Decimal | None]] = {}
+    for row in payload_units:
+        unit = db.query(models.Unit).get(row.unit_id)
+        if not unit:
+            raise HTTPException(status_code=400, detail=f"Unit not found: {row.unit_id}")
+        desired_by_unit_id[row.unit_id] = (row.ratio_to_base, row.discrete_step)
+
+    existing_rows = db.query(models.ProductTypeUnit).filter(models.ProductTypeUnit.product_type_id == product_type_id).all()
+    existing_by_unit_id = {row.unit_id: row for row in existing_rows}
+
+    for row in existing_rows:
+        if row.unit_id not in desired_by_unit_id:
+            db.delete(row)
+
+    for unit_id, (ratio_to_base, discrete_step) in desired_by_unit_id.items():
+        existing = existing_by_unit_id.get(unit_id)
+        if existing:
+            existing.ratio_to_base = ratio_to_base
+            existing.discrete_step = discrete_step
+            continue
+        db.add(
+            models.ProductTypeUnit(
+                product_type_id=product_type_id,
+                unit_id=unit_id,
+                ratio_to_base=ratio_to_base,
+                discrete_step=discrete_step,
+            )
+        )
+
+
 class ListProductTypesHandler:
     def handle(self, query: ListProductTypesQuery, uow: AbstractUnitOfWork) -> List[schemas.ProductType]:
         db = uow.session
@@ -43,13 +97,16 @@ class ListProductTypesHandler:
         result: list[schemas.ProductType] = []
         for t in types:
             attrs = db.query(models.ProductAttribute).filter(models.ProductAttribute.product_type_id == t.id).all()
+            type_units = db.query(models.ProductTypeUnit).filter(models.ProductTypeUnit.product_type_id == t.id).all()
             result.append(
                 schemas.ProductType(
                     id=t.id,
                     name=t.name,
                     description=t.description,
                     is_composite=t.is_composite,
+                    strict_units_by_type=t.strict_units_by_type,
                     attributes=attrs,
+                    product_type_units=_serialize_type_units(type_units),
                 )
             )
         return result
@@ -62,12 +119,15 @@ class GetProductTypeHandler:
         if not t:
             raise HTTPException(status_code=404, detail="Product type not found")
         attrs = db.query(models.ProductAttribute).filter(models.ProductAttribute.product_type_id == t.id).all()
+        type_units = db.query(models.ProductTypeUnit).filter(models.ProductTypeUnit.product_type_id == t.id).all()
         return schemas.ProductType(
             id=t.id,
             name=t.name,
             description=t.description,
             is_composite=t.is_composite,
+            strict_units_by_type=t.strict_units_by_type,
             attributes=attrs,
+            product_type_units=_serialize_type_units(type_units),
         )
 
 
@@ -75,7 +135,12 @@ class CreateProductTypeHandler:
     def handle(self, command: CreateProductTypeCommand, uow: AbstractUnitOfWork) -> schemas.ProductType:
         db = uow.session
         payload = command.payload
-        t = models.ProductType(name=payload.name, description=payload.description, is_composite=payload.is_composite)
+        t = models.ProductType(
+            name=payload.name,
+            description=payload.description,
+            is_composite=payload.is_composite,
+            strict_units_by_type=payload.strict_units_by_type,
+        )
         db.add(t)
         db.flush()
 
@@ -97,14 +162,22 @@ class CreateProductTypeHandler:
                         sort_order=attr_data.sort_order,
                     )
                 )
+        _sync_type_units(
+            db,
+            product_type_id=t.id,
+            payload_units=payload.product_type_units or [],
+        )
         db.flush()
         attrs = db.query(models.ProductAttribute).filter(models.ProductAttribute.product_type_id == t.id).all()
+        type_units = db.query(models.ProductTypeUnit).filter(models.ProductTypeUnit.product_type_id == t.id).all()
         return schemas.ProductType(
             id=t.id,
             name=t.name,
             description=t.description,
             is_composite=t.is_composite,
+            strict_units_by_type=t.strict_units_by_type,
             attributes=attrs,
+            product_type_units=_serialize_type_units(type_units),
         )
 
 
@@ -119,6 +192,7 @@ class UpdateProductTypeHandler:
         t.name = payload.name
         t.description = payload.description
         t.is_composite = payload.is_composite
+        t.strict_units_by_type = payload.strict_units_by_type
 
         attr_def_ids = db.query(models.ProductAttribute.id).filter(
             models.ProductAttribute.product_type_id == command.product_type_id
@@ -151,14 +225,22 @@ class UpdateProductTypeHandler:
                         sort_order=attr_data.sort_order,
                     )
                 )
+        _sync_type_units(
+            db,
+            product_type_id=command.product_type_id,
+            payload_units=payload.product_type_units or [],
+        )
         db.flush()
         attrs = db.query(models.ProductAttribute).filter(models.ProductAttribute.product_type_id == t.id).all()
+        type_units = db.query(models.ProductTypeUnit).filter(models.ProductTypeUnit.product_type_id == t.id).all()
         return schemas.ProductType(
             id=t.id,
             name=t.name,
             description=t.description,
             is_composite=t.is_composite,
+            strict_units_by_type=t.strict_units_by_type,
             attributes=attrs,
+            product_type_units=_serialize_type_units(type_units),
         )
 
 
@@ -171,6 +253,9 @@ class DeleteProductTypeHandler:
 
         db.query(models.ProductAttribute).filter(
             models.ProductAttribute.product_type_id == command.product_type_id
+        ).delete()
+        db.query(models.ProductTypeUnit).filter(
+            models.ProductTypeUnit.product_type_id == command.product_type_id
         ).delete()
         db.delete(t)
         return {"message": "Product type deleted successfully"}

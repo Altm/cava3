@@ -142,6 +142,50 @@ def _sync_product_units(
         )
 
 
+def _type_default_units(
+    db,
+    *,
+    product_type_id: int,
+) -> list[schemas.ProductUnitCreate]:
+    rows = (
+        db.query(models.ProductTypeUnit)
+        .filter(models.ProductTypeUnit.product_type_id == product_type_id)
+        .order_by(models.ProductTypeUnit.ratio_to_base.desc(), models.ProductTypeUnit.unit_id.asc())
+        .all()
+    )
+    return [
+        schemas.ProductUnitCreate(
+            unit_id=row.unit_id,
+            ratio_to_base=Decimal(str(row.ratio_to_base)),
+            discrete_step=Decimal(str(row.discrete_step)) if row.discrete_step is not None else None,
+        )
+        for row in rows
+    ]
+
+
+def _units_payload_or_defaults(
+    *,
+    payload_units: list[schemas.ProductUnitCreate],
+    default_units: list[schemas.ProductUnitCreate],
+) -> list[schemas.ProductUnitCreate]:
+    if payload_units:
+        return payload_units
+    return default_units
+
+
+def _assert_strict_units(
+    *,
+    payload_units: list[schemas.ProductUnitCreate],
+    allowed_unit_ids: set[int],
+) -> None:
+    for unit in payload_units:
+        if unit.unit_id not in allowed_unit_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unit {unit.unit_id} is not allowed by product type strict units",
+            )
+
+
 class CreateProductHandler:
     def handle(self, command: CreateProductCommand, uow: AbstractUnitOfWork) -> schemas.Product:
         db = uow.session
@@ -154,6 +198,18 @@ class CreateProductHandler:
         pt = db.query(models.ProductType).get(product.product_type_id)
         if not pt:
             raise HTTPException(status_code=400, detail="Product type not found")
+        type_default_units = _type_default_units(db, product_type_id=pt.id)
+        resolved_payload_units = _units_payload_or_defaults(
+            payload_units=product.product_units or [],
+            default_units=type_default_units,
+        )
+        if pt.strict_units_by_type:
+            allowed_unit_ids = {row.unit_id for row in type_default_units}
+            allowed_unit_ids.add(product.base_unit_id)
+            _assert_strict_units(
+                payload_units=resolved_payload_units,
+                allowed_unit_ids=allowed_unit_ids,
+            )
 
         db_product = models.Product(
             product_type_id=product.product_type_id,
@@ -190,7 +246,7 @@ class CreateProductHandler:
             db,
             product_id=db_product.id,
             base_unit_id=product.base_unit_id,
-            payload_units=product.product_units or [],
+            payload_units=resolved_payload_units,
         )
 
         if pt.is_composite:
@@ -336,6 +392,18 @@ class UpdateProductHandler:
         pt = db.query(models.ProductType).get(product_update.product_type_id)
         if not pt:
             raise HTTPException(status_code=400, detail="Product type not found")
+        type_default_units = _type_default_units(db, product_type_id=pt.id)
+        resolved_payload_units = _units_payload_or_defaults(
+            payload_units=product_update.product_units or [],
+            default_units=type_default_units,
+        )
+        if pt.strict_units_by_type:
+            allowed_unit_ids = {row.unit_id for row in type_default_units}
+            allowed_unit_ids.add(base_unit_id)
+            _assert_strict_units(
+                payload_units=resolved_payload_units,
+                allowed_unit_ids=allowed_unit_ids,
+            )
 
         product.product_type_id = product_update.product_type_id
         product.name = product_update.name
@@ -364,7 +432,7 @@ class UpdateProductHandler:
             db,
             product_id=product.id,
             base_unit_id=base_unit_id,
-            payload_units=product_update.product_units or [],
+            payload_units=resolved_payload_units,
         )
 
         db.query(models.ProductComposite).filter(models.ProductComposite.parent_product_id == product.id).delete()

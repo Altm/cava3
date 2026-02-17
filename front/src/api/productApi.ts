@@ -69,8 +69,11 @@ export interface AttributeDefinition {
 export interface ProductType {
   id: number
   name: string
+  description?: string | null
   isComposite: boolean
+  strictUnitsByType?: boolean
   attributes: AttributeDefinition[]
+  productTypeUnits?: ProductTypeUnit[]
 }
 
 export interface ProductForm {
@@ -227,7 +230,19 @@ export interface ProductUnit {
   unitId: number
   ratioToBase: number
   discreteStep: number | null
+  source?: string | null
   product_id?: number
+  unit_id?: number
+  ratio_to_base?: number
+  discrete_step?: number | null
+}
+
+export interface ProductTypeUnit {
+  id?: number | null
+  productTypeId?: number
+  unitId: number
+  ratioToBase: number
+  discreteStep: number | null
   unit_id?: number
   ratio_to_base?: number
   discrete_step?: number | null

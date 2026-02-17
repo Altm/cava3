@@ -169,24 +169,71 @@ class ProductAvailabilityCalculator:
 
 
 def _serialize_product_units(db_product: models.Product) -> list[schemas.ProductUnit]:
-    rows = sorted(
-        db_product.product_units or [],
+    if db_product.product_units:
+        rows = sorted(
+            db_product.product_units or [],
+            key=lambda unit: (
+                Decimal(str(unit.ratio_to_base or 0)),
+                unit.unit_id,
+            ),
+            reverse=True,
+        )
+        result = [
+            schemas.ProductUnit(
+                id=row.id,
+                product_id=row.product_id,
+                unit_id=row.unit_id,
+                ratio_to_base=Decimal(str(row.ratio_to_base)),
+                discrete_step=Decimal(str(row.discrete_step)) if row.discrete_step is not None else None,
+                source="product",
+            )
+            for row in rows
+        ]
+        base_unit_exists = any(row.unit_id == db_product.base_unit_id for row in result)
+        if not base_unit_exists:
+            result.append(
+                schemas.ProductUnit(
+                    id=None,
+                    product_id=db_product.id,
+                    unit_id=db_product.base_unit_id,
+                    ratio_to_base=Decimal("1"),
+                    discrete_step=None,
+                    source="base",
+                )
+            )
+        return sorted(result, key=lambda row: (Decimal(str(row.ratio_to_base)), row.unit_id), reverse=True)
+
+    type_units = sorted(
+        db_product.product_type.product_type_units if db_product.product_type else [],
         key=lambda unit: (
             Decimal(str(unit.ratio_to_base or 0)),
             unit.unit_id,
         ),
         reverse=True,
     )
-    return [
+    result = [
         schemas.ProductUnit(
-            id=row.id,
-            product_id=row.product_id,
+            id=None,
+            product_id=db_product.id,
             unit_id=row.unit_id,
             ratio_to_base=Decimal(str(row.ratio_to_base)),
             discrete_step=Decimal(str(row.discrete_step)) if row.discrete_step is not None else None,
+            source="type",
         )
-        for row in rows
+        for row in type_units
     ]
+    if not any(row.unit_id == db_product.base_unit_id for row in result):
+        result.append(
+            schemas.ProductUnit(
+                id=None,
+                product_id=db_product.id,
+                unit_id=db_product.base_unit_id,
+                ratio_to_base=Decimal("1"),
+                discrete_step=None,
+                source="base",
+            )
+        )
+    return sorted(result, key=lambda row: (Decimal(str(row.ratio_to_base)), row.unit_id), reverse=True)
 
 
 def _build_display_quantity(

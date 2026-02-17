@@ -121,11 +121,23 @@ class ProductType(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, comment="Type name")
     description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="Extended description")
     is_composite: Mapped[bool] = mapped_column(Boolean, default=False, comment="Composite flag for recipes")
+    strict_units_by_type: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=func.false(),
+        nullable=False,
+        comment="Allow only units defined at product type level",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
     attributes: Mapped[list["ProductAttribute"]] = relationship(back_populates="product_type")
+    product_type_units: Mapped[list["ProductTypeUnit"]] = relationship(
+        "ProductTypeUnit",
+        back_populates="product_type",
+        cascade="all, delete-orphan",
+    )
 
 
 class Product(Base):
@@ -160,6 +172,28 @@ class Product(Base):
     def is_composite(self) -> bool:
         """Return is_composite from associated product type"""
         return self.product_type.is_composite if self.product_type else False
+
+
+class ProductTypeUnit(Base):
+    """Default units and ratios for a product type."""
+
+    __tablename__ = "product_type_unit"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    product_type_id: Mapped[int] = mapped_column(ForeignKey("product_type.id", ondelete="CASCADE"), nullable=False)
+    unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id", ondelete="RESTRICT"), nullable=False)
+    ratio_to_base: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), nullable=False, comment="Ratio relative to product base unit")
+    discrete_step: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(10, 6), nullable=True, comment="Step for fractional quantities")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    product_type: Mapped["ProductType"] = relationship("ProductType", back_populates="product_type_units")
+    unit: Mapped["Unit"] = relationship("Unit")
+
+    __table_args__ = (
+        UniqueConstraint("product_type_id", "unit_id", name="uq_product_type_unit_product_type_unit"),
+        CheckConstraint("ratio_to_base > 0", name="ck_product_type_unit_positive_ratio"),
+    )
 
 
 class ProductCategory(Base):
