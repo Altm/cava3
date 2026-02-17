@@ -406,6 +406,7 @@ export interface LotItemDetail {
   status: string
   locationId: number
   locationName: string
+  locationCode?: string | null
   boxId?: number | null
   boxQrCode?: string | null
   createdAt: string

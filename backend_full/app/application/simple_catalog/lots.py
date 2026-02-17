@@ -121,6 +121,7 @@ class GetLotHandler:
                 models.ProductItem.status,
                 models.ProductItem.location_id,
                 models.Location.name.label("location_name"),
+                models.Location.code.label("location_code"),
                 models.ProductItem.box_id,
                 models.Box.qr_code.label("box_qr_code"),
                 models.ProductItem.created_at,
@@ -152,6 +153,7 @@ class GetLotHandler:
                     status=row.status,
                     location_id=row.location_id,
                     location_name=row.location_name,
+                    location_code=row.location_code,
                     box_id=row.box_id,
                     box_qr_code=row.box_qr_code,
                     created_at=row.created_at,
@@ -160,4 +162,3 @@ class GetLotHandler:
                 for row in items_rows
             ],
         )
-

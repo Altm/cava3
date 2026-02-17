@@ -119,6 +119,7 @@ class LotItemOut(BaseModel):
     status: str
     location_id: int
     location_name: str
+    location_code: Optional[str] = None
     box_id: Optional[int] = None
     box_qr_code: Optional[str] = None
     created_at: datetime

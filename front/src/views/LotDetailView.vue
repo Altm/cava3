@@ -11,7 +11,11 @@
         <span><b>Supplier Lot:</b> {{ detail.supplierLotNumber || '-' }}</span>
         <span><b>Закупка:</b> {{ detail.purchasePrice ?? '-' }}</span>
         <span><b>Дата партии:</b> {{ formatDate(detail.receivedAt) }}</span>
-        <span><b>Приёмка:</b> #{{ detail.receiptId }} ({{ detail.receiptStatus }})</span>
+        <span>
+          <b>Приёмка:</b>
+          <RouterLink class="link" :to="`/serial/receipts/view/${detail.receiptId}`">#{{ detail.receiptId }}</RouterLink>
+          ({{ detail.receiptStatus }})
+        </span>
         <span><b>Item всего:</b> {{ detail.totalItems }}</span>
         <span><b>Item в наличии:</b> {{ detail.inStockItems }}</span>
       </div>
@@ -26,19 +30,26 @@
               <th>Item ID</th>
               <th>QR</th>
               <th>Статус</th>
-              <th>Локация</th>
+              <th>Текущая локация</th>
               <th>Коробка</th>
               <th>Создан</th>
               <th>Обновлён</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in detail?.items || []" :key="item.productItemId">
-              <td>{{ item.productItemId }}</td>
+            <tr v-for="item in detail?.items || []" :key="item.productItemId" :class="rowClass(item.boxId)">
+              <td>
+                <RouterLink class="link" :to="`/serial/items/history/${item.productItemId}`">#{{ item.productItemId }}</RouterLink>
+              </td>
               <td>{{ item.productItemQrCode }}</td>
               <td>{{ item.status }}</td>
-              <td>{{ item.locationName }} (#{{ item.locationId }})</td>
-              <td>{{ item.boxQrCode || '-' }}</td>
+              <td>{{ item.locationName }} ({{ item.locationCode || '-' }})</td>
+              <td>
+                <RouterLink v-if="item.boxId" class="link" :to="`/serial/boxes/manage?box_id=${item.boxId}`">
+                  {{ item.boxQrCode || `#${item.boxId}` }}
+                </RouterLink>
+                <span v-else>-</span>
+              </td>
               <td>{{ formatDate(item.createdAt) }}</td>
               <td>{{ formatDate(item.updatedAt) }}</td>
             </tr>
@@ -64,10 +75,16 @@ const route = useRoute()
 const lotId = Number(route.params.id)
 const detail = ref<LotDetail | null>(null)
 const loading = ref(false)
+const boxRowPalette = ['box-tone-1', 'box-tone-2', 'box-tone-3', 'box-tone-4', 'box-tone-5', 'box-tone-6']
 
 const formatDate = (value?: string | null) => {
   if (!value) return '-'
   return new Date(value).toLocaleString()
+}
+
+const rowClass = (boxId?: number | null) => {
+  if (!boxId) return 'item-no-box'
+  return boxRowPalette[Math.abs(boxId) % boxRowPalette.length]
 }
 
 onMounted(async () => {
@@ -104,6 +121,13 @@ onMounted(async () => {
   gap: 12px;
   flex-wrap: wrap;
 }
+.link {
+  color: #2563eb;
+  text-decoration: none;
+}
+.link:hover {
+  text-decoration: underline;
+}
 .btn {
   display: inline-flex;
   align-items: center;
@@ -132,5 +156,26 @@ onMounted(async () => {
   padding: 8px;
   text-align: left;
   font-size: 0.92rem;
+}
+.box-tone-1 td {
+  background: #f8fafc;
+}
+.box-tone-2 td {
+  background: #f0f9ff;
+}
+.box-tone-3 td {
+  background: #f5f3ff;
+}
+.box-tone-4 td {
+  background: #f0fdf4;
+}
+.box-tone-5 td {
+  background: #fffbeb;
+}
+.box-tone-6 td {
+  background: #fef2f2;
+}
+.item-no-box td {
+  background: #ffffff;
 }
 </style>
