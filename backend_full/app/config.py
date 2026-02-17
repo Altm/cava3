@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Optional
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
@@ -16,6 +17,7 @@ class Settings(BaseSettings):
     hmac_clock_skew_seconds: int = 30
     default_currency: str = "EUR"
     sales_terminal_id: str = Field("T-1", env="SALES_TERMINAL_ID")
+    sales_terminal_user_id: Optional[int] = Field(None, env="SALES_TERMINAL_USER_ID")
     sales_self_base_url: str = Field("http://127.0.0.1:8000", env="SALES_SELF_BASE_URL")
     sales_self_timeout_seconds: int = Field(10, env="SALES_SELF_TIMEOUT_SECONDS")
     sales_event_default_status: str = Field("pending", env="SALES_EVENT_DEFAULT_STATUS")

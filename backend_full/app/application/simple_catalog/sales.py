@@ -296,10 +296,11 @@ class SalesCheckoutHandler:
         total_amount = sum((line.total_price for line in resolved_lines), Decimal("0"))
         now_utc = datetime.now(timezone.utc)
         sale_id = int(now_utc.timestamp() * 1000)
+        effective_user_id = self._resolve_checkout_user_id(command.user_id)
         register_payload = self._build_register_payload(
             sale_id=sale_id,
             terminal_id=terminal.terminal_id,
-            user_id=command.user_id,
+            user_id=effective_user_id,
             sold_at=now_utc,
             lines=resolved_lines,
         )
@@ -755,6 +756,11 @@ class SalesCheckoutHandler:
             status_code=502,
             detail=f"Failed to reach sales API: {last_error_reason}. Tried: {', '.join(bases)}",
         )
+
+    def _resolve_checkout_user_id(self, request_user_id: int | None) -> int | None:
+        if self.settings.sales_terminal_user_id is not None:
+            return int(self.settings.sales_terminal_user_id)
+        return request_user_id
 
     def _select_sellable_items_fifo(
         self,

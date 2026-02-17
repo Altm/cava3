@@ -338,7 +338,7 @@ def checkout_sales(
     return dispatch_command(
         uow_factory,
         SalesCheckoutHandler(),
-        SaleCheckoutCommand(payload=payload, user_id=getattr(user, "id", None)),
+        SaleCheckoutCommand(payload=payload, user_id=None),
     )
 
 
