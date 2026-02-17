@@ -10,6 +10,7 @@ from app.models.models import (
     Location,
     Receipt,
     ProductItem,
+    ProductItemPour,
     Stock,
     Box,
     Terminal,
@@ -357,6 +358,69 @@ def test_sales_checkout_sells_fifo_items_and_reduces_stock(db_session, monkeypat
     stock = db_session.query(Stock).filter_by(location_id=wh.id, product_id=product.id).first()
     assert stock is not None
     assert Decimal(stock.quantity) == Decimal("1")
+
+
+def test_sales_checkout_product_line_with_portion_unit_uses_glass_flow(db_session, monkeypatch):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, _bar = _seed_locations(db_session)
+
+    glass_unit = Unit(code="glass", description="Glass", unit_type="portion", is_discrete=True)
+    db_session.add(glass_unit)
+    db_session.flush()
+    db_session.add(ProductUnit(product_id=product.id, unit_id=glass_unit.id, ratio_to_base=Decimal("0.2")))
+    db_session.flush()
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("1"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+
+    terminal = Terminal(terminal_id="T-1", location_id=wh.id, secret_hash="secret", status="active")
+    db_session.add(terminal)
+    db_session.flush()
+
+    def _fake_send_register_request(self, *, db, terminal, payload):
+        return {"status": "ok", "received_sales_count": len(payload.get("sales", []))}
+
+    monkeypatch.setattr(SalesCheckoutHandler, "_send_register_transactions_request", _fake_send_register_request)
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        result = SalesCheckoutHandler().handle(
+            SaleCheckoutCommand(
+                payload=simple_schemas.SaleCheckoutRequest(
+                    lines=[
+                        simple_schemas.SaleCheckoutLineIn(
+                            kind="product",
+                            product_id=product.id,
+                            quantity=Decimal("1"),
+                            unit_id=glass_unit.id,
+                        )
+                    ]
+                ),
+                user_id=42,
+            ),
+            uow,
+        )
+
+    assert result.lines
+    assert result.lines[0].kind == "product"
+    assert result.lines[0].quantity == Decimal("1")
+    assert result.lines[0].unit_id == glass_unit.id
+    assert len(result.lines[0].resolved_item_ids) == 1
+
+    item = db_session.query(ProductItem).first()
+    assert item is not None
+    assert item.status == "in_stock"
+
+    pour = db_session.query(ProductItemPour).filter_by(product_item_id=item.id).first()
+    assert pour is not None
+    assert pour.glasses_total == 5
+    assert pour.glasses_sold == 1
+
+    stock = db_session.query(Stock).filter_by(location_id=wh.id, product_id=product.id).first()
+    assert stock is not None
+    assert Decimal(str(stock.quantity)) == Decimal("0.8")
 
 
 def test_inventory_close_write_off_sets_lost_metadata(db_session):

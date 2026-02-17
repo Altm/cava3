@@ -352,6 +352,30 @@ class SalesCheckoutHandler:
         ratio_to_base = self._ratio_to_base(db, product, unit_id)
 
         if self._is_serial_product(db, product):
+            if unit.unit_type == "portion":
+                glasses_requested = self._portion_to_glasses_count(quantity=quantity, ratio_to_base=ratio_to_base)
+                resolved_glass = self._handle_glass_line(
+                    db=db,
+                    terminal=terminal,
+                    line=schemas.SaleCheckoutLineIn(
+                        kind="glass",
+                        product_id=product.id,
+                        quantity=Decimal(glasses_requested),
+                        unit_id=unit.id,
+                        item_qr_code=line.item_qr_code,
+                    ),
+                    stock_service=stock_service,
+                )
+                return _ResolvedLine(
+                    kind="product",
+                    product=resolved_glass.product,
+                    quantity=quantity,
+                    unit_id=unit.id,
+                    unit_code=unit.code,
+                    unit_price=resolved_glass.unit_price,
+                    total_price=resolved_glass.total_price,
+                    resolved_item_ids=resolved_glass.resolved_item_ids,
+                )
             qty_base = quantity * ratio_to_base
             qty_base_int = self._to_int_base_units(qty_base)
             items = self._select_sellable_items_fifo(
@@ -920,6 +944,16 @@ class SalesCheckoutHandler:
         if Decimal(quantity_int) != quantity:
             raise HTTPException(status_code=422, detail=f"{field_name} must be an integer")
         return quantity_int
+
+    def _portion_to_glasses_count(self, *, quantity: Decimal, ratio_to_base: Decimal) -> int:
+        glasses_per_bottle = int(self.settings.glasses_per_bottle)
+        if glasses_per_bottle <= 0:
+            raise HTTPException(status_code=500, detail="Invalid glasses_per_bottle configuration")
+        glasses_decimal = quantity * ratio_to_base * Decimal(glasses_per_bottle)
+        glasses_int = int(glasses_decimal.to_integral_value(rounding=ROUND_DOWN))
+        if Decimal(glasses_int) != glasses_decimal or glasses_int <= 0:
+            raise HTTPException(status_code=422, detail="Quantity must map to whole glasses")
+        return glasses_int
 
     @staticmethod
     def _to_int_base_units(value: Decimal) -> int:
