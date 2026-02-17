@@ -9,7 +9,12 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from app.application.common.uow import AbstractUnitOfWork
-from app.application.simple_catalog.common import default_location, serialize_product, serialize_product_view
+from app.application.simple_catalog.common import (
+    ProductAvailabilityCalculator,
+    default_location,
+    serialize_product,
+    serialize_product_view,
+)
 from app.models import models
 from app.models.models import ProductAttribute, ProductAttributeValue, ProductMeta
 from app.schemas import simple as schemas
@@ -63,6 +68,36 @@ class UpdateProductCommand:
 @dataclass(frozen=True)
 class DeleteProductCommand:
     product_id: int
+
+
+def _assert_no_component_cycles(db, parent_product_id: int, component_product_ids: list[int]) -> None:
+    if parent_product_id in component_product_ids:
+        raise HTTPException(status_code=400, detail="Composite product cannot include itself")
+
+    edges: dict[int, set[int]] = {}
+    rows = db.query(models.ProductComposite.parent_product_id, models.ProductComposite.component_product_id).all()
+    for parent_id, child_id in rows:
+        if parent_id == parent_product_id:
+            continue
+        edges.setdefault(parent_id, set()).add(child_id)
+    edges[parent_product_id] = set(component_product_ids)
+
+    def reaches_target(start_id: int, target_id: int) -> bool:
+        stack = [start_id]
+        visited: set[int] = set()
+        while stack:
+            node = stack.pop()
+            if node == target_id:
+                return True
+            if node in visited:
+                continue
+            visited.add(node)
+            stack.extend(edges.get(node, set()))
+        return False
+
+    for component_id in component_product_ids:
+        if reaches_target(component_id, parent_product_id):
+            raise HTTPException(status_code=400, detail="Composite cycle detected")
 
 
 class CreateProductHandler:
@@ -119,13 +154,18 @@ class CreateProductHandler:
         )
 
         if pt.is_composite:
+            component_ids = [comp.component_product_id for comp in product.components]
+            _assert_no_component_cycles(db, db_product.id, component_ids)
             for comp in product.components:
+                component_product = db.query(models.Product).get(comp.component_product_id)
+                if not component_product:
+                    raise HTTPException(status_code=400, detail="Component product not found")
                 db.add(
                     models.ProductComposite(
                         parent_product_id=db_product.id,
                         component_product_id=comp.component_product_id,
                         quantity=Decimal(str(comp.quantity)),
-                        unit_id=product.base_unit_id,
+                        unit_id=component_product.base_unit_id,
                     )
                 )
 
@@ -161,7 +201,8 @@ class ListProductsHandler:
             query_builder = query_builder.filter(models.Product.id.in_(subquery))
 
         products = query_builder.offset(query.skip).limit(query.limit).all()
-        return [serialize_product(p, db) for p in products]
+        calculator = ProductAvailabilityCalculator(db, location_id=query.location_id)
+        return [serialize_product(p, db, calculator=calculator) for p in products]
 
 
 class ProductsCountHandler:
@@ -191,7 +232,8 @@ class GetProductHandler:
         product = db.query(models.Product).get(query.product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
-        return serialize_product(product, db)
+        calculator = ProductAvailabilityCalculator(db)
+        return serialize_product(product, db, calculator=calculator)
 
 
 class GetProductViewHandler:
@@ -200,7 +242,8 @@ class GetProductViewHandler:
         product = db.query(models.Product).get(query.product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
-        return serialize_product_view(product, db)
+        calculator = ProductAvailabilityCalculator(db)
+        return serialize_product_view(product, db, calculator=calculator)
 
 
 class UploadProductImageHandler:
@@ -295,13 +338,18 @@ class UpdateProductHandler:
 
         db.query(models.ProductComposite).filter(models.ProductComposite.parent_product_id == product.id).delete()
         if pt.is_composite:
+            component_ids = [comp.component_product_id for comp in product_update.components]
+            _assert_no_component_cycles(db, product.id, component_ids)
             for comp in product_update.components:
+                component_product = db.query(models.Product).get(comp.component_product_id)
+                if not component_product:
+                    raise HTTPException(status_code=400, detail="Component product not found")
                 db.add(
                     models.ProductComposite(
                         parent_product_id=product.id,
                         component_product_id=comp.component_product_id,
                         quantity=Decimal(str(comp.quantity)),
-                        unit_id=base_unit_id,
+                        unit_id=component_product.base_unit_id,
                     )
                 )
 

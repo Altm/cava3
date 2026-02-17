@@ -102,6 +102,16 @@ export interface ProductAttributeValue {
   value: string;
 }
 
+export interface ProductComponent {
+  id: number
+  parentProductId: number
+  componentProductId: number
+  quantity: number
+  unitId: number
+  substitutionAllowed: boolean
+  rounding?: string | null
+}
+
 export interface SaleRequest {
   productId: number
   quantity: number
@@ -143,7 +153,7 @@ export interface Product {
   isComposite: boolean
   baseUnitId: number;  // Add base unit ID
   attributes: ProductAttribute[];
-  components: Array<{ componentProductId: number; quantity: number }>
+  components: ProductComponent[]
   productUnits?: ProductUnit[];  // Add product-specific units
 }
 
@@ -160,6 +170,19 @@ export interface ProductMetaView {
 
 export interface ProductView extends Product {
   meta?: ProductMetaView | null
+  componentTree?: ProductComponentTreeNode[]
+}
+
+export interface ProductComponentTreeNode {
+  componentProductId: number
+  componentName: string
+  quantity: number
+  unitId: number
+  unitCode?: string | null
+  isComposite: boolean
+  availableQuantity: number
+  isCycle: boolean
+  children: ProductComponentTreeNode[]
 }
 
 export interface ProductImageOut {

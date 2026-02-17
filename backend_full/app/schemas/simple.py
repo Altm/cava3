@@ -152,6 +152,18 @@ class ProductComponent(ProductComponentCreate):
         from_attributes = True
 
 
+class ProductComponentTreeNode(BaseModel):
+    component_product_id: int
+    component_name: str
+    quantity: Decimal
+    unit_id: int
+    unit_code: Optional[str] = None
+    is_composite: bool = False
+    available_quantity: Decimal = Decimal("0")
+    is_cycle: bool = False
+    children: List["ProductComponentTreeNode"] = []
+
+
 class Product(BaseModel):
     id: int
     product_type_id: int
@@ -180,6 +192,7 @@ class ProductMetaView(BaseModel):
 
 class ProductView(Product):
     meta: Optional[ProductMetaView] = None
+    component_tree: List[ProductComponentTreeNode] = []
 
 
 class ProductImageOut(BaseModel):
@@ -190,3 +203,6 @@ class ProductImageOut(BaseModel):
 class SaleRequest(BaseModel):
     product_id: int
     quantity: Decimal
+
+
+ProductComponentTreeNode.model_rebuild()

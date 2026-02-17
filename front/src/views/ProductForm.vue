@@ -249,7 +249,7 @@
                 class="form-control"
               >
                 <option value="">Выберите компонент</option>
-                <option v-for="p in simpleProducts" :key="p.id" :value="p.id">
+                <option v-for="p in componentCandidates" :key="p.id" :value="p.id">
                   {{ p.name }}
                 </option>
               </select>
@@ -346,8 +346,8 @@ const currentProductTypeIsComposite = computed(() => {
   return selectedType ? selectedType.isComposite : false;
 });
 
-const simpleProducts = computed(() =>
-  allProducts.value.filter(p => !p.isComposite)
+const componentCandidates = computed(() =>
+  allProducts.value.filter((product) => product.id !== productIdValue.value)
 )
 
 const imageUrl = computed(() => {

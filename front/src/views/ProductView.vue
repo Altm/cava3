@@ -64,6 +64,46 @@
         </div>
       </div>
 
+      <div class="card" v-if="product.isComposite">
+        <h3>Состав (рекурсивно)</h3>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Компонент</th>
+                <th>Количество</th>
+                <th>Ед.</th>
+                <th>Доступно</th>
+                <th>Тип</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in flattenedComponentRows" :key="`${row.node.componentProductId}-${row.depth}-${row.node.quantity}`">
+                <td>
+                  <div class="component-cell" :style="{ paddingLeft: `${row.depth * 20}px` }">
+                    <RouterLink class="component-link" :to="`/product-view/${row.node.componentProductId}`">
+                      {{ row.node.componentName }} ({{ row.node.componentProductId }})
+                    </RouterLink>
+                    <span v-if="row.node.isCycle" class="tag tag-danger">Цикл</span>
+                  </div>
+                </td>
+                <td>{{ row.node.quantity }}</td>
+                <td>{{ row.node.unitCode ?? row.node.unitId }}</td>
+                <td>{{ row.node.availableQuantity }}</td>
+                <td>
+                  <span :class="['tag', row.node.isComposite ? 'tag-success' : 'tag-info']">
+                    {{ row.node.isComposite ? 'Составной' : 'Простой' }}
+                  </span>
+                </td>
+              </tr>
+              <tr v-if="!flattenedComponentRows.length">
+                <td colspan="5">Компоненты не заданы</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="card" v-if="product.meta?.bodyHtml || product.meta?.seoTitle || product.meta?.seoDescription">
         <h3>Описание и SEO</h3>
         <div class="meta">
@@ -77,12 +117,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { productApi, type AttributeDefinition, type ProductType, type Unit, type ProductView } from '@/api/productApi'
+import { productApi, type AttributeDefinition, type ProductComponentTreeNode, type ProductType, type Unit, type ProductView } from '@/api/productApi'
 
 const route = useRoute()
-const productId = Number(route.params.id)
+const productId = computed(() => Number(route.params.id))
 
 const loading = ref(true)
 const errorText = ref('')
@@ -131,10 +171,26 @@ const imageUrl = computed(() => {
   return `/images/${normalized}`
 })
 
-onMounted(async () => {
+const flattenedComponentRows = computed(() => {
+  const rows: Array<{ node: ProductComponentTreeNode; depth: number }> = []
+  const walk = (nodes: ProductComponentTreeNode[], depth: number) => {
+    for (const node of nodes || []) {
+      rows.push({ node, depth })
+      if (node.children?.length) {
+        walk(node.children, depth + 1)
+      }
+    }
+  }
+  walk(product.value?.componentTree ?? [], 0)
+  return rows
+})
+
+const loadProduct = async () => {
+  loading.value = true
+  errorText.value = ''
   try {
     const [productView, productTypesRes, unitsRes] = await Promise.all([
-      productApi.getProductView(productId),
+      productApi.getProductView(productId.value),
       productApi.getProductTypes(),
       productApi.getUnits()
     ])
@@ -146,7 +202,16 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(loadProduct)
+
+watch(
+  () => route.params.id,
+  () => {
+    loadProduct()
+  }
+)
 </script>
 
 <style scoped>
@@ -205,6 +270,37 @@ onMounted(async () => {
   border-bottom: 1px solid #e5e7eb;
   padding: 8px;
   text-align: left;
+}
+.component-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.component-link {
+  color: #2563eb;
+  text-decoration: none;
+}
+.component-link:hover {
+  text-decoration: underline;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  padding: 2px 8px;
+}
+.tag-success {
+  background: #dcfce7;
+  color: #166534;
+}
+.tag-info {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+.tag-danger {
+  background: #fee2e2;
+  color: #991b1b;
 }
 .btn {
   display: inline-flex;
