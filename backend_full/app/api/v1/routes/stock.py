@@ -1,20 +1,30 @@
 from decimal import Decimal
+from typing import Callable
+
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from app.api.v1.deps.auth import get_db, PermissionChecker, allow_public
-from app.services.stock_service import StockService
+
+from app.api.v1.deps.auth import PermissionChecker
+from app.api.v1.deps.uow import get_uow_factory
+from app.application.common import dispatch_command
+from app.application.common.uow import AbstractUnitOfWork
+from app.application.stock.commands import AdjustStockCommand, AdjustStockHandler
 
 router = APIRouter(prefix="/stock", tags=["stock"])
 
 
 @router.post("/adjust")
-def adjust_stock(payload: dict, user=Depends(PermissionChecker(["stock.write"])), db: Session = Depends(get_db)):
-    service = StockService(db)
-    stock = service.adjust_stock(
-        location_id=payload["location_id"],
-        product_id=payload["product_id"],
-        quantity=Decimal(str(payload["quantity"])),
-        unit_id=payload["unit_id"],  # Changed to use unit_id
+def adjust_stock(
+    payload: dict,
+    user=Depends(PermissionChecker(["stock.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    return dispatch_command(
+        uow_factory,
+        AdjustStockHandler(),
+        AdjustStockCommand(
+            location_id=payload["location_id"],
+            product_id=payload["product_id"],
+            quantity=Decimal(str(payload["quantity"])),
+            unit_id=payload["unit_id"],
+        ),
     )
-    db.commit()
-    return {"product_id": stock.product_id, "location_id": stock.location_id, "quantity": float(stock.quantity)}

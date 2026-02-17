@@ -1,96 +1,149 @@
 # Cavina Inventory Backend
 
-## Старт через Docker (корень репозитория)
-- Скопируйте `backend/.env.example` в `backend/.env` и при необходимости поправьте секреты.
-- Запустите `docker-compose up --build` из корня. Поднимутся сервисы:
-  - PostgreSQL: `localhost:5432`
-  - Backend FastAPI: `http://localhost:8000`
-  - Swagger FastAPI: `http://localhost:8001/docs`
-  - Frontend Vue: `http://localhost:5173`
-- Примените миграции внутри backend-контейнера: `alembic upgrade head`.
-- Загрузите тестовые данные: `python scripts/seed.py`.
+## Быстрый старт
 
-## Локальный запуск без Docker
-- Перейдите в каталог `backend`.
-- Установите зависимости: `pip install -r requirements.txt`.
-- Поднимите PostgreSQL и выставьте `DATABASE_URL`.
-- Запустите миграции: `alembic upgrade head`.
-- Запустите приложение: `uvicorn app.main:app --reload`.
+### Docker (из корня репозитория)
+- Запуск: `docker-compose up --build`
+- Backend API: `http://localhost:8001`
+- Swagger: `http://localhost:8001/docs`
+- Frontend dev: `http://localhost:8090` (проксирует `/api` на backend)
+- Миграции: `docker compose exec backend_full alembic upgrade head`
 
-## Тесты
-- Выполните `pytest`. Используется in-memory SQLite, поэтому внешние сервисы не требуются.
-- Ключевые тесты покрывают идемпотентность, сверку, дробные списания, композитные рецепты, RBAC, аудит и промо-правила.
+### Локально (без Docker)
+- `cd backend_full`
+- `pip install -r requirements.txt`
+- Настроить `DATABASE_URL`
+- `alembic upgrade head`
+- `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
+
+### Тесты
+- `pytest -q app/tests`
+
+---
+
+## Что изменено (рефакторинг Variant B)
+
+Слой API переведён на «тонкие контроллеры»:
+- роуты больше не содержат бизнес-логику;
+- входные данные упаковываются в `Command/Query`;
+- обработка выполняется через `dispatch_command` / `dispatch_query`;
+- транзакции централизованы через `UnitOfWork`.
+
+Добавлены/переведены модули application:
+- `application/simple_catalog/*`
+- `application/serial/{receipts,transfers,inventories,boxes,scan}.py`
+- `application/{auth,users,me,products,sales,stock,catalog}/*`
+- `application/common/{dispatcher.py,uow.py}`
+
+Переиспользование текущих доменных сервисов сохранено:
+- handlers вызывают `app/services/*` и/или ORM-модели напрямую;
+- это позволяет развивать рефакторинг поэтапно без поломки API.
+
+---
+
+## Текущая структура и назначение
+
+### API слой
+- `app/api/v1/routes/*` — HTTP-эндпоинты, валидация FastAPI, авторизация, вызов dispatcher.
+- `app/api/v1/deps/auth.py` — JWT, RBAC, получение текущего пользователя, доступ к DB-сессии.
+- `app/api/v1/deps/uow.py` — фабрика UoW для роутов.
+
+### Application слой
+- `app/application/common/dispatcher.py` — единая точка выполнения command/query.
+- `app/application/common/uow.py` — интерфейс `AbstractUnitOfWork`.
+- `app/application/<module>/*` — use-case handlers и DTO (`Command`, `Query`).
+
+### Infrastructure слой
+- `app/infrastructure/db/session.py` — `SessionLocal`, движок SQLAlchemy.
+- `app/infrastructure/db/uow.py`:
+  - `SqlAlchemyUnitOfWork` — полноценная транзакция на запрос;
+  - `BoundSessionUnitOfWork` — привязка к внешней сессии (используется в отдельных роут-методах и тестах для совместимости).
+
+### Domain/Data слой
+- `app/models/models.py` — SQLAlchemy модели.
+- `app/schemas/{simple.py,serial.py}` — Pydantic-схемы API.
+- `app/services/*` — доменные сервисы (receipt/transfer/inventory/stock/sales и др.).
+
+### Cross-cutting
+- `app/audit/*` — аудит и request-логирование.
+- `app/security/*` — auth/hmac.
+- `app/config.py` — настройки приложения.
+
+---
+
+## Схема вызова (request flow)
+
+1. HTTP-запрос приходит в `app/api/v1/routes/<module>.py`.
+2. В роуте применяются зависимости (`PermissionChecker`, `uow_factory`).
+3. Роут создаёт `Command` или `Query`.
+4. Вызывается:
+   - `dispatch_command(...)` — открывает UoW, выполняет handler, делает `commit`;
+   - `dispatch_query(...)` — открывает UoW, выполняет handler без `commit`.
+5. Handler в `app/application/<module>/*` выполняет бизнес-операцию:
+   - напрямую через ORM (`uow.session`) и/или
+   - через `app/services/*`.
+6. Результат возвращается в роут и сериализуется FastAPI/Pydantic.
+7. При исключении UoW вызывает `rollback`.
+
+---
 
 ## Серийный учёт (QR)
-Добавлен поштучный учёт для товаров с дискретной базовой единицей (`unit.is_discrete=true`).
 
-- QR форматы:
+- Форматы:
   - `ITM:{UUID}` — единица (`product_item`)
   - `BOX:{UUID}` — коробка (`box`)
-- `product_item.status`:
-  - `receiving` (сгенерировано в приёмке, ещё не подтверждено)
-  - `in_stock` (в наличии в локации)
-  - `in_transit` (в доставке; локация меняется только при приёмке в баре)
-  - `lost` (недостача в пути / по инвентаризации)
-  - `voided` (погашено при отмене приёмки)
-- Основные API:
-  - `POST /api/v1/receipts` + `/lines` + `/generate` + `/post` + `/void`
-  - `POST /api/v1/boxes` + `/{id}/open` + `/{id}/add-item` + `/{id}/seal`
-  - `POST /api/v1/transfers` + `/{id}/plan` + `/{id}/scan` + `/{id}/ship` + `/{id}/close`
-  - `POST /api/v1/inventories` + `/{id}/start` + `/{id}/scan` + `/{id}/close`
-  - `POST /api/v1/scan/{qr_code}` — универсальный резолвер ITM/BOX
+- Ключевые статусы `product_item.status`:
+  - `receiving`, `in_stock`, `in_transit`, `lost`, `voided`
+- Основные группы API:
+  - `receipts` — приёмка
+  - `boxes` — коробки
+  - `transfers` — перемещения
+  - `inventories` — инвентаризация
+  - `scan` — универсальное чтение QR + история единицы
 
+---
 
-## Cron
-Чистить логи!
-Считать количество
+## Как создать новый модуль (чеклист)
 
+Пример: новый модуль `suppliers`.
 
-## Ошибки
-### В сервисах
-```python
-from app.common.errors import ErrorCodes, NotFoundError, ValidationError
+1) Создать application-слой:
+- `app/application/suppliers/commands.py`
+- `app/application/suppliers/queries.py`
+- `app/application/suppliers/__init__.py`
 
-def get_product(product_id: int):
-    product = repo.get(product_id)
-    if not product:
-        raise NotFoundError(
-            ErrorCodes.NOT_FOUND_PRODUCT,
-            details={"product_id": product_id}
-        )
-    return product
+2) Добавить DTO и handlers:
+- `@dataclass(frozen=True)` для `CreateSupplierCommand`, `ListSuppliersQuery` и т.д.
+- классы `CreateSupplierHandler`, `ListSuppliersHandler` с методом `handle(..., uow)`.
 
-def create_user(email: str, password: str):
-    if "@" not in email:
-        raise ValidationError(
-            ErrorCodes.VALIDATION_INVALID_EMAIL,
-            details={"field": "email", "value": email}
-        )
-```
+3) Реализовать бизнес-логику:
+- использовать `uow.session` и/или существующие сервисы в `app/services/*`;
+- для сложной логики добавить новый сервис в `app/services/suppliers_service.py`.
 
-### В FastAPI хендлерах
-```python
+4) Добавить роуты:
+- файл `app/api/v1/routes/suppliers.py`;
+- в каждом endpoint только:
+  - проверка прав (`PermissionChecker`);
+  - сбор `Command/Query`;
+  - вызов `dispatch_command` / `dispatch_query`.
 
-from fastapi import Request
-from fastapi.responses import JSONResponse
-from app.common.errors import DomainError
+5) Подключить роут:
+- `app/main.py` → `app.include_router(suppliers.router, prefix="/api/v1")`.
 
-async def domain_error_handler(request: Request, exc: DomainError):
-    error_data = exc.to_dict()
-    
-    # Скрываем детали внутренних ошибок
-    if exc.is_internal:
-        error_data["message"] = "Внутренняя ошибка сервера"
-        error_data["details"] = {}
-        logger.exception(f"Internal error [{exc.error_code.code}]", exc_info=exc)
-    
-    return JSONResponse(
-        status_code=error_data["http_status"],
-        content={"error": error_data},
-    )
-```
+6) Добавить схемы и права:
+- Pydantic-схемы в `app/schemas/*` (если нужны публичные контракты);
+- новые permission-коды и проверки в endpoint'ах.
 
-### ИЛИ через фабрику
-```python
-raise_error(ErrorCodes.AUTH_PERMISSION_DENIED, details={"user_id": user.id})
-```
+7) Покрыть тестами:
+- минимум: happy-path + 1-2 негативных кейса;
+- запуск: `pytest -q app/tests`.
+
+---
+
+## Правила для новых endpoint'ов
+
+- Не переносить бизнес-логику в роуты.
+- Команды изменяют состояние, запросы только читают.
+- Все write-операции — через `dispatch_command` + UoW commit.
+- Ошибки поднимать через `HTTPException`/доменные ошибки, не через `print`.
+- По возможности переиспользовать существующие сервисы, чтобы не дублировать SQL-логику.

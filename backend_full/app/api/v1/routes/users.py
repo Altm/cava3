@@ -1,28 +1,29 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app.api.v1.deps.auth import get_db, PermissionChecker, allow_public
-from app.security.auth import get_password_hash
-from app.models.models import User
+from typing import Callable
+
+from fastapi import APIRouter, Depends
+
+from app.api.v1.deps.auth import PermissionChecker
+from app.api.v1.deps.uow import get_uow_factory
+from app.application.common import dispatch_command, dispatch_query
+from app.application.common.uow import AbstractUnitOfWork
+from app.application.users.commands import CreateUserCommand, CreateUserHandler
+from app.application.users.queries import ListUsersHandler, ListUsersQuery
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.post("")
-def create_user(payload: dict, user=Depends(PermissionChecker(["user.write"])), db: Session = Depends(get_db)):
-    if db.query(User).filter_by(username=payload["username"]).first():
-        raise HTTPException(status_code=400, detail="Exists")
-    new_user = User(
-        username=payload["username"],
-        password_hash=get_password_hash(payload["password"]),
-        is_active=True,
-        is_superuser=payload.get("is_superuser", False),
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return {"id": new_user.id, "username": new_user.username}
+def create_user(
+    payload: dict,
+    user=Depends(PermissionChecker(["user.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    return dispatch_command(uow_factory, CreateUserHandler(), CreateUserCommand(payload=payload))
 
 
 @router.get("")
-def list_users(user=Depends(PermissionChecker(["user.read"])), db: Session = Depends(get_db)):
-    return db.query(User).all()
+def list_users(
+    user=Depends(PermissionChecker(["user.read"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    return dispatch_query(uow_factory, ListUsersHandler(), ListUsersQuery())
