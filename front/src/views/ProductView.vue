@@ -64,6 +64,68 @@
         </div>
       </div>
 
+      <div class="card">
+        <h3>Юниты товара</h3>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Юнит</th>
+                <th>Коэффициент к базе</th>
+                <th>Роль</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="unit in sortedProductUnits" :key="unit.id">
+                <td>{{ unitLabel(unit.unitId) }}</td>
+                <td>{{ unit.ratioToBase }}</td>
+                <td>
+                  <span :class="['tag', unit.unitId === product.baseUnitId ? 'tag-success' : 'tag-info']">
+                    {{ unit.unitId === product.baseUnitId ? 'Базовый' : 'Составной' }}
+                  </span>
+                </td>
+              </tr>
+              <tr v-if="!sortedProductUnits.length">
+                <td colspan="3">Нет данных по юнитам товара</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Остатки по локациям (в юнитах товара)</h3>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Локация</th>
+                <th>Базовый остаток</th>
+                <th>Представление</th>
+                <th>Детализация по юнитам</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in product.stockByLocation ?? []" :key="row.locationId">
+                <td>{{ row.locationName }} ({{ row.locationCode }})</td>
+                <td>{{ row.baseQuantity }}</td>
+                <td>{{ row.displayQuantity }}</td>
+                <td>
+                  <div class="unit-badges">
+                    <span v-for="unitRow in row.units" :key="`${row.locationId}-${unitRow.unitId}`" class="tag tag-info">
+                      {{ unitRow.quantity }} {{ unitRow.unitCode }}
+                    </span>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="!(product.stockByLocation ?? []).length">
+                <td colspan="4">Нет остатков по локациям</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="card" v-if="product.isComposite">
         <h3>Состав (рекурсивно)</h3>
         <div class="table-wrap">
@@ -146,6 +208,16 @@ const baseUnitLabel = computed(() => {
   if (!unit) return String(product.value.baseUnitId)
   return `${unit.code} (${unit.description})`
 })
+
+const sortedProductUnits = computed(() => {
+  const rows = product.value?.productUnits ?? []
+  return [...rows].sort((left, right) => Number(right.ratioToBase) - Number(left.ratioToBase))
+})
+
+const unitLabel = (unitId: number) => {
+  const unit = units.value.find((row) => row.id === unitId)
+  return unit ? `${unit.code} (${unit.description})` : String(unitId)
+}
 
 const attributeMap = computed(() => {
   const map = new Map<number, string>()
@@ -301,6 +373,11 @@ watch(
 .tag-danger {
   background: #fee2e2;
   color: #991b1b;
+}
+.unit-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .btn {
   display: inline-flex;

@@ -87,6 +87,7 @@ export interface ReceiptAutoBoxBoxOut {
   product_id: number
   lot_id: number
   location_id: number
+  quantity: number
   sealed: boolean
   packed_items: number
 }
@@ -107,6 +108,7 @@ export interface BoxOut {
   product_id: number
   lot_id: number
   location_id: number
+  quantity: number
   sealed: boolean
   status: string
 }
@@ -118,6 +120,7 @@ export interface BoxListOut {
   product_id: number
   lot_id: number
   location_id: number
+  quantity: number
   sealed: boolean
   status: string
   created_at: string
@@ -148,6 +151,7 @@ export interface TransferPlanLineOut {
   qty_base: number
   pick_policy: string
   planned_qr_codes: string[]
+  planned_box_qr_codes: string[]
 }
 
 export interface TransferDocDetailOut {

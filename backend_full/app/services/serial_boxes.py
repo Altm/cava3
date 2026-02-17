@@ -19,7 +19,14 @@ class BoxService:
             raise HTTPException(status_code=404, detail="Lot not found")
         if lot.product_id != product_id:
             raise HTTPException(status_code=422, detail="Lot does not match product")
-        box = Box(product_id=product_id, lot_id=lot_id, location_id=location_id, sealed=sealed, status="active")
+        box = Box(
+            product_id=product_id,
+            lot_id=lot_id,
+            location_id=location_id,
+            quantity=0,
+            sealed=sealed,
+            status="active",
+        )
         self.db.add(box)
         self.db.flush()
         return box
@@ -71,7 +78,15 @@ class BoxService:
             raise HTTPException(status_code=409, detail="Item is in a different location")
         if item.box_id is not None and item.box_id != box.id:
             raise HTTPException(status_code=409, detail="Item is already in another box")
+        if item.box_id == box.id:
+            return {"box_id": box.id, "product_item_id": item.id}
+
+        if item.box_id is not None:
+            prev_box = self.db.query(Box).get(item.box_id)
+            if prev_box and prev_box.quantity > 0:
+                prev_box.quantity -= 1
         item.box_id = box.id
+        box.quantity += 1
         self.db.flush()
         return {"box_id": box.id, "product_item_id": item.id}
 

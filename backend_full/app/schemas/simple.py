@@ -1,5 +1,6 @@
 from typing import List, Optional, Dict, Any, Union
 from decimal import Decimal
+from datetime import datetime
 from pydantic import BaseModel, Field
 
 
@@ -123,6 +124,7 @@ class ProductCreate(BaseModel):
     base_unit_id: Optional[int] = Field(default=None)  # Changed from base_unit_code to base_unit_id, made optional temporarily for frontend compatibility
     attributes: List[ProductAttributeValueCreate] = []
     components: List[ProductComponentCreate] = []
+    product_units: List[ProductUnitCreate] = []
 
 
 class ProductUpdate(BaseModel):
@@ -134,6 +136,7 @@ class ProductUpdate(BaseModel):
     base_unit_id: Optional[int] = Field(default=None)  # Changed from base_unit_code to base_unit_id, made optional temporarily for frontend compatibility
     attributes: List[ProductAttributeValueCreate] = []
     components: List[ProductComponentCreate] = []
+    product_units: List[ProductUnitCreate] = []
 
 
 class ProductComponentCreate(BaseModel):
@@ -164,6 +167,22 @@ class ProductComponentTreeNode(BaseModel):
     children: List["ProductComponentTreeNode"] = []
 
 
+class ProductStockUnitQuantity(BaseModel):
+    unit_id: int
+    unit_code: str
+    ratio_to_base: Decimal
+    quantity: Decimal
+
+
+class ProductStockLocationView(BaseModel):
+    location_id: int
+    location_name: str
+    location_code: str
+    base_quantity: Decimal
+    display_quantity: str
+    units: List[ProductStockUnitQuantity] = []
+
+
 class Product(BaseModel):
     id: int
     product_type_id: int
@@ -174,6 +193,7 @@ class Product(BaseModel):
     base_unit_id: int  # Added base_unit_id
     attributes: List[ProductAttributeValueCreate] = []
     components: List[ProductComponent] = []
+    product_units: List[ProductUnit] = []
 
     class Config:
         from_attributes = True
@@ -193,6 +213,7 @@ class ProductMetaView(BaseModel):
 class ProductView(Product):
     meta: Optional[ProductMetaView] = None
     component_tree: List[ProductComponentTreeNode] = []
+    stock_by_location: List[ProductStockLocationView] = []
 
 
 class ProductImageOut(BaseModel):
@@ -203,6 +224,57 @@ class ProductImageOut(BaseModel):
 class SaleRequest(BaseModel):
     product_id: int
     quantity: Decimal
+
+
+class SaleCheckoutLineIn(BaseModel):
+    kind: str = Field(..., pattern=r"^(product|item_qr|box_qr|glass)$")
+    product_id: Optional[int] = None
+    quantity: Optional[Decimal] = None
+    unit_id: Optional[int] = None
+    qr_code: Optional[str] = None
+    item_qr_code: Optional[str] = None
+
+
+class SaleCheckoutRequest(BaseModel):
+    lines: List[SaleCheckoutLineIn] = []
+
+
+class SaleCheckoutResolvedLine(BaseModel):
+    kind: str
+    product_id: int
+    product_name: str
+    quantity: Decimal
+    unit_id: int
+    unit_code: str
+    unit_price: Decimal
+    total_price: Decimal
+    resolved_item_ids: List[int] = []
+    resolved_box_id: Optional[int] = None
+
+
+class SaleCheckoutOut(BaseModel):
+    sale_id: int
+    terminal_id: str
+    location_id: int
+    total_amount: Decimal
+    lines: List[SaleCheckoutResolvedLine] = []
+    register_payload: Dict[str, Any]
+    register_response: Dict[str, Any]
+
+
+class SaleListItemOut(BaseModel):
+    id: int
+    sale_id: Optional[int] = None
+    event_id: str
+    status: str
+    terminal_id: Optional[str] = None
+    location_id: int
+    location_name: Optional[str] = None
+    user_id: Optional[int] = None
+    lines_count: int
+    total_amount: Decimal
+    created_at: datetime
+    confirmed_at: Optional[datetime] = None
 
 
 ProductComponentTreeNode.model_rebuild()

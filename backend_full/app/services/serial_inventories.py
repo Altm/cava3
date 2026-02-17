@@ -103,6 +103,7 @@ class InventoryService:
 
         # Apply loss to product_item and aggregated stock
         by_product: dict[int, int] = {}
+        box_detach_counts: dict[int, int] = {}
         if missing_item_ids:
             items = (
                 self.db.query(ProductItem)
@@ -119,12 +120,21 @@ class InventoryService:
             for item in items:
                 if item.status != "in_stock" or item.location_id != doc.location_id:
                     continue
+                if item.box_id is not None:
+                    box_detach_counts[item.box_id] = box_detach_counts.get(item.box_id, 0) + 1
                 item.status = "lost"
                 item.lost_reason = "missing_inventory"
                 item.lost_doc_type = "inventory"
                 item.lost_doc_id = doc.id
                 item.box_id = None
                 by_product[item.product_id] = by_product.get(item.product_id, 0) + 1
+
+        if box_detach_counts:
+            boxes = self.db.query(Box).filter(Box.id.in_(box_detach_counts.keys())).all()
+            for box in boxes:
+                detached = box_detach_counts.get(box.id, 0)
+                if detached > 0:
+                    box.quantity = max(0, int(box.quantity) - detached)
 
         for product_id, count in by_product.items():
             self.stock.adjust_base_units(doc.location_id, product_id, -count)

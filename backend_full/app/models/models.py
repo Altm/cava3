@@ -470,6 +470,13 @@ class Box(Base):
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), nullable=False)
     lot_id: Mapped[int] = mapped_column(ForeignKey("stock_lot.id"), nullable=False)
     location_id: Mapped[int] = mapped_column(ForeignKey("location.id"), nullable=False)
+    quantity: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+        comment="Current number of items in box",
+    )
     sealed: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, comment="true=closed box, false=open box")
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False, comment="active|voided")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
@@ -507,6 +514,12 @@ class ProductItem(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     box: Mapped[Optional["Box"]] = relationship("Box", back_populates="items")
+    pour_state: Mapped[Optional["ProductItemPour"]] = relationship(
+        "ProductItemPour",
+        back_populates="product_item",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         CheckConstraint("status in ('receiving','in_stock','in_transit','sold','damaged','lost','voided')", name="ck_product_item_status"),
@@ -533,6 +546,29 @@ class TransferItem(Base):
         UniqueConstraint("transfer_line_id", "product_item_id", name="uq_transfer_item_line_item"),
         CheckConstraint("state in ('planned','picked','removed')", name="ck_transfer_item_state"),
     )
+
+
+class ProductItemPour(Base):
+    """Per-item pour progress for glass sales (e.g. bottle -> glasses)."""
+
+    __tablename__ = "product_item_pour"
+
+    product_item_id: Mapped[int] = mapped_column(
+        ForeignKey("product_item.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    glasses_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    glasses_sold: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("glasses_total > 0", name="ck_product_item_pour_total_positive"),
+        CheckConstraint("glasses_sold >= 0", name="ck_product_item_pour_sold_non_negative"),
+        CheckConstraint("glasses_sold <= glasses_total", name="ck_product_item_pour_sold_le_total"),
+    )
+
+    product_item: Mapped["ProductItem"] = relationship("ProductItem", back_populates="pour_state")
 
 
 class InventoryDoc(Base):

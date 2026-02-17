@@ -56,12 +56,6 @@ api.interceptors.response.use(
   }
 );
 
-export interface Unit {
-  id: number
-  symbol: string
-  name: string
-}
-
 export interface AttributeDefinition {
   id: number
   name: string
@@ -85,6 +79,7 @@ export interface ProductForm {
   baseCost: string              // ← строка, не number!
   stock: string                 // ← строка
   baseUnitId: number            // ← добавляем baseUnitId
+  isComposite?: boolean
   attributes: Record<string, any>
   components: Array<{
     componentProductId: number
@@ -119,7 +114,69 @@ export interface SaleRequest {
 
 export interface SaleResponse {
   message: string
-  totalCost: number
+  totalCost: number | string
+}
+
+export type SaleCheckoutLineKind = 'product' | 'item_qr' | 'box_qr' | 'glass'
+
+export interface SaleCheckoutLineIn {
+  kind: SaleCheckoutLineKind
+  productId?: number
+  quantity?: number | string
+  unitId?: number
+  qrCode?: string
+  itemQrCode?: string
+}
+
+export interface SaleCheckoutRequest {
+  lines: SaleCheckoutLineIn[]
+}
+
+export interface SaleCheckoutResolvedLine {
+  kind: SaleCheckoutLineKind
+  productId: number
+  productName: string
+  quantity: string
+  unitId: number
+  unitCode: string
+  unitPrice: string
+  totalPrice: string
+  resolvedItemIds: number[]
+  resolvedBoxId?: number | null
+}
+
+export interface SaleCheckoutOut {
+  saleId: number
+  terminalId: string
+  locationId: number
+  totalAmount: string
+  lines: SaleCheckoutResolvedLine[]
+  registerPayload: Record<string, any>
+  registerResponse: Record<string, any>
+}
+
+export interface SalesListParams {
+  status?: string
+  locationId?: number
+  terminalId?: string
+  dateFrom?: string
+  dateTo?: string
+  limit?: number
+}
+
+export interface SaleListItem {
+  id: number
+  saleId?: number | null
+  eventId: string
+  status: string
+  terminalId?: string | null
+  locationId: number
+  locationName?: string | null
+  userId?: number | null
+  linesCount: number
+  totalAmount: string
+  createdAt: string
+  confirmedAt?: string | null
 }
 
 // Define the attribute structure as it comes from the API after snakeToCamel conversion
@@ -138,10 +195,14 @@ export interface Unit {
 
 export interface ProductUnit {
   id: number
-  product_id: number
-  unit_id: number
-  ratio_to_base: number
-  discrete_step: number | null
+  productId?: number
+  unitId: number
+  ratioToBase: number
+  discreteStep: number | null
+  product_id?: number
+  unit_id?: number
+  ratio_to_base?: number
+  discrete_step?: number | null
 }
 
 export interface Product {
@@ -171,6 +232,7 @@ export interface ProductMetaView {
 export interface ProductView extends Product {
   meta?: ProductMetaView | null
   componentTree?: ProductComponentTreeNode[]
+  stockByLocation?: ProductStockLocationView[]
 }
 
 export interface ProductComponentTreeNode {
@@ -183,6 +245,22 @@ export interface ProductComponentTreeNode {
   availableQuantity: number
   isCycle: boolean
   children: ProductComponentTreeNode[]
+}
+
+export interface ProductStockUnitQuantity {
+  unitId: number
+  unitCode: string
+  ratioToBase: number
+  quantity: number
+}
+
+export interface ProductStockLocationView {
+  locationId: number
+  locationName: string
+  locationCode: string
+  baseQuantity: number
+  displayQuantity: string
+  units: ProductStockUnitQuantity[]
 }
 
 export interface ProductImageOut {
@@ -363,6 +441,35 @@ async updateProduct(id: number, data: ProductForm) {
 
   async sellWineGlass(saleRequest: SaleRequest): Promise<SaleResponse> {
     return api.post('/glass-sales/', saleRequest).then(res => res.data);
+  },
+
+  async checkoutSales(payload: SaleCheckoutRequest): Promise<SaleCheckoutOut> {
+    const requestPayload = {
+      lines: (payload.lines || []).map((line) => ({
+        kind: line.kind,
+        product_id: line.productId,
+        quantity: line.quantity,
+        unit_id: line.unitId,
+        qr_code: line.qrCode,
+        item_qr_code: line.itemQrCode,
+      })),
+    }
+    const res = await api.post<SaleCheckoutOut>('/sales/checkout', requestPayload)
+    return res.data
+  },
+
+  async getSalesList(params?: SalesListParams): Promise<SaleListItem[]> {
+    const queryParams = new URLSearchParams()
+    if (params?.status) queryParams.append('status', params.status)
+    if (params?.locationId) queryParams.append('location_id', String(params.locationId))
+    if (params?.terminalId) queryParams.append('terminal_id', params.terminalId)
+    if (params?.dateFrom) queryParams.append('date_from', params.dateFrom)
+    if (params?.dateTo) queryParams.append('date_to', params.dateTo)
+    queryParams.append('limit', String(params?.limit ?? 100))
+    const query = queryParams.toString()
+    const url = query ? `/sales/list?${query}` : '/sales/list'
+    const res = await api.get<SaleListItem[]>(url)
+    return res.data
   },
 
   async deleteProduct(id: number) {

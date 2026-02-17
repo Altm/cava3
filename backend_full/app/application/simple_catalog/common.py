@@ -168,6 +168,130 @@ class ProductAvailabilityCalculator:
             active_stack.remove(product_id)
 
 
+def _serialize_product_units(db_product: models.Product) -> list[schemas.ProductUnit]:
+    rows = sorted(
+        db_product.product_units or [],
+        key=lambda unit: (
+            Decimal(str(unit.ratio_to_base or 0)),
+            unit.unit_id,
+        ),
+        reverse=True,
+    )
+    return [
+        schemas.ProductUnit(
+            id=row.id,
+            product_id=row.product_id,
+            unit_id=row.unit_id,
+            ratio_to_base=Decimal(str(row.ratio_to_base)),
+            discrete_step=Decimal(str(row.discrete_step)) if row.discrete_step is not None else None,
+        )
+        for row in rows
+    ]
+
+
+def _build_display_quantity(
+    base_quantity: Decimal,
+    *,
+    product_units: list[schemas.ProductUnit],
+    unit_meta: dict[int, models.Unit],
+    base_unit_id: int,
+) -> str:
+    if base_quantity <= 0:
+        base_code = unit_meta.get(base_unit_id).code if unit_meta.get(base_unit_id) else str(base_unit_id)
+        return f"0 {base_code}"
+
+    remaining = base_quantity
+    parts: list[str] = []
+    ordered = sorted(product_units, key=lambda row: Decimal(str(row.ratio_to_base)), reverse=True)
+    for row in ordered:
+        unit = unit_meta.get(row.unit_id)
+        if unit is None:
+            continue
+        ratio = Decimal(str(row.ratio_to_base))
+        if ratio <= 0 or not unit.is_discrete:
+            continue
+        count = (remaining / ratio).to_integral_value(rounding=ROUND_DOWN)
+        if count > 0:
+            parts.append(f"{count} {unit.code}")
+            remaining -= count * ratio
+
+    remaining = remaining.quantize(Decimal("0.000001"))
+    if remaining > 0:
+        base_unit = unit_meta.get(base_unit_id)
+        base_code = base_unit.code if base_unit else str(base_unit_id)
+        parts.append(f"{remaining.normalize()} {base_code}")
+
+    return " + ".join(parts) if parts else "0"
+
+
+def _collect_product_tree_ids(calculator: ProductAvailabilityCalculator, product_id: int, seen: Optional[set[int]] = None) -> set[int]:
+    visited = seen or set()
+    if product_id in visited:
+        return visited
+    visited.add(product_id)
+    for component in calculator.components(product_id):
+        _collect_product_tree_ids(calculator, component.component_product_id, visited)
+    return visited
+
+
+def _build_stock_by_location(
+    db_product: models.Product,
+    db: Session,
+    *,
+    calculator: ProductAvailabilityCalculator,
+    product_units: list[schemas.ProductUnit],
+) -> list[schemas.ProductStockLocationView]:
+    tree_product_ids = _collect_product_tree_ids(calculator, db_product.id)
+    location_rows = (
+        db.query(models.Location.id, models.Location.name, models.Location.code)
+        .join(models.Stock, models.Stock.location_id == models.Location.id)
+        .filter(models.Stock.product_id.in_(tree_product_ids))
+        .distinct()
+        .order_by(models.Location.id.asc())
+        .all()
+    )
+    if not location_rows:
+        return []
+
+    unit_ids = {row.unit_id for row in product_units}
+    if db_product.base_unit_id not in unit_ids:
+        unit_ids.add(db_product.base_unit_id)
+    unit_meta_rows = db.query(models.Unit).filter(models.Unit.id.in_(unit_ids)).all()
+    unit_meta = {row.id: row for row in unit_meta_rows}
+
+    result: list[schemas.ProductStockLocationView] = []
+    for location_id, location_name, location_code in location_rows:
+        location_calc = ProductAvailabilityCalculator(db, location_id=location_id)
+        base_quantity = location_calc.available_quantity(db_product.id)
+        unit_quantities = [
+            schemas.ProductStockUnitQuantity(
+                unit_id=row.unit_id,
+                unit_code=unit_meta[row.unit_id].code if row.unit_id in unit_meta else str(row.unit_id),
+                ratio_to_base=row.ratio_to_base,
+                quantity=(base_quantity / Decimal(str(row.ratio_to_base))).quantize(Decimal("0.000001"))
+                if Decimal(str(row.ratio_to_base)) > 0
+                else Decimal("0"),
+            )
+            for row in product_units
+        ]
+        result.append(
+            schemas.ProductStockLocationView(
+                location_id=location_id,
+                location_name=location_name,
+                location_code=location_code,
+                base_quantity=base_quantity,
+                display_quantity=_build_display_quantity(
+                    base_quantity,
+                    product_units=product_units,
+                    unit_meta=unit_meta,
+                    base_unit_id=db_product.base_unit_id,
+                ),
+                units=unit_quantities,
+            )
+        )
+    return result
+
+
 def serialize_product(
     db_product: models.Product,
     db: Session,
@@ -206,6 +330,7 @@ def serialize_product(
         )
         for c in db_product.components
     ]
+    product_units = _serialize_product_units(db_product)
 
     total_stock = calc.available_quantity(db_product.id)
 
@@ -219,6 +344,7 @@ def serialize_product(
         base_unit_id=db_product.base_unit_id,
         attributes=attributes,
         components=components,
+        product_units=product_units,
     )
 
 
@@ -272,6 +398,7 @@ def serialize_product_view(
 ) -> schemas.ProductView:
     calc = calculator or ProductAvailabilityCalculator(db)
     base = serialize_product(db_product, db, calculator=calc)
+    product_units = base.product_units or []
     meta = db.query(ProductMeta).filter(ProductMeta.product_id == db_product.id).first()
     meta_out = None
     if meta:
@@ -291,4 +418,15 @@ def serialize_product_view(
         calculator=calc,
         path={db_product.id},
     )
-    return schemas.ProductView(**base.model_dump(), meta=meta_out, component_tree=component_tree)
+    stock_by_location = _build_stock_by_location(
+        db_product,
+        db,
+        calculator=calc,
+        product_units=product_units,
+    )
+    return schemas.ProductView(
+        **base.model_dump(),
+        meta=meta_out,
+        component_tree=component_tree,
+        stock_by_location=stock_by_location,
+    )

@@ -52,6 +52,7 @@
           <div><b>box_qr:</b> {{ boxQr }}</div>
           <div><b>status:</b> {{ boxStatus }}</div>
           <div><b>sealed:</b> {{ boxSealed }}</div>
+          <div><b>quantity:</b> {{ boxQuantity }}</div>
           <div><b>product:</b> {{ productLabel(boxProductId) }}</div>
           <div><b>location:</b> {{ locationLabel(boxLocationId) }}</div>
         </div>
@@ -133,6 +134,7 @@ const boxId = ref<number | null>(null)
 const boxQr = ref('')
 const boxSealed = ref<boolean | null>(null)
 const boxStatus = ref('')
+const boxQuantity = ref<number>(0)
 const boxProductId = ref<number | null>(null)
 const boxLocationId = ref<number | null>(null)
 
@@ -163,6 +165,7 @@ const loadBoxItems = async () => {
 const setCurrentBox = async (box: {
   id: number
   qr_code: string
+  quantity: number
   sealed: boolean
   status: string
   product_id: number
@@ -173,6 +176,7 @@ const setCurrentBox = async (box: {
   boxQr.value = box.qr_code
   boxSealed.value = box.sealed
   boxStatus.value = box.status
+  boxQuantity.value = box.quantity
   boxProductId.value = box.product_id
   boxLocationId.value = box.location_id
   await loadBoxItems()

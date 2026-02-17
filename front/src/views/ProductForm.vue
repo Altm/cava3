@@ -4,6 +4,7 @@
       <h2>{{ isEditing ? 'Редактировать товар' : 'Создать товар' }}</h2>
       <div class="head-actions">
         <RouterLink class="btn btn-outline" to="/product-list">К списку</RouterLink>
+        <RouterLink class="btn btn-outline" to="/product-units">Привязка юнитов</RouterLink>
         <RouterLink
           v-if="isEditing && productIdValue"
           class="btn btn-secondary"
@@ -28,6 +29,21 @@
           <div><b>Теги:</b> {{ productView.meta?.tags ?? '-' }}</div>
         </div>
         <div v-else class="muted">Загрузка данных...</div>
+        <div v-if="isEditing && form.productUnits.length" class="units-summary">
+          <div class="units-summary-head">
+            <b>Привязанные юниты</b>
+            <a class="anchor-link" href="#product-units">Редактировать ниже</a>
+          </div>
+          <div class="units-summary-list">
+            <span
+              v-for="pu in form.productUnits"
+              :key="`${pu.unit_id}-${pu.ratio_to_base}`"
+              class="unit-chip"
+            >
+              {{ unitOptionLabelById(pu.unit_id) }} × {{ pu.ratio_to_base }}
+            </span>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -121,7 +137,7 @@
             :key="unit.id"
             :value="unit.id"
           >
-            {{ unit.name }} ({{ unit.code }})
+            {{ unitOptionLabel(unit) }}
           </option>
         </select>
       </div>
@@ -186,8 +202,11 @@
       </div>
 
       <!-- Продукто-зависимые единицы измерения -->
-      <div class="form-group">
-        <label>Продукто-зависимые единицы измерения</label>
+      <div id="product-units" class="form-group">
+        <label>Привязка юнитов к товару</label>
+        <small class="muted">
+          Настройте базовый/составные юниты и коэффициенты. Этот блок доступен и при создании, и при редактировании.
+        </small>
         <div class="product-units-section">
           <div v-for="(pu, index) in form.productUnits" :key="index" class="product-unit-item">
             <div class="form-row">
@@ -199,7 +218,7 @@
                 >
                   <option value="">Выберите единицу</option>
                   <option v-for="unit in units" :key="unit.id" :value="unit.id">
-                    {{ unit.name }} ({{ unit.code }})
+                    {{ unitOptionLabel(unit) }}
                   </option>
                 </select>
               </div>
@@ -350,6 +369,32 @@ const componentCandidates = computed(() =>
   allProducts.value.filter((product) => product.id !== productIdValue.value)
 )
 
+const unitOptionLabel = (unit: Unit) => {
+  const description = (unit as any).description ?? (unit as any).name ?? ''
+  return description ? `${description} (${unit.code})` : unit.code
+}
+
+const unitOptionLabelById = (unitId: number) => {
+  const unit = units.value.find((row) => row.id === unitId)
+  return unit ? unitOptionLabel(unit) : `#${unitId}`
+}
+
+const ensureBaseUnitBinding = () => {
+  const baseUnitId = Number(form.value.baseUnitId || 0)
+  if (!baseUnitId) return
+  const existingIndex = form.value.productUnits.findIndex((row) => Number(row.unit_id) === baseUnitId)
+  if (existingIndex >= 0) {
+    form.value.productUnits[existingIndex].ratio_to_base = 1
+    form.value.productUnits[existingIndex].discrete_step = null
+    return
+  }
+  form.value.productUnits.unshift({
+    unit_id: baseUnitId,
+    ratio_to_base: 1,
+    discrete_step: null,
+  })
+}
+
 const imageUrl = computed(() => {
   const raw = productView.value?.meta?.image?.trim()
   if (!raw) return ''
@@ -460,7 +505,11 @@ const loadProductForEdit = async (productId: number) => {
   }))
   const productType = productTypes.value.find(t => t.id === product.productTypeId)
   const isProductTypeComposite = productType ? productType.isComposite : false
-  const productUnits = product.productUnits || []
+  const productUnits = (product.productUnits || []).map((pu: any) => ({
+    unit_id: pu.unit_id ?? pu.unitId ?? 0,
+    ratio_to_base: pu.ratio_to_base ?? pu.ratioToBase ?? 1,
+    discrete_step: pu.discrete_step ?? pu.discreteStep ?? null
+  }))
 
   form.value = {
     productTypeId: Number(product.productTypeId),
@@ -473,6 +522,7 @@ const loadProductForEdit = async (productId: number) => {
     components: isProductTypeComposite ? initialComponents : [],
     productUnits
   }
+  ensureBaseUnitBinding()
 }
 
 // Сохранение
@@ -602,6 +652,13 @@ watch(() => props.productId, async (newId) => {
   }
 })
 
+watch(
+  () => form.value.baseUnitId,
+  () => {
+    ensureBaseUnitBinding()
+  }
+)
+
 // Methods for managing product-specific units
 const addProductUnit = () => {
   form.value.productUnits.push({
@@ -612,6 +669,11 @@ const addProductUnit = () => {
 };
 
 const removeProductUnit = (index: number) => {
+  const row = form.value.productUnits[index]
+  if (row && Number(row.unit_id) === Number(form.value.baseUnitId)) {
+    alert('Базовую единицу нельзя удалить из привязки.')
+    return
+  }
   form.value.productUnits.splice(index, 1);
 };
 </script>
@@ -653,6 +715,40 @@ const removeProductUnit = (index: number) => {
 .meta {
   display: grid;
   gap: 6px;
+}
+
+.units-summary {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.units-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.anchor-link {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.units-summary-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.unit-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
 }
 
 .image-wrap {

@@ -71,6 +71,7 @@
               <th>Товар</th>
               <th>Политика</th>
               <th>План (шт)</th>
+              <th>Планируемые QR (BOX)</th>
               <th>Планируемые QR (ITM)</th>
             </tr>
           </thead>
@@ -79,6 +80,12 @@
               <td>{{ line.product_name }} (id={{ line.product_id }})</td>
               <td>{{ line.pick_policy }}</td>
               <td>{{ line.qty_base }}</td>
+              <td>
+                <div v-if="line.planned_box_qr_codes?.length" class="qr-list">
+                  <code v-for="qr in line.planned_box_qr_codes" :key="`${line.transfer_line_id}-box-${qr}`">{{ qr }}</code>
+                </div>
+                <span v-else>-</span>
+              </td>
               <td>
                 <div v-if="line.planned_qr_codes.length" class="qr-list">
                   <code v-for="qr in line.planned_qr_codes" :key="`${line.transfer_line_id}-${qr}`">{{ qr }}</code>

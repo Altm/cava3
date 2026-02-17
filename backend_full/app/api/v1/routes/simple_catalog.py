@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import Callable, List, Optional
 
 from fastapi import APIRouter, Depends, File, UploadFile
@@ -48,6 +49,10 @@ from app.application.simple_catalog.products import (
     UploadProductImageHandler,
 )
 from app.application.simple_catalog.sales import (
+    ListSalesHandler,
+    ListSalesQuery,
+    SaleCheckoutCommand,
+    SalesCheckoutHandler,
     SellProductCommand,
     SellProductHandler,
     SellWineGlassCommand,
@@ -318,6 +323,44 @@ def sell_product(
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
     return dispatch_command(uow_factory, SellProductHandler(), SellProductCommand(payload=sale_request))
+
+
+@router.post("/sales/checkout", response_model=schemas.SaleCheckoutOut)
+def checkout_sales(
+    payload: schemas.SaleCheckoutRequest,
+    user=Depends(PermissionChecker(["sale.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    return dispatch_command(
+        uow_factory,
+        SalesCheckoutHandler(),
+        SaleCheckoutCommand(payload=payload, user_id=getattr(user, "id", None)),
+    )
+
+
+@router.get("/sales/list", response_model=List[schemas.SaleListItemOut])
+def get_sales_list(
+    status: Optional[str] = None,
+    location_id: Optional[int] = None,
+    terminal_id: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    limit: int = 100,
+    user=Depends(PermissionChecker(["sale.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    return dispatch_query(
+        uow_factory,
+        ListSalesHandler(),
+        ListSalesQuery(
+            status=status,
+            location_id=location_id,
+            terminal_id=terminal_id,
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit,
+        ),
+    )
 
 
 @router.post("/glass-sales/")

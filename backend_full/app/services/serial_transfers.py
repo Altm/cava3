@@ -12,6 +12,7 @@ from app.models.models import (
     TransferLine,
     TransferItem,
     ProductItem,
+    ProductItemPour,
     Box,
     StockLot,
     Receipt,
@@ -195,6 +196,10 @@ class TransferService:
             item = self.db.query(ProductItem).get(ti.product_item_id)
             if not item:
                 continue
+            if item.box_id is not None:
+                box = self.db.query(Box).get(item.box_id)
+                if box and box.quantity > 0:
+                    box.quantity -= 1
             item.status = "lost"
             item.lost_reason = "lost_in_transit"
             item.lost_doc_type = "transfer"
@@ -211,30 +216,93 @@ class TransferService:
 
     def _select_available_items_fifo(self, doc: TransferDoc, product_id: int, qty_base: int) -> list[ProductItem]:
         """
-        FIFO selection by (lot.received_at, item.created_at, item.id).
-
-        Excludes:
-        - not in from_location
-        - not in_stock
-        - already reserved
-        - items from receipts that are not posted
+        FIFO selection by (lot.received_at, item.created_at, item.id), with box-aware preference:
+        - first, full sealed boxes (if they fit completely in remaining qty)
+        - then item-level FIFO for the remainder
+        - partially poured items are excluded
         """
-        q = (
-            self.db.query(ProductItem)
-            .join(StockLot, StockLot.id == ProductItem.lot_id)
+        if qty_base <= 0:
+            return []
+
+        selected: list[ProductItem] = []
+        selected_ids: set[int] = set()
+        remaining = qty_base
+
+        boxes_q = (
+            self.db.query(Box)
+            .join(StockLot, StockLot.id == Box.lot_id)
             .join(Receipt, Receipt.id == StockLot.receipt_id)
             .filter(
-                ProductItem.location_id == doc.from_location_id,
-                ProductItem.product_id == product_id,
-                ProductItem.status == "in_stock",
-                ProductItem.reserved_transfer_doc_id.is_(None),
+                Box.location_id == doc.from_location_id,
+                Box.product_id == product_id,
+                Box.status == "active",
+                Box.sealed.is_(True),
+                Box.quantity > 0,
                 Receipt.status == "posted",
             )
-            .order_by(StockLot.received_at.asc(), ProductItem.created_at.asc(), ProductItem.id.asc())
+            .order_by(StockLot.received_at.asc(), Box.created_at.asc(), Box.id.asc())
         )
         if self.db.bind and self.db.bind.dialect.name == "postgresql":
-            q = q.with_for_update(skip_locked=True)
-        return q.limit(qty_base).all()
+            boxes_q = boxes_q.with_for_update(skip_locked=True)
+        sealed_boxes = boxes_q.all()
+
+        for box in sealed_boxes:
+            if remaining <= 0:
+                break
+            box_qty = int(box.quantity or 0)
+            if box_qty <= 0 or box_qty > remaining:
+                continue
+
+            box_items_q = (
+                self.db.query(ProductItem)
+                .outerjoin(ProductItemPour, ProductItemPour.product_item_id == ProductItem.id)
+                .filter(
+                    ProductItem.box_id == box.id,
+                    ProductItem.location_id == doc.from_location_id,
+                    ProductItem.product_id == product_id,
+                    ProductItem.status == "in_stock",
+                    ProductItem.reserved_transfer_doc_id.is_(None),
+                    (ProductItemPour.product_item_id.is_(None) | (ProductItemPour.glasses_sold == 0)),
+                )
+                .order_by(ProductItem.id.asc())
+                .limit(box_qty)
+            )
+            if self.db.bind and self.db.bind.dialect.name == "postgresql":
+                box_items_q = box_items_q.with_for_update(of=ProductItem, skip_locked=True)
+            box_items = box_items_q.all()
+            if len(box_items) != box_qty:
+                continue
+
+            for box_item in box_items:
+                if box_item.id in selected_ids:
+                    continue
+                selected.append(box_item)
+                selected_ids.add(box_item.id)
+            remaining -= len(box_items)
+
+        if remaining > 0:
+            items_q = (
+                self.db.query(ProductItem)
+                .join(StockLot, StockLot.id == ProductItem.lot_id)
+                .join(Receipt, Receipt.id == StockLot.receipt_id)
+                .outerjoin(ProductItemPour, ProductItemPour.product_item_id == ProductItem.id)
+                .filter(
+                    ProductItem.location_id == doc.from_location_id,
+                    ProductItem.product_id == product_id,
+                    ProductItem.status == "in_stock",
+                    ProductItem.reserved_transfer_doc_id.is_(None),
+                    Receipt.status == "posted",
+                    (ProductItemPour.product_item_id.is_(None) | (ProductItemPour.glasses_sold == 0)),
+                )
+                .order_by(StockLot.received_at.asc(), ProductItem.created_at.asc(), ProductItem.id.asc())
+            )
+            if selected_ids:
+                items_q = items_q.filter(~ProductItem.id.in_(selected_ids))
+            if self.db.bind and self.db.bind.dialect.name == "postgresql":
+                items_q = items_q.with_for_update(of=ProductItem, skip_locked=True)
+            selected.extend(items_q.limit(remaining).all())
+
+        return selected
 
     def _scan_item(self, doc: TransferDoc, item_uuid, mode: ScanMode) -> dict:
         q = self.db.query(ProductItem).filter(ProductItem.uuid == item_uuid)
@@ -266,6 +334,9 @@ class TransferService:
             raise HTTPException(status_code=409, detail="Item is not available for picking")
         if item.location_id != doc.from_location_id:
             raise HTTPException(status_code=409, detail="Item is in a different location")
+        pour = self.db.query(ProductItemPour).filter(ProductItemPour.product_item_id == item.id).first()
+        if pour and pour.glasses_sold > 0 and pour.glasses_sold < pour.glasses_total:
+            raise HTTPException(status_code=409, detail="Partially poured item cannot be transferred")
 
         # Find transfer_item for this item in this doc
         ti = (
@@ -357,6 +428,8 @@ class TransferService:
             box = self.db.query(Box).get(item.box_id)
             if box and box.sealed:
                 box.sealed = False
+            if box and box.quantity > 0:
+                box.quantity -= 1
             item.box_id = None
         ti.state = "picked"
         ti.picked_at = ti.picked_at or now

@@ -23,6 +23,7 @@ class AutoBoxBoxResult:
     product_id: int
     lot_id: int
     location_id: int
+    quantity: int
     sealed: bool
     packed_items: int
 
@@ -269,13 +270,23 @@ class ReceiptService:
         )
 
         counts_by_product: dict[int, int] = {}
+        box_detach_counts: dict[int, int] = {}
         for item in items:
             if item.status == "in_stock":
                 counts_by_product[item.product_id] = counts_by_product.get(item.product_id, 0) + 1
+            if item.box_id is not None:
+                box_detach_counts[item.box_id] = box_detach_counts.get(item.box_id, 0) + 1
             item.status = "voided"
             item.reserved_transfer_doc_id = None
             item.reserved_at = None
             item.box_id = None
+
+        if box_detach_counts:
+            boxes = self.db.query(Box).filter(Box.id.in_(box_detach_counts.keys())).all()
+            for box in boxes:
+                detached = box_detach_counts.get(box.id, 0)
+                if detached > 0:
+                    box.quantity = max(0, int(box.quantity) - detached)
 
         # If receipt was posted, compensate aggregated stock for items that were in_stock
         if receipt.status == "posted":
@@ -389,6 +400,7 @@ class ReceiptService:
                     product_id=group_product_id,
                     lot_id=group_lot_id,
                     location_id=group_location_id,
+                    quantity=take,
                     sealed=bool(seal_full_boxes and is_full),
                     status="active",
                 )
@@ -406,6 +418,7 @@ class ReceiptService:
                         product_id=box.product_id,
                         lot_id=box.lot_id,
                         location_id=box.location_id,
+                        quantity=take,
                         sealed=box.sealed,
                         packed_items=take,
                     )

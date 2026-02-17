@@ -285,6 +285,7 @@ class ReceiptAutoBoxHandler:
                     product_id=box.product_id,
                     lot_id=box.lot_id,
                     location_id=box.location_id,
+                    quantity=box.quantity,
                     sealed=box.sealed,
                     packed_items=box.packed_items,
                 )

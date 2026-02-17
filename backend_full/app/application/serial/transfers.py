@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import func
 
 from app.application.common.uow import AbstractUnitOfWork
-from app.models.models import Product, ProductItem, TransferDoc, TransferItem, TransferLine
+from app.models.models import Box, Product, ProductItem, TransferDoc, TransferItem, TransferLine
 from app.schemas import serial as schemas
 from app.services.serial_transfers import TransferService
 
@@ -142,16 +142,23 @@ class GetTransferHandler:
             db.query(
                 TransferItem.transfer_line_id,
                 ProductItem.qr_code,
+                Box.qr_code.label("box_qr_code"),
             )
             .join(ProductItem, ProductItem.id == TransferItem.product_item_id)
+            .outerjoin(Box, Box.id == ProductItem.box_id)
             .join(TransferLine, TransferLine.id == TransferItem.transfer_line_id)
             .filter(TransferLine.transfer_doc_id == query.transfer_doc_id, TransferItem.state == "planned")
             .order_by(TransferItem.transfer_line_id.asc(), TransferItem.id.asc())
             .all()
         )
         planned_qr_codes_by_line: dict[int, list[str]] = {}
-        for transfer_line_id, qr_code in qr_rows:
+        planned_box_qr_codes_by_line: dict[int, list[str]] = {}
+        for transfer_line_id, qr_code, box_qr_code in qr_rows:
             planned_qr_codes_by_line.setdefault(transfer_line_id, []).append(qr_code)
+            if box_qr_code:
+                box_list = planned_box_qr_codes_by_line.setdefault(transfer_line_id, [])
+                if box_qr_code not in box_list:
+                    box_list.append(box_qr_code)
         transfer_lines = [
             schemas.TransferPlanLineOut(
                 transfer_line_id=row.transfer_line_id,
@@ -160,6 +167,7 @@ class GetTransferHandler:
                 qty_base=row.qty_base,
                 pick_policy=row.pick_policy,
                 planned_qr_codes=planned_qr_codes_by_line.get(row.transfer_line_id, []),
+                planned_box_qr_codes=planned_box_qr_codes_by_line.get(row.transfer_line_id, []),
             )
             for row in line_rows
         ]

@@ -100,6 +100,48 @@ def _assert_no_component_cycles(db, parent_product_id: int, component_product_id
             raise HTTPException(status_code=400, detail="Composite cycle detected")
 
 
+def _sync_product_units(
+    db,
+    *,
+    product_id: int,
+    base_unit_id: int,
+    payload_units: list[schemas.ProductUnitCreate],
+) -> None:
+    desired_by_unit_id: dict[int, tuple[Decimal, Decimal | None]] = {
+        base_unit_id: (Decimal("1"), None),
+    }
+
+    for unit in payload_units:
+        if unit.unit_id == base_unit_id:
+            continue
+        unit_row = db.query(models.Unit).get(unit.unit_id)
+        if not unit_row:
+            raise HTTPException(status_code=400, detail=f"Unit not found: {unit.unit_id}")
+        desired_by_unit_id[unit.unit_id] = (Decimal(str(unit.ratio_to_base)), unit.discrete_step)
+
+    existing_rows = db.query(models.ProductUnit).filter(models.ProductUnit.product_id == product_id).all()
+    existing_by_unit_id = {row.unit_id: row for row in existing_rows}
+
+    for row in existing_rows:
+        if row.unit_id not in desired_by_unit_id:
+            db.delete(row)
+
+    for unit_id, (ratio_to_base, discrete_step) in desired_by_unit_id.items():
+        row = existing_by_unit_id.get(unit_id)
+        if row:
+            row.ratio_to_base = ratio_to_base
+            row.discrete_step = discrete_step
+            continue
+        db.add(
+            models.ProductUnit(
+                product_id=product_id,
+                unit_id=unit_id,
+                ratio_to_base=ratio_to_base,
+                discrete_step=discrete_step,
+            )
+        )
+
+
 class CreateProductHandler:
     def handle(self, command: CreateProductCommand, uow: AbstractUnitOfWork) -> schemas.Product:
         db = uow.session
@@ -144,13 +186,11 @@ class CreateProductHandler:
 
             db.add(db_attr)
 
-        db.add(
-            models.ProductUnit(
-                product_id=db_product.id,
-                unit_id=product.base_unit_id,
-                ratio_to_base=Decimal("1.0"),
-                discrete_step=None,
-            )
+        _sync_product_units(
+            db,
+            product_id=db_product.id,
+            base_unit_id=product.base_unit_id,
+            payload_units=product.product_units or [],
         )
 
         if pt.is_composite:
@@ -320,21 +360,12 @@ class UpdateProductHandler:
                 db_attr.value_string = str(attr.value) if attr.value is not None else None
             db.add(db_attr)
 
-        existing_base_unit = db.query(models.ProductUnit).filter(
-            models.ProductUnit.product_id == product.id,
-            models.ProductUnit.unit_id == base_unit_id,
-        ).first()
-        if existing_base_unit:
-            existing_base_unit.ratio_to_base = Decimal("1.0")
-        else:
-            db.add(
-                models.ProductUnit(
-                    product_id=product.id,
-                    unit_id=base_unit_id,
-                    ratio_to_base=Decimal("1.0"),
-                    discrete_step=None,
-                )
-            )
+        _sync_product_units(
+            db,
+            product_id=product.id,
+            base_unit_id=base_unit_id,
+            payload_units=product_update.product_units or [],
+        )
 
         db.query(models.ProductComposite).filter(models.ProductComposite.parent_product_id == product.id).delete()
         if pt.is_composite:

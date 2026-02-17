@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     structlog_json: bool = Field(True, env="STRUCTLOG_JSON")
     hmac_clock_skew_seconds: int = 30
     default_currency: str = "EUR"
+    sales_terminal_id: str = Field("T-1", env="SALES_TERMINAL_ID")
+    sales_self_base_url: str = Field("http://127.0.0.1:8000", env="SALES_SELF_BASE_URL")
+    sales_self_timeout_seconds: int = Field(10, env="SALES_SELF_TIMEOUT_SECONDS")
     glasses_per_bottle: int = 5
     loaf_fraction: str = "0.1"
     jar_fraction: str = "0.1"

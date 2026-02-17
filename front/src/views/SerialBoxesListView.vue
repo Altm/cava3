@@ -69,6 +69,7 @@
               <th>QR</th>
               <th>Статус</th>
               <th>Sealed</th>
+              <th>Кол-во</th>
               <th>Товар</th>
               <th>Lot</th>
               <th>Локация</th>
@@ -82,6 +83,7 @@
               <td>{{ row.qr_code }}</td>
               <td>{{ row.status }}</td>
               <td>{{ row.sealed ? 'yes' : 'no' }}</td>
+              <td>{{ row.quantity }}</td>
               <td>{{ productLabel(row.product_id) }}</td>
               <td>{{ row.lot_id }}</td>
               <td>{{ locationLabel(row.location_id) }}</td>
@@ -91,10 +93,10 @@
               </td>
             </tr>
             <tr v-if="!rows.length && !loading">
-              <td colspan="9">Нет данных</td>
+              <td colspan="10">Нет данных</td>
             </tr>
             <tr v-if="loading">
-              <td colspan="9">Загрузка...</td>
+              <td colspan="10">Загрузка...</td>
             </tr>
           </tbody>
         </table>

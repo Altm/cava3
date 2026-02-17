@@ -104,6 +104,7 @@ class ReceiptAutoBoxBoxOut(BaseModel):
     product_id: int
     lot_id: int
     location_id: int
+    quantity: int
     sealed: bool
     packed_items: int
 
@@ -131,6 +132,7 @@ class BoxOut(BaseModel):
     product_id: int
     lot_id: int
     location_id: int
+    quantity: int
     sealed: bool
     status: str
 
@@ -145,6 +147,7 @@ class BoxListOut(BaseModel):
     product_id: int
     lot_id: int
     location_id: int
+    quantity: int
     sealed: bool
     status: str
     created_at: datetime
@@ -195,6 +198,7 @@ class TransferPlanLineOut(BaseModel):
     qty_base: int
     pick_policy: str
     planned_qr_codes: List[str] = Field(default_factory=list)
+    planned_box_qr_codes: List[str] = Field(default_factory=list)
 
 
 class TransferDocListOut(BaseModel):
