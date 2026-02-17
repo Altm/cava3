@@ -109,6 +109,7 @@
           <table class="table">
             <thead>
               <tr>
+                <th>ID</th>
                 <th>Товар</th>
                 <th>Unit</th>
                 <th>Base Price</th>
@@ -120,7 +121,12 @@
             </thead>
             <tbody>
               <tr v-for="item in currentPrice.items" :key="`curr-${item.productId}-${item.unitId}`">
-                <td>{{ item.productName }}</td>
+                <td>{{ item.productId }}</td>
+                <td>
+                  <RouterLink class="product-link" :to="`/product-view/${item.productId}`">
+                    {{ item.productName }}
+                  </RouterLink>
+                </td>
                 <td>{{ item.unitCode }}</td>
                 <td>{{ item.basePrice ?? '-' }}</td>
                 <td>{{ item.averagePurchaseCost ?? '-' }}</td>
@@ -133,7 +139,7 @@
                 </td>
               </tr>
               <tr v-if="!currentPrice.items.length">
-                <td colspan="7">Прайс пуст</td>
+                <td colspan="8">Прайс пуст</td>
               </tr>
             </tbody>
           </table>
@@ -407,6 +413,13 @@ onMounted(async () => {
 }
 .btn-outline {
   background: transparent;
+}
+.product-link {
+  color: #1d4ed8;
+  text-decoration: none;
+}
+.product-link:hover {
+  text-decoration: underline;
 }
 .table-wrap {
   overflow: auto;

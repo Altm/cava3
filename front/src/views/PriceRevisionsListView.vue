@@ -84,23 +84,29 @@
       </div>
       <div class="table-wrap">
         <table class="table">
-          <thead>
-            <tr>
-              <th>Товар</th>
-              <th>Unit</th>
-              <th>Было</th>
-              <th>Стало</th>
-              <th>Валюта</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in detail.items" :key="`item-${item.productId}-${item.unitId}`">
-              <td>{{ item.productName }}</td>
-              <td>{{ item.unitCode }}</td>
-              <td>{{ item.previousAmount ?? '-' }}</td>
-              <td>{{ item.amount }}</td>
-              <td>{{ item.currency }}</td>
-            </tr>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Товар</th>
+                <th>Unit</th>
+                <th>Было</th>
+                <th>Стало</th>
+                <th>Валюта</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in detail.items" :key="`item-${item.productId}-${item.unitId}`">
+                <td>{{ item.productId }}</td>
+                <td>
+                  <RouterLink class="product-link" :to="`/product-view/${item.productId}`">
+                    {{ item.productName }}
+                  </RouterLink>
+                </td>
+                <td>{{ item.unitCode }}</td>
+                <td>{{ item.previousAmount ?? '-' }}</td>
+                <td>{{ item.amount }}</td>
+                <td>{{ item.currency }}</td>
+              </tr>
           </tbody>
         </table>
       </div>
@@ -229,6 +235,13 @@ onMounted(async () => {
 }
 .btn-outline {
   background: transparent;
+}
+.product-link {
+  color: #1d4ed8;
+  text-decoration: none;
+}
+.product-link:hover {
+  text-decoration: underline;
 }
 .table-wrap {
   overflow: auto;
