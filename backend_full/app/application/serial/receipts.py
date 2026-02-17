@@ -162,7 +162,7 @@ class GetReceiptItemsHandler:
                 Product.id.label("product_id"),
                 Product.name.label("product_name"),
                 Product.sku.label("product_sku"),
-                Product.base_cost.label("purchase_amount"),
+                StockLot.purchase_price.label("purchase_amount"),
                 StockLot.id.label("lot_id"),
                 StockLot.supplier_lot_number,
                 StockLot.received_at.label("lot_received_at"),

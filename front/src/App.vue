@@ -27,6 +27,7 @@ const handleLogout = () => {
         <RouterLink to="/sales">Продажи</RouterLink> |
         <RouterLink to="/sales/list">Список продаж</RouterLink> |
         <RouterLink to="/prices">Прайсы</RouterLink> |
+        <RouterLink to="/lots">Партии</RouterLink> |
         <RouterLink to="/serial/receipts">Приёмка (QR)</RouterLink> |
         <RouterLink to="/serial/transfers">Перемещение (QR)</RouterLink> |
         <RouterLink to="/serial/inventories">Инвентаризация (QR)</RouterLink> |

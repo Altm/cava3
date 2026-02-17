@@ -135,7 +135,12 @@ class ReceiptService:
             if qty_base <= 0:
                 raise HTTPException(status_code=422, detail="Line quantity too small")
 
-            lot = StockLot(product_id=product.id, receipt_id=receipt.id, supplier_lot_number=line.supplier_lot_number)
+            lot = StockLot(
+                product_id=product.id,
+                receipt_id=receipt.id,
+                supplier_lot_number=line.supplier_lot_number,
+                purchase_price=Decimal(str(product.base_cost or 0)),
+            )
             self.db.add(lot)
             self.db.flush()  # get lot.id
             lots_created += 1

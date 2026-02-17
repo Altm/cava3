@@ -18,6 +18,12 @@ from app.application.simple_catalog.locations import (
     ListLocationsHandler,
     ListLocationsQuery,
 )
+from app.application.simple_catalog.lots import (
+    GetLotHandler,
+    GetLotQuery,
+    ListLotsHandler,
+    ListLotsQuery,
+)
 from app.application.simple_catalog.product_types import (
     CreateProductTypeCommand,
     CreateProductTypeHandler,
@@ -382,6 +388,8 @@ def create_price_revision(
 @router.get("/prices/revisions", response_model=List[schemas.PriceRevisionListOut])
 def list_price_revisions(
     location_id: Optional[int] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
     limit: int = 100,
     offset: int = 0,
     user=Depends(PermissionChecker(["product.read"])),
@@ -391,7 +399,13 @@ def list_price_revisions(
     return dispatch_query(
         uow_factory,
         ListPriceRevisionsHandler(),
-        ListPriceRevisionsQuery(location_id=location_id, limit=limit, offset=offset),
+        ListPriceRevisionsQuery(
+            location_id=location_id,
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit,
+            offset=offset,
+        ),
     )
 
 
@@ -420,6 +434,46 @@ def get_current_prices(
         uow_factory,
         GetCurrentPriceHandler(),
         GetCurrentPriceQuery(location_id=location_id),
+    )
+
+
+@router.get("/lots", response_model=List[schemas.LotListOut])
+def list_lots(
+    location_id: Optional[int] = None,
+    product_id: Optional[int] = None,
+    lot_id: Optional[int] = None,
+    include_empty: bool = False,
+    limit: int = 200,
+    offset: int = 0,
+    user=Depends(PermissionChecker(["product.read"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Возвращает список партий с остатком и базовой стоимостью партии."""
+    return dispatch_query(
+        uow_factory,
+        ListLotsHandler(),
+        ListLotsQuery(
+            location_id=location_id,
+            product_id=product_id,
+            lot_id=lot_id,
+            include_empty=include_empty,
+            limit=limit,
+            offset=offset,
+        ),
+    )
+
+
+@router.get("/lots/{lot_id}", response_model=schemas.LotDetailOut)
+def get_lot(
+    lot_id: int,
+    user=Depends(PermissionChecker(["product.read"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Возвращает состав партии: item, статусы, коробки и локации."""
+    return dispatch_query(
+        uow_factory,
+        GetLotHandler(),
+        GetLotQuery(lot_id=lot_id),
     )
 
 

@@ -2,6 +2,10 @@
   <div class="page">
     <div class="page-head">
       <h2>Управление прайсами</h2>
+      <div class="head-actions">
+        <RouterLink class="btn btn-outline" to="/prices/list">Список прайсов</RouterLink>
+        <RouterLink class="btn btn-outline" to="/lots">Партии</RouterLink>
+      </div>
     </div>
 
     <div class="card">
@@ -103,19 +107,29 @@
               <tr>
                 <th>Товар</th>
                 <th>Unit</th>
+                <th>Base Price</th>
+                <th>Средняя закупка</th>
                 <th>Валюта</th>
                 <th>Цена</th>
+                <th>Партии</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="item in currentPrice.items" :key="`curr-${item.productId}-${item.unitId}`">
                 <td>{{ item.productName }}</td>
                 <td>{{ item.unitCode }}</td>
+                <td>{{ item.basePrice ?? '-' }}</td>
+                <td>{{ item.averagePurchaseCost ?? '-' }}</td>
                 <td>{{ item.currency }}</td>
                 <td>{{ item.amount }}</td>
+                <td>
+                  <button class="btn btn-outline" :disabled="!(item.lots?.length)" @click="openLots(item)">
+                    Партии ({{ item.lots?.length ?? 0 }})
+                  </button>
+                </td>
               </tr>
               <tr v-if="!currentPrice.items.length">
-                <td colspan="4">Прайс пуст</td>
+                <td colspan="7">Прайс пуст</td>
               </tr>
             </tbody>
           </table>
@@ -123,72 +137,33 @@
       </div>
     </div>
 
-    <div class="card">
-      <h3>История прайсов</h3>
+    <div v-if="selectedLots" class="card">
+      <div class="card-head">
+        <h3>Партии по товару: {{ selectedLots.productName }}</h3>
+        <button class="btn btn-outline" @click="selectedLots = null">Закрыть</button>
+      </div>
       <div class="table-wrap">
         <table class="table">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Дата</th>
-              <th>Локация</th>
-              <th>Режим</th>
-              <th>Название</th>
-              <th>Строк</th>
-              <th>Автор</th>
-              <th>Действия</th>
+              <th>Lot ID</th>
+              <th>Supplier Lot</th>
+              <th>Дата партии</th>
+              <th>Закупка</th>
+              <th>В наличии (item)</th>
+              <th>Действие</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="revision in revisions" :key="revision.id">
-              <td>{{ revision.id }}</td>
-              <td>{{ formatDate(revision.createdAt) }}</td>
-              <td>{{ revision.locationName || revision.locationId }}</td>
-              <td>{{ revision.mode }}</td>
-              <td>{{ revision.name || '-' }}</td>
-              <td>{{ revision.itemsCount }}</td>
-              <td>{{ revision.createdByUserId ?? '-' }}</td>
+            <tr v-for="lot in selectedLots.lots" :key="`lot-${lot.lotId}`">
+              <td>{{ lot.lotId }}</td>
+              <td>{{ lot.supplierLotNumber || '-' }}</td>
+              <td>{{ formatDate(lot.receivedAt) }}</td>
+              <td>{{ lot.purchasePrice ?? '-' }}</td>
+              <td>{{ lot.inStockItems }}</td>
               <td>
-                <button class="btn btn-outline" @click="loadRevisionDetail(revision.id)">Просмотр</button>
+                <RouterLink class="btn btn-outline" :to="`/lots/${lot.lotId}`">Содержимое</RouterLink>
               </td>
-            </tr>
-            <tr v-if="!revisions.length && !loadingHistory">
-              <td colspan="8">Нет данных</td>
-            </tr>
-            <tr v-if="loadingHistory">
-              <td colspan="8">Загрузка...</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div v-if="revisionDetail" class="card">
-      <h3>Ревизия #{{ revisionDetail.id }} — {{ revisionDetail.name || revisionDetail.mode }}</h3>
-      <div class="meta">
-        <span><b>Локация:</b> {{ revisionDetail.locationName || revisionDetail.locationId }}</span>
-        <span><b>Дата:</b> {{ formatDate(revisionDetail.createdAt) }}</span>
-        <span><b>Режим:</b> {{ revisionDetail.mode }}</span>
-        <span><b>Автор:</b> {{ revisionDetail.createdByUserId ?? '-' }}</span>
-      </div>
-      <div class="table-wrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Товар</th>
-              <th>Unit</th>
-              <th>Было</th>
-              <th>Стало</th>
-              <th>Валюта</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in revisionDetail.items" :key="`det-${item.productId}-${item.unitId}`">
-              <td>{{ item.productName }}</td>
-              <td>{{ item.unitCode }}</td>
-              <td>{{ item.previousAmount ?? '-' }}</td>
-              <td>{{ item.amount }}</td>
-              <td>{{ item.currency }}</td>
             </tr>
           </tbody>
         </table>
@@ -204,19 +179,16 @@ import {
   type CurrentPriceOut,
   type Location,
   type PriceCalculatorInfo,
-  type PriceRevisionDetail,
-  type PriceRevisionListItem,
+  type PriceRevisionItem,
   type PriceRevisionMode,
 } from '@/api/productApi'
 
 const locations = ref<Location[]>([])
 const calculators = ref<PriceCalculatorInfo[]>([])
-const revisions = ref<PriceRevisionListItem[]>([])
-const revisionDetail = ref<PriceRevisionDetail | null>(null)
 const currentPrice = ref<CurrentPriceOut | null>(null)
+const selectedLots = ref<{ productName: string; lots: NonNullable<PriceRevisionItem['lots']> } | null>(null)
 
 const saving = ref(false)
-const loadingHistory = ref(false)
 
 const form = ref({
   locationId: 0,
@@ -254,19 +226,6 @@ const parseCalculatorParams = () => {
   return parsed as Record<string, any>
 }
 
-const loadHistory = async () => {
-  if (!form.value.locationId) {
-    revisions.value = []
-    return
-  }
-  loadingHistory.value = true
-  try {
-    revisions.value = await productApi.listPriceRevisions({ locationId: form.value.locationId, limit: 200 })
-  } finally {
-    loadingHistory.value = false
-  }
-}
-
 const loadCurrent = async () => {
   if (!form.value.locationId) {
     currentPrice.value = null
@@ -275,11 +234,10 @@ const loadCurrent = async () => {
   currentPrice.value = await productApi.getCurrentPrices(form.value.locationId)
 }
 
-const loadRevisionDetail = async (revisionId: number) => {
-  try {
-    revisionDetail.value = await productApi.getPriceRevision(revisionId)
-  } catch (error: any) {
-    alert(error?.response?.data?.detail ?? error?.message ?? 'Ошибка загрузки ревизии прайса')
+const openLots = (item: PriceRevisionItem) => {
+  selectedLots.value = {
+    productName: item.productName,
+    lots: item.lots ?? [],
   }
 }
 
@@ -308,8 +266,12 @@ const createRevision = async () => {
     }
 
     const created = await productApi.createPriceRevision(payload)
-    revisionDetail.value = created
-    await Promise.all([loadHistory(), loadCurrent()])
+    if (created.items.length) {
+      openLots(created.items[0])
+    } else {
+      selectedLots.value = null
+    }
+    await loadCurrent()
   } catch (error: any) {
     alert(error?.response?.data?.detail ?? error?.message ?? 'Ошибка создания прайса')
   } finally {
@@ -330,8 +292,8 @@ const createQuickFixed = async () => {
 }
 
 const onLocationChanged = async () => {
-  revisionDetail.value = null
-  await Promise.all([loadHistory(), loadCurrent()])
+  selectedLots.value = null
+  await loadCurrent()
 }
 
 onMounted(async () => {
@@ -349,7 +311,7 @@ onMounted(async () => {
       form.value.calculatorFile = calculators.value[0].file
       form.value.calculatorClass = calculators.value[0].className
     }
-    await Promise.all([loadHistory(), loadCurrent()])
+    await loadCurrent()
   } catch (error: any) {
     alert(error?.response?.data?.detail ?? error?.message ?? 'Ошибка инициализации страницы прайсов')
   }
@@ -366,6 +328,10 @@ onMounted(async () => {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
+}
+.head-actions {
+  display: flex;
+  gap: 8px;
 }
 .card {
   border: 1px solid #ddd;

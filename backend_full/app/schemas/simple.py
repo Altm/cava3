@@ -43,6 +43,17 @@ class PriceRevisionItemOut(BaseModel):
     currency: str
     amount: Decimal
     previous_amount: Optional[Decimal] = None
+    base_price: Optional[Decimal] = None
+    average_purchase_cost: Optional[Decimal] = None
+    lots: List["PriceItemLotOut"] = Field(default_factory=list)
+
+
+class PriceItemLotOut(BaseModel):
+    lot_id: int
+    supplier_lot_number: Optional[str] = None
+    received_at: datetime
+    purchase_price: Optional[Decimal] = None
+    in_stock_items: int
 
 
 class PriceRevisionListOut(BaseModel):
@@ -58,6 +69,8 @@ class PriceRevisionListOut(BaseModel):
     calculator_class: Optional[str] = None
     created_by_user_id: Optional[int] = None
     created_at: datetime
+    effective_from: datetime
+    effective_to: Optional[datetime] = None
     items_count: int
 
 
@@ -85,6 +98,45 @@ class PriceCurrentOut(BaseModel):
     revision_name: Optional[str] = None
     revision_created_at: Optional[datetime] = None
     items: List[PriceRevisionItemOut] = Field(default_factory=list)
+
+
+class LotListOut(BaseModel):
+    lot_id: int
+    product_id: int
+    product_name: str
+    supplier_lot_number: Optional[str] = None
+    purchase_price: Optional[Decimal] = None
+    received_at: datetime
+    location_id: int
+    location_name: str
+    location_code: str
+    in_stock_items: int
+
+
+class LotItemOut(BaseModel):
+    product_item_id: int
+    product_item_qr_code: str
+    status: str
+    location_id: int
+    location_name: str
+    box_id: Optional[int] = None
+    box_qr_code: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class LotDetailOut(BaseModel):
+    lot_id: int
+    product_id: int
+    product_name: str
+    supplier_lot_number: Optional[str] = None
+    purchase_price: Optional[Decimal] = None
+    received_at: datetime
+    receipt_id: int
+    receipt_status: str
+    total_items: int
+    in_stock_items: int
+    items: List[LotItemOut] = Field(default_factory=list)
 
 
 class UnitBase(BaseModel):
@@ -376,3 +428,4 @@ class SaleDetailOut(BaseModel):
 
 
 ProductComponentTreeNode.model_rebuild()
+PriceRevisionItemOut.model_rebuild()

@@ -10,8 +10,14 @@ from app.application.simple_catalog.prices import (
     ListPriceRevisionsHandler,
     ListPriceRevisionsQuery,
 )
+from app.application.simple_catalog.lots import (
+    GetLotHandler,
+    GetLotQuery,
+    ListLotsHandler,
+    ListLotsQuery,
+)
 from app.infrastructure.db.uow import BoundSessionUnitOfWork
-from app.models.models import Location, PriceList, Product, ProductType, ProductUnit, Stock, Unit
+from app.models.models import Location, PriceList, Product, ProductItem, ProductType, ProductUnit, Receipt, Stock, StockLot, Unit
 from app.schemas import simple as schemas
 
 
@@ -99,11 +105,13 @@ def test_price_revision_percent_updates_current_and_history(db_session):
 
     with BoundSessionUnitOfWork(db_session) as uow:
         history = ListPriceRevisionsHandler().handle(
-            ListPriceRevisionsQuery(location_id=location.id, limit=10, offset=0),
+            ListPriceRevisionsQuery(location_id=location.id, date_from=None, date_to=None, limit=10, offset=0),
             uow,
         )
     assert len(history) == 1
     assert history[0].items_count == 2
+    assert history[0].effective_from == history[0].created_at
+    assert history[0].effective_to is None
 
 
 def test_price_revision_fixed_and_current_returns_latest(db_session):
@@ -153,6 +161,9 @@ def test_price_revision_fixed_and_current_returns_latest(db_session):
     amounts = {(item.product_id, item.unit_id): item.amount for item in current.items}
     assert amounts[(product1.id, unit.id)] == Decimal("136.00")
     assert amounts[(product2.id, unit.id)] == Decimal("220.00")
+    product1_line = [item for item in current.items if item.product_id == product1.id][0]
+    assert product1_line.base_price == Decimal("100.00")
+    assert product1_line.average_purchase_cost is not None
 
 
 def test_price_revision_calculator_mode(db_session):
@@ -255,3 +266,48 @@ def test_current_prices_without_revision_are_filtered_by_stock(db_session):
     product_ids = {item.product_id for item in current.items}
     assert product1.id in product_ids
     assert product2.id not in product_ids
+
+
+def test_lot_list_and_detail_include_content(db_session):
+    location, unit, product1, _product2 = _seed_price_context(db_session)
+
+    receipt = Receipt(to_location_id=location.id, status="posted")
+    db_session.add(receipt)
+    db_session.flush()
+    lot = StockLot(
+        product_id=product1.id,
+        receipt_id=receipt.id,
+        supplier_lot_number="SUP-LOT-1",
+        purchase_price=Decimal("95.00"),
+    )
+    db_session.add(lot)
+    db_session.flush()
+    db_session.add(
+        ProductItem(
+            product_id=product1.id,
+            lot_id=lot.id,
+            location_id=location.id,
+            status="in_stock",
+        )
+    )
+    db_session.flush()
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        lots = ListLotsHandler().handle(
+            ListLotsQuery(
+                location_id=location.id,
+                product_id=product1.id,
+                lot_id=None,
+                include_empty=False,
+                limit=100,
+                offset=0,
+            ),
+            uow,
+        )
+    assert lots
+    lot_id = lots[0].lot_id
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        detail = GetLotHandler().handle(GetLotQuery(lot_id=lot_id), uow)
+    assert detail.lot_id == lot_id
+    assert detail.total_items >= detail.in_stock_items

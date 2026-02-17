@@ -508,6 +508,11 @@ class StockLot(Base):
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), nullable=False)
     receipt_id: Mapped[int] = mapped_column(ForeignKey("receipt.id", ondelete="RESTRICT"), nullable=False)
     supplier_lot_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    purchase_price: Mapped[Optional[Decimal]] = mapped_column(
+        DECIMAL(18, 2),
+        nullable=True,
+        comment="Purchase price fixed for lot at receipt generation",
+    )
     received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -330,6 +330,17 @@ export interface PriceRevisionItem {
   currency: string
   amount: string
   previousAmount?: string | null
+  basePrice?: string | null
+  averagePurchaseCost?: string | null
+  lots?: PriceItemLot[]
+}
+
+export interface PriceItemLot {
+  lotId: number
+  supplierLotNumber?: string | null
+  receivedAt: string
+  purchasePrice?: string | null
+  inStockItems: number
 }
 
 export interface PriceRevisionListItem {
@@ -345,6 +356,8 @@ export interface PriceRevisionListItem {
   calculatorClass?: string | null
   createdByUserId?: number | null
   createdAt: string
+  effectiveFrom: string
+  effectiveTo?: string | null
   itemsCount: number
 }
 
@@ -372,6 +385,45 @@ export interface CurrentPriceOut {
   revisionName?: string | null
   revisionCreatedAt?: string | null
   items: PriceRevisionItem[]
+}
+
+export interface LotListItem {
+  lotId: number
+  productId: number
+  productName: string
+  supplierLotNumber?: string | null
+  purchasePrice?: string | null
+  receivedAt: string
+  locationId: number
+  locationName: string
+  locationCode: string
+  inStockItems: number
+}
+
+export interface LotItemDetail {
+  productItemId: number
+  productItemQrCode: string
+  status: string
+  locationId: number
+  locationName: string
+  boxId?: number | null
+  boxQrCode?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface LotDetail {
+  lotId: number
+  productId: number
+  productName: string
+  supplierLotNumber?: string | null
+  purchasePrice?: string | null
+  receivedAt: string
+  receiptId: number
+  receiptStatus: string
+  totalItems: number
+  inStockItems: number
+  items: LotItemDetail[]
 }
 
 export interface ProductWithStockByLocation {
@@ -636,9 +688,17 @@ async updateProduct(id: number, data: ProductForm) {
     return res.data
   },
 
-  async listPriceRevisions(params?: { locationId?: number; limit?: number; offset?: number }): Promise<PriceRevisionListItem[]> {
+  async listPriceRevisions(params?: {
+    locationId?: number
+    dateFrom?: string
+    dateTo?: string
+    limit?: number
+    offset?: number
+  }): Promise<PriceRevisionListItem[]> {
     const queryParams = new URLSearchParams()
     if (params?.locationId) queryParams.append('location_id', String(params.locationId))
+    if (params?.dateFrom) queryParams.append('date_from', params.dateFrom)
+    if (params?.dateTo) queryParams.append('date_to', params.dateTo)
     if (params?.limit !== undefined) queryParams.append('limit', String(params.limit))
     if (params?.offset !== undefined) queryParams.append('offset', String(params.offset))
     const query = queryParams.toString()
@@ -654,6 +714,32 @@ async updateProduct(id: number, data: ProductForm) {
 
   async getCurrentPrices(locationId: number): Promise<CurrentPriceOut> {
     const res = await api.get<CurrentPriceOut>('/prices/current', { params: { location_id: locationId } })
+    return res.data
+  },
+
+  async listLots(params?: {
+    locationId?: number
+    productId?: number
+    lotId?: number
+    includeEmpty?: boolean
+    limit?: number
+    offset?: number
+  }): Promise<LotListItem[]> {
+    const queryParams = new URLSearchParams()
+    if (params?.locationId) queryParams.append('location_id', String(params.locationId))
+    if (params?.productId) queryParams.append('product_id', String(params.productId))
+    if (params?.lotId) queryParams.append('lot_id', String(params.lotId))
+    if (params?.includeEmpty) queryParams.append('include_empty', 'true')
+    if (params?.limit !== undefined) queryParams.append('limit', String(params.limit))
+    if (params?.offset !== undefined) queryParams.append('offset', String(params.offset))
+    const query = queryParams.toString()
+    const url = query ? `/lots?${query}` : '/lots'
+    const res = await api.get<LotListItem[]>(url)
+    return res.data
+  },
+
+  async getLot(lotId: number): Promise<LotDetail> {
+    const res = await api.get<LotDetail>(`/lots/${lotId}`)
     return res.data
   },
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Optional
 
 from fastapi import HTTPException
 from sqlalchemy import func
+from sqlalchemy.orm import aliased
 
 from app.application.common.uow import AbstractUnitOfWork
 from app.config import get_settings
@@ -32,6 +34,8 @@ class CreatePriceRevisionCommand:
 @dataclass(frozen=True)
 class ListPriceRevisionsQuery:
     location_id: Optional[int]
+    date_from: Optional[datetime]
+    date_to: Optional[datetime]
     limit: int
     offset: int
 
@@ -127,6 +131,7 @@ class CreatePriceRevisionHandler:
         db.flush()
 
         generated_items: list[schemas.PriceRevisionItemOut] = []
+        purchase_metrics_cache: dict[int, tuple[Optional[Decimal], list[schemas.PriceItemLotOut]]] = {}
         for product_id, unit_id in sorted(line_keys):
             product = products_by_id.get(product_id)
             if not product:
@@ -191,6 +196,14 @@ class CreatePriceRevisionHandler:
                     )
                 )
 
+            if product.id not in purchase_metrics_cache:
+                purchase_metrics_cache[product.id] = _purchase_metrics(
+                    db=db,
+                    location_id=location.id,
+                    product_id=product.id,
+                    fallback_base_price=_money(product.base_cost or Decimal("0")),
+                )
+            avg_purchase_cost, lots = purchase_metrics_cache[product.id]
             generated_items.append(
                 schemas.PriceRevisionItemOut(
                     product_id=product.id,
@@ -200,6 +213,9 @@ class CreatePriceRevisionHandler:
                     currency=line_currency,
                     amount=next_amount,
                     previous_amount=previous_amount,
+                    base_price=_money(product.base_cost or Decimal("0")),
+                    average_purchase_cost=avg_purchase_cost,
+                    lots=lots,
                 )
             )
 
@@ -228,6 +244,16 @@ class CreatePriceRevisionHandler:
 class ListPriceRevisionsHandler:
     def handle(self, query: ListPriceRevisionsQuery, uow: AbstractUnitOfWork) -> list[schemas.PriceRevisionListOut]:
         db = uow.session
+        next_revision = aliased(models.PriceListRevision)
+        next_created_subq = (
+            db.query(func.min(next_revision.created_at))
+            .filter(
+                next_revision.location_id == models.PriceListRevision.location_id,
+                next_revision.id > models.PriceListRevision.id,
+            )
+            .correlate(models.PriceListRevision)
+            .scalar_subquery()
+        )
         items_count_subq = (
             db.query(
                 models.PriceListRevisionItem.revision_id.label("revision_id"),
@@ -242,12 +268,17 @@ class ListPriceRevisionsHandler:
                 models.PriceListRevision,
                 models.Location.name.label("location_name"),
                 func.coalesce(items_count_subq.c.items_count, 0).label("items_count"),
+                next_created_subq.label("effective_to"),
             )
             .join(models.Location, models.Location.id == models.PriceListRevision.location_id)
             .outerjoin(items_count_subq, items_count_subq.c.revision_id == models.PriceListRevision.id)
         )
         if query.location_id is not None:
             query_builder = query_builder.filter(models.PriceListRevision.location_id == query.location_id)
+        if query.date_from is not None:
+            query_builder = query_builder.filter(models.PriceListRevision.created_at >= query.date_from)
+        if query.date_to is not None:
+            query_builder = query_builder.filter(models.PriceListRevision.created_at <= query.date_to)
 
         rows = (
             query_builder
@@ -271,9 +302,11 @@ class ListPriceRevisionsHandler:
                 calculator_class=revision.calculator_class,
                 created_by_user_id=revision.created_by_user_id,
                 created_at=revision.created_at,
+                effective_from=revision.created_at,
+                effective_to=effective_to,
                 items_count=int(items_count),
             )
-            for revision, location_name, items_count in rows
+            for revision, location_name, items_count, effective_to in rows
         ]
 
 
@@ -322,21 +355,11 @@ class GetCurrentPriceHandler:
             .order_by(models.PriceListRevision.id.desc())
             .first()
         )
-        if revision:
-            lines = _load_revision_lines(db, revision.id)
-            return schemas.PriceCurrentOut(
-                location_id=location.id,
-                location_name=location.name,
-                revision_id=revision.id,
-                revision_name=revision.name,
-                revision_created_at=revision.created_at,
-                items=lines,
-            )
-
         rows = (
             db.query(
                 models.PriceList.product_id,
                 models.Product.name.label("product_name"),
+                models.Product.base_cost.label("base_price"),
                 models.PriceList.unit_id,
                 models.Unit.code.label("unit_code"),
                 models.PriceList.currency,
@@ -354,24 +377,37 @@ class GetCurrentPriceHandler:
             .order_by(models.PriceList.product_id.asc(), models.PriceList.unit_id.asc())
             .all()
         )
-        items = [
-            schemas.PriceRevisionItemOut(
-                product_id=row.product_id,
-                product_name=row.product_name,
-                unit_id=row.unit_id,
-                unit_code=row.unit_code,
-                currency=row.currency,
-                amount=_money(row.amount),
-                previous_amount=None,
+        metrics_cache: dict[int, tuple[Optional[Decimal], list[schemas.PriceItemLotOut]]] = {}
+        items: list[schemas.PriceRevisionItemOut] = []
+        for row in rows:
+            if row.product_id not in metrics_cache:
+                metrics_cache[row.product_id] = _purchase_metrics(
+                    db=db,
+                    location_id=location.id,
+                    product_id=row.product_id,
+                    fallback_base_price=_money(row.base_price or Decimal("0")),
+                )
+            avg_purchase_cost, lots = metrics_cache[row.product_id]
+            items.append(
+                schemas.PriceRevisionItemOut(
+                    product_id=row.product_id,
+                    product_name=row.product_name,
+                    unit_id=row.unit_id,
+                    unit_code=row.unit_code,
+                    currency=row.currency,
+                    amount=_money(row.amount),
+                    previous_amount=None,
+                    base_price=_money(row.base_price or Decimal("0")),
+                    average_purchase_cost=avg_purchase_cost,
+                    lots=lots,
+                )
             )
-            for row in rows
-        ]
         return schemas.PriceCurrentOut(
             location_id=location.id,
             location_name=location.name,
-            revision_id=None,
-            revision_name=None,
-            revision_created_at=None,
+            revision_id=revision.id if revision else None,
+            revision_name=revision.name if revision else None,
+            revision_created_at=revision.created_at if revision else None,
             items=items,
         )
 
@@ -381,6 +417,7 @@ def _load_revision_lines(db, revision_id: int) -> list[schemas.PriceRevisionItem
         db.query(
             models.PriceListRevisionItem.product_id,
             models.Product.name.label("product_name"),
+            models.Product.base_cost.label("base_price"),
             models.PriceListRevisionItem.unit_id,
             models.Unit.code.label("unit_code"),
             models.PriceListRevisionItem.currency,
@@ -402,6 +439,67 @@ def _load_revision_lines(db, revision_id: int) -> list[schemas.PriceRevisionItem
             currency=row.currency,
             amount=_money(row.amount),
             previous_amount=_money(row.previous_amount) if row.previous_amount is not None else None,
+            base_price=_money(row.base_price or Decimal("0")),
+            average_purchase_cost=None,
+            lots=[],
         )
         for row in rows
     ]
+
+
+def _purchase_metrics(
+    *,
+    db,
+    location_id: int,
+    product_id: int,
+    fallback_base_price: Decimal,
+) -> tuple[Optional[Decimal], list[schemas.PriceItemLotOut]]:
+    rows = (
+        db.query(
+            models.StockLot.id.label("lot_id"),
+            models.StockLot.supplier_lot_number,
+            models.StockLot.received_at,
+            models.StockLot.purchase_price,
+            func.count(models.ProductItem.id).label("items_count"),
+        )
+        .join(models.ProductItem, models.ProductItem.lot_id == models.StockLot.id)
+        .filter(
+            models.ProductItem.product_id == product_id,
+            models.ProductItem.location_id == location_id,
+            models.ProductItem.status == "in_stock",
+        )
+        .group_by(
+            models.StockLot.id,
+            models.StockLot.supplier_lot_number,
+            models.StockLot.received_at,
+            models.StockLot.purchase_price,
+        )
+        .order_by(models.StockLot.received_at.asc(), models.StockLot.id.asc())
+        .all()
+    )
+
+    lots: list[schemas.PriceItemLotOut] = []
+    total_items = 0
+    weighted_sum = Decimal("0")
+    for row in rows:
+        lot_price = _money(row.purchase_price) if row.purchase_price is not None else fallback_base_price
+        items_count = int(row.items_count or 0)
+        if items_count > 0:
+            total_items += items_count
+            weighted_sum += (lot_price * Decimal(items_count))
+        lots.append(
+            schemas.PriceItemLotOut(
+                lot_id=row.lot_id,
+                supplier_lot_number=row.supplier_lot_number,
+                received_at=row.received_at,
+                purchase_price=lot_price,
+                in_stock_items=items_count,
+            )
+        )
+    average = None
+    if total_items > 0:
+        average = _money(weighted_sum / Decimal(total_items))
+    elif fallback_base_price is not None:
+        average = fallback_base_price
+
+    return average, lots
