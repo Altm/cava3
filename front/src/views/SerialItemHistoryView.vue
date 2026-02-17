@@ -41,34 +41,38 @@
     </div>
 
     <div v-if="history" class="card">
-      <h3>История перемещений</h3>
+      <h3>История движения</h3>
       <div class="table-wrap">
         <table class="table">
           <thead>
             <tr>
+              <th>Тип</th>
+              <th>Описание</th>
               <th>Документ</th>
               <th>Откуда</th>
               <th>Куда</th>
-              <th>Статус перемещения</th>
+              <th>Статус</th>
               <th>Состояние item</th>
-              <th>Дата создания</th>
+              <th>Дата события</th>
               <th>Дата отгрузки</th>
               <th>Дата приёмки</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in history.transfers" :key="`${row.transfer_doc_id}-${row.transfer_created_at}-${row.transfer_item_state}`" :class="{ 'row-lost': row.is_lost }">
-              <td>#{{ row.transfer_doc_id }}</td>
-              <td>{{ locationLabel(row.from_location_id) }}</td>
-              <td>{{ locationLabel(row.to_location_id) }}</td>
-              <td>{{ row.transfer_status }}</td>
-              <td>{{ row.transfer_item_state }}</td>
+            <tr v-for="(row, index) in history.transfers" :key="`${row.event_type}-${row.transfer_created_at}-${row.doc_type}-${row.doc_id}-${index}`" :class="{ 'row-lost': row.is_lost }">
+              <td>{{ movementTypeLabel(row.event_type) }}</td>
+              <td>{{ row.event_description || '-' }}</td>
+              <td>{{ docLabel(row.doc_type, row.doc_id, row.transfer_doc_id) }}</td>
+              <td>{{ locationLabelOptional(row.from_location_id) }}</td>
+              <td>{{ locationLabelOptional(row.to_location_id) }}</td>
+              <td>{{ row.transfer_status || '-' }}</td>
+              <td>{{ row.transfer_item_state || '-' }}</td>
               <td>{{ formatDate(row.transfer_created_at) }}</td>
               <td>{{ formatDate(row.shipped_at) }}</td>
               <td>{{ formatDate(row.received_at) }}</td>
             </tr>
             <tr v-if="!history.transfers.length">
-              <td colspan="8">История перемещений отсутствует</td>
+              <td colspan="10">История движения отсутствует</td>
             </tr>
           </tbody>
         </table>
@@ -101,6 +105,24 @@ const locationLabel = (locationId: number) => {
 const locationCode = (locationId: number) => {
   const row = location(locationId)
   return row ? row.code : '-'
+}
+
+const locationLabelOptional = (locationId?: number | null) => {
+  if (!locationId) return '-'
+  return locationLabel(locationId)
+}
+
+const movementTypeLabel = (eventType: string) => {
+  if (eventType === 'receipt') return 'Приёмка'
+  if (eventType === 'sale') return 'Продажа'
+  if (eventType === 'transfer') return 'Перемещение'
+  return eventType
+}
+
+const docLabel = (docType?: string | null, docId?: number | null, transferDocId?: number | null) => {
+  if (docType && docId) return `${docType} #${docId}`
+  if (transferDocId) return `transfer #${transferDocId}`
+  return '-'
 }
 
 onMounted(async () => {

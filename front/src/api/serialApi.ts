@@ -241,11 +241,15 @@ export interface ProductStockBalanceOut {
 }
 
 export interface ProductItemTransferHistoryOut {
-  transfer_doc_id: number
-  from_location_id: number
-  to_location_id: number
-  transfer_status: string
-  transfer_item_state: string
+  event_type: string
+  event_description?: string | null
+  doc_type?: string | null
+  doc_id?: number | null
+  transfer_doc_id?: number | null
+  from_location_id?: number | null
+  to_location_id?: number | null
+  transfer_status?: string | null
+  transfer_item_state?: string | null
   transfer_created_at: string
   shipped_at?: string | null
   received_at?: string | null
@@ -269,6 +273,22 @@ export interface ProductItemHistoryOut {
   summary: ProductItemHistorySummaryOut
   stock_balances: ProductStockBalanceOut[]
   transfers: ProductItemTransferHistoryOut[]
+}
+
+export interface ProductItemLogOut {
+  event_time: string
+  event_type: string
+  product_item_id: number
+  product_item_qr_code: string
+  product_id: number
+  product_name: string
+  lot_id: number
+  location_id?: number | null
+  from_location_id?: number | null
+  to_location_id?: number | null
+  doc_type?: string | null
+  doc_id?: number | null
+  details?: string | null
 }
 
 export interface ScanOut {
@@ -494,6 +514,19 @@ export const serialApi = {
   },
   async getProductItemHistory(product_item_id: number): Promise<ProductItemHistoryOut> {
     const res = await api.get(`/scan/items/${product_item_id}/history`)
+    return res.data
+  },
+  async listProductItemLog(params?: {
+    product_item_id?: number
+    product_id?: number
+    location_id?: number
+    event_type?: string
+    date_from?: string
+    date_to?: string
+    limit?: number
+    offset?: number
+  }): Promise<ProductItemLogOut[]> {
+    const res = await api.get('/scan/items/log', { params })
     return res.data
   },
 

@@ -5,6 +5,7 @@
       <div class="form-actions">
         <RouterLink class="btn btn-outline" to="/serial/scan/boxes">Таблица коробок</RouterLink>
         <RouterLink class="btn btn-outline" to="/serial/scan/items">Таблица единиц</RouterLink>
+        <RouterLink class="btn btn-outline" to="/serial/scan/items-log">Общий лог item</RouterLink>
       </div>
     </div>
 

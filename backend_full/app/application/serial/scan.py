@@ -1,13 +1,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
 from fastapi import HTTPException
 
 from app.application.common.uow import AbstractUnitOfWork
-from app.models.models import Box, Location, Product, ProductItem, Stock, TransferDoc, TransferItem, TransferLine
+from app.models.models import (
+    Box,
+    Location,
+    Product,
+    ProductItem,
+    Receipt,
+    SaleEvent,
+    SaleLine,
+    Stock,
+    StockLot,
+    TransferDoc,
+    TransferItem,
+    TransferLine,
+)
 from app.schemas import serial as schemas
 from app.services.serial_qr import parse_qr
 
@@ -27,6 +41,18 @@ class ListProductItemsQuery:
 @dataclass(frozen=True)
 class GetProductItemHistoryQuery:
     product_item_id: int
+
+
+@dataclass(frozen=True)
+class ListProductItemLogQuery:
+    product_item_id: Optional[int]
+    product_id: Optional[int]
+    location_id: Optional[int]
+    event_type: Optional[str]
+    date_from: Optional[datetime]
+    date_to: Optional[datetime]
+    limit: int
+    offset: int
 
 
 @dataclass(frozen=True)
@@ -122,6 +148,10 @@ class GetProductItemHistoryHandler:
             ) or bool(row.transfer_status == "closed" and row.transfer_item_state == "picked" and row.received_at is None)
             transfers.append(
                 schemas.ProductItemTransferHistoryOut(
+                    event_type="transfer",
+                    event_description=self._describe_transfer_event(row.transfer_status, row.transfer_item_state, is_lost),
+                    doc_type="transfer",
+                    doc_id=row.transfer_doc_id,
                     transfer_doc_id=row.transfer_doc_id,
                     from_location_id=row.from_location_id,
                     to_location_id=row.to_location_id,
@@ -134,7 +164,353 @@ class GetProductItemHistoryHandler:
                 )
             )
 
+        receipt_row = (
+            db.query(
+                Receipt.id.label("receipt_id"),
+                Receipt.status.label("receipt_status"),
+                Receipt.to_location_id.label("to_location_id"),
+                StockLot.received_at.label("received_at"),
+            )
+            .join(StockLot, StockLot.receipt_id == Receipt.id)
+            .filter(StockLot.id == item.lot_id)
+            .first()
+        )
+        if receipt_row:
+            transfers.append(
+                schemas.ProductItemTransferHistoryOut(
+                    event_type="receipt",
+                    event_description=f"Приёмка ({receipt_row.receipt_status})",
+                    doc_type="receipt",
+                    doc_id=receipt_row.receipt_id,
+                    to_location_id=receipt_row.to_location_id,
+                    transfer_status=receipt_row.receipt_status,
+                    transfer_item_state="received",
+                    transfer_created_at=receipt_row.received_at or item.created_at,
+                )
+            )
+
+        sale_events = self._find_sales_for_item(db=db, item=item)
+        if sale_events:
+            for sale_event in sale_events:
+                transfers.append(
+                    schemas.ProductItemTransferHistoryOut(
+                        event_type="sale",
+                        event_description=f"Продажа ({sale_event.status})",
+                        doc_type="sale",
+                        doc_id=sale_event.id,
+                        from_location_id=sale_event.location_id,
+                        transfer_status=sale_event.status,
+                        transfer_item_state="sold",
+                        transfer_created_at=sale_event.confirmed_at or sale_event.created_at,
+                    )
+                )
+        elif item.status == "sold":
+            transfers.append(
+                schemas.ProductItemTransferHistoryOut(
+                    event_type="sale",
+                    event_description="Продажа (без привязки к sale_event)",
+                    doc_type="sale",
+                    from_location_id=item.location_id,
+                    transfer_status="confirmed",
+                    transfer_item_state="sold",
+                    transfer_created_at=item.updated_at,
+                )
+            )
+
+        transfers.sort(key=lambda row: row.transfer_created_at)
         return schemas.ProductItemHistoryOut(summary=summary, stock_balances=stock_balances, transfers=transfers)
+
+    @staticmethod
+    def _describe_transfer_event(transfer_status: str, transfer_item_state: str, is_lost: bool) -> str:
+        if is_lost:
+            return "Утеряно при перемещении"
+        if transfer_item_state == "planned":
+            return "Запланировано к перемещению"
+        if transfer_item_state == "picked":
+            return "Отгружено со склада"
+        if transfer_item_state == "removed":
+            return "Удалено из плана перемещения"
+        if transfer_status == "closed":
+            return "Перемещение закрыто"
+        return "Перемещение"
+
+    @staticmethod
+    def _find_sales_for_item(db, item: ProductItem) -> list[SaleEvent]:
+        event_ids_query = (
+            db.query(SaleLine.sale_event_id)
+            .filter(SaleLine.product_id == item.product_id)
+            .distinct()
+        )
+        candidates = (
+            db.query(SaleEvent)
+            .filter(SaleEvent.id.in_(event_ids_query))
+            .order_by(SaleEvent.created_at.asc())
+            .limit(5000)
+            .all()
+        )
+
+        matched: list[SaleEvent] = []
+        for sale_event in candidates:
+            if GetProductItemHistoryHandler._sale_payload_contains_item_id(sale_event.payload, item.id):
+                matched.append(sale_event)
+        return matched
+
+    @staticmethod
+    def _sale_payload_contains_item_id(payload: dict | None, product_item_id: int) -> bool:
+        if not isinstance(payload, dict):
+            return False
+
+        sales_entries: list[dict] = []
+        sale_entry = payload.get("sale")
+        if isinstance(sale_entry, dict):
+            sales_entries.append(sale_entry)
+        sales = payload.get("sales")
+        if isinstance(sales, list):
+            sales_entries.extend([entry for entry in sales if isinstance(entry, dict)])
+
+        target_id = int(product_item_id)
+        for sale in sales_entries:
+            items = sale.get("items")
+            if not isinstance(items, list):
+                continue
+            for row in items:
+                if not isinstance(row, dict):
+                    continue
+                resolved = row.get("resolved_item_ids")
+                if not isinstance(resolved, list):
+                    continue
+                for value in resolved:
+                    try:
+                        if int(value) == target_id:
+                            return True
+                    except (TypeError, ValueError):
+                        continue
+        return False
+
+
+class ListProductItemLogHandler:
+    def handle(self, query: ListProductItemLogQuery, uow: AbstractUnitOfWork) -> list[schemas.ProductItemLogOut]:
+        db = uow.session
+        query_window = max(500, (query.limit + query.offset) * 5)
+
+        events: list[schemas.ProductItemLogOut] = []
+
+        # Receipt events (initial appearance of item).
+        receipt_query = (
+            db.query(
+                ProductItem.id.label("product_item_id"),
+                ProductItem.qr_code.label("product_item_qr_code"),
+                ProductItem.product_id,
+                Product.name.label("product_name"),
+                ProductItem.lot_id,
+                StockLot.received_at.label("event_time"),
+                Receipt.id.label("receipt_id"),
+                Receipt.to_location_id.label("location_id"),
+                Receipt.status.label("receipt_status"),
+            )
+            .join(Product, Product.id == ProductItem.product_id)
+            .join(StockLot, StockLot.id == ProductItem.lot_id)
+            .join(Receipt, Receipt.id == StockLot.receipt_id)
+        )
+        if query.product_item_id is not None:
+            receipt_query = receipt_query.filter(ProductItem.id == query.product_item_id)
+        if query.product_id is not None:
+            receipt_query = receipt_query.filter(ProductItem.product_id == query.product_id)
+        if query.location_id is not None:
+            receipt_query = receipt_query.filter(Receipt.to_location_id == query.location_id)
+        receipt_rows = receipt_query.order_by(StockLot.received_at.desc(), ProductItem.id.desc()).limit(query_window).all()
+        for row in receipt_rows:
+            events.append(
+                schemas.ProductItemLogOut(
+                    event_time=row.event_time,
+                    event_type="receipt",
+                    product_item_id=row.product_item_id,
+                    product_item_qr_code=row.product_item_qr_code,
+                    product_id=row.product_id,
+                    product_name=row.product_name,
+                    lot_id=row.lot_id,
+                    location_id=row.location_id,
+                    doc_type="receipt",
+                    doc_id=row.receipt_id,
+                    details=f"receipt_status={row.receipt_status}",
+                )
+            )
+
+        # Transfer events.
+        transfer_query = (
+            db.query(
+                TransferItem.id.label("transfer_item_id"),
+                TransferItem.product_item_id,
+                ProductItem.qr_code.label("product_item_qr_code"),
+                ProductItem.product_id,
+                Product.name.label("product_name"),
+                ProductItem.lot_id,
+                TransferDoc.id.label("transfer_doc_id"),
+                TransferDoc.from_location_id,
+                TransferDoc.to_location_id,
+                TransferDoc.status.label("transfer_status"),
+                TransferItem.state.label("transfer_item_state"),
+                TransferItem.reserved_at,
+                TransferItem.picked_at,
+                TransferItem.received_at,
+                TransferItem.updated_at,
+            )
+            .join(TransferLine, TransferLine.id == TransferItem.transfer_line_id)
+            .join(TransferDoc, TransferDoc.id == TransferLine.transfer_doc_id)
+            .join(ProductItem, ProductItem.id == TransferItem.product_item_id)
+            .join(Product, Product.id == ProductItem.product_id)
+        )
+        if query.product_item_id is not None:
+            transfer_query = transfer_query.filter(TransferItem.product_item_id == query.product_item_id)
+        if query.product_id is not None:
+            transfer_query = transfer_query.filter(ProductItem.product_id == query.product_id)
+        if query.location_id is not None:
+            transfer_query = transfer_query.filter(
+                (TransferDoc.from_location_id == query.location_id) | (TransferDoc.to_location_id == query.location_id)
+            )
+        transfer_rows = transfer_query.order_by(TransferItem.updated_at.desc(), TransferItem.id.desc()).limit(query_window).all()
+        for row in transfer_rows:
+            planned_time = row.reserved_at or row.updated_at
+            if planned_time:
+                events.append(
+                    schemas.ProductItemLogOut(
+                        event_time=planned_time,
+                        event_type="transfer_planned",
+                        product_item_id=row.product_item_id,
+                        product_item_qr_code=row.product_item_qr_code,
+                        product_id=row.product_id,
+                        product_name=row.product_name,
+                        lot_id=row.lot_id,
+                        from_location_id=row.from_location_id,
+                        to_location_id=row.to_location_id,
+                        doc_type="transfer",
+                        doc_id=row.transfer_doc_id,
+                        details=f"transfer_status={row.transfer_status}",
+                    )
+                )
+            if row.picked_at:
+                events.append(
+                    schemas.ProductItemLogOut(
+                        event_time=row.picked_at,
+                        event_type="transfer_picked",
+                        product_item_id=row.product_item_id,
+                        product_item_qr_code=row.product_item_qr_code,
+                        product_id=row.product_id,
+                        product_name=row.product_name,
+                        lot_id=row.lot_id,
+                        location_id=row.from_location_id,
+                        from_location_id=row.from_location_id,
+                        to_location_id=row.to_location_id,
+                        doc_type="transfer",
+                        doc_id=row.transfer_doc_id,
+                        details=f"transfer_status={row.transfer_status}",
+                    )
+                )
+            if row.received_at:
+                events.append(
+                    schemas.ProductItemLogOut(
+                        event_time=row.received_at,
+                        event_type="transfer_received",
+                        product_item_id=row.product_item_id,
+                        product_item_qr_code=row.product_item_qr_code,
+                        product_id=row.product_id,
+                        product_name=row.product_name,
+                        lot_id=row.lot_id,
+                        location_id=row.to_location_id,
+                        from_location_id=row.from_location_id,
+                        to_location_id=row.to_location_id,
+                        doc_type="transfer",
+                        doc_id=row.transfer_doc_id,
+                        details=f"transfer_status={row.transfer_status}",
+                    )
+                )
+            if row.transfer_item_state == "removed":
+                events.append(
+                    schemas.ProductItemLogOut(
+                        event_time=row.updated_at,
+                        event_type="transfer_removed",
+                        product_item_id=row.product_item_id,
+                        product_item_qr_code=row.product_item_qr_code,
+                        product_id=row.product_id,
+                        product_name=row.product_name,
+                        lot_id=row.lot_id,
+                        from_location_id=row.from_location_id,
+                        to_location_id=row.to_location_id,
+                        doc_type="transfer",
+                        doc_id=row.transfer_doc_id,
+                        details=f"transfer_status={row.transfer_status}",
+                    )
+                )
+
+        # Terminal status events (sold/lost/damaged/voided).
+        status_query = (
+            db.query(
+                ProductItem.id.label("product_item_id"),
+                ProductItem.qr_code.label("product_item_qr_code"),
+                ProductItem.product_id,
+                Product.name.label("product_name"),
+                ProductItem.lot_id,
+                ProductItem.status,
+                ProductItem.location_id,
+                ProductItem.updated_at.label("event_time"),
+                ProductItem.lost_doc_type,
+                ProductItem.lost_doc_id,
+                ProductItem.lost_reason,
+            )
+            .join(Product, Product.id == ProductItem.product_id)
+            .filter(ProductItem.status.in_(["sold", "lost", "damaged", "voided"]))
+        )
+        if query.product_item_id is not None:
+            status_query = status_query.filter(ProductItem.id == query.product_item_id)
+        if query.product_id is not None:
+            status_query = status_query.filter(ProductItem.product_id == query.product_id)
+        if query.location_id is not None:
+            status_query = status_query.filter(ProductItem.location_id == query.location_id)
+        status_rows = status_query.order_by(ProductItem.updated_at.desc(), ProductItem.id.desc()).limit(query_window).all()
+        for row in status_rows:
+            events.append(
+                schemas.ProductItemLogOut(
+                    event_time=row.event_time,
+                    event_type=f"status_{row.status}",
+                    product_item_id=row.product_item_id,
+                    product_item_qr_code=row.product_item_qr_code,
+                    product_id=row.product_id,
+                    product_name=row.product_name,
+                    lot_id=row.lot_id,
+                    location_id=row.location_id,
+                    doc_type=row.lost_doc_type,
+                    doc_id=row.lost_doc_id,
+                    details=row.lost_reason,
+                )
+            )
+
+        date_from = self._to_naive(query.date_from)
+        date_to = self._to_naive(query.date_to)
+        if date_from:
+            events = [event for event in events if event.event_time >= date_from]
+        if date_to:
+            events = [event for event in events if event.event_time <= date_to]
+        if query.event_type:
+            events = [event for event in events if event.event_type == query.event_type]
+        if query.location_id is not None:
+            events = [
+                event
+                for event in events
+                if event.location_id == query.location_id
+                or event.from_location_id == query.location_id
+                or event.to_location_id == query.location_id
+            ]
+
+        events.sort(key=lambda event: event.event_time, reverse=True)
+        return events[query.offset : query.offset + query.limit]
+
+    @staticmethod
+    def _to_naive(value: Optional[datetime]) -> Optional[datetime]:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 class ScanQrHandler:

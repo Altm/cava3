@@ -12,6 +12,9 @@ from app.models.models import (
     ProductItem,
     Stock,
     Box,
+    Terminal,
+    SaleEvent,
+    SaleLine,
 )
 from app.services.serial_receipts import ReceiptService
 from app.services.serial_boxes import BoxService
@@ -228,7 +231,83 @@ def test_product_item_history_contains_transfer_and_summary(db_session):
     assert history.summary.product_item_id == item.id
     assert history.summary.product_id == product.id
     assert history.transfers
-    assert history.transfers[0].transfer_doc_id == doc.id
+    assert any(row.event_type == "receipt" and row.doc_type == "receipt" for row in history.transfers)
+    assert any(row.event_type == "transfer" and row.transfer_doc_id == doc.id for row in history.transfers)
+
+
+def test_product_item_history_contains_sale_event_description(db_session):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, _bar = _seed_locations(db_session)
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("1"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+
+    item = db_session.query(ProductItem).first()
+    item.status = "sold"
+    db_session.flush()
+
+    history = get_product_item_history(item.id, user=None, db=db_session)
+    sale_rows = [row for row in history.transfers if row.event_type == "sale"]
+    assert sale_rows
+    assert all((row.event_description or "").startswith("Продажа") for row in sale_rows)
+
+
+def test_product_item_history_links_sale_event_by_resolved_item_id(db_session):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, _bar = _seed_locations(db_session)
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("1"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+    item = db_session.query(ProductItem).first()
+
+    terminal = Terminal(terminal_id="TERM-1", location_id=wh.id, secret_hash="hash", status="active")
+    db_session.add(terminal)
+    db_session.flush()
+
+    sale = SaleEvent(
+        event_id="evt-1",
+        sale_id=101,
+        user_id=22,
+        terminal_id=terminal.id,
+        location_id=wh.id,
+        status="confirmed",
+        payload={
+            "sale": {
+                "sale_id": 101,
+                "items": [
+                    {
+                        "product_id": product.id,
+                        "quantity": 1,
+                        "price": 10,
+                        "resolved_item_ids": [item.id],
+                    }
+                ],
+            }
+        },
+    )
+    db_session.add(sale)
+    db_session.flush()
+    db_session.add(
+        SaleLine(
+            sale_event_id=sale.id,
+            product_id=product.id,
+            quantity=Decimal("1"),
+            unit_id=base_unit.id,
+            price=Decimal("10"),
+            currency="USD",
+        )
+    )
+    item.status = "sold"
+    db_session.flush()
+
+    history = get_product_item_history(item.id, user=None, db=db_session)
+    assert any(row.event_type == "sale" and row.doc_id == sale.id for row in history.transfers)
 
 
 def test_receipt_auto_box_supports_multiple_box_sizes(db_session):

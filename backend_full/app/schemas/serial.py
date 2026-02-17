@@ -317,11 +317,15 @@ class ProductStockBalanceOut(BaseModel):
 
 
 class ProductItemTransferHistoryOut(BaseModel):
-    transfer_doc_id: int
-    from_location_id: int
-    to_location_id: int
-    transfer_status: str
-    transfer_item_state: str
+    event_type: str = "transfer"
+    event_description: Optional[str] = None
+    doc_type: Optional[str] = None
+    doc_id: Optional[int] = None
+    transfer_doc_id: Optional[int] = None
+    from_location_id: Optional[int] = None
+    to_location_id: Optional[int] = None
+    transfer_status: Optional[str] = None
+    transfer_item_state: Optional[str] = None
     transfer_created_at: datetime
     shipped_at: Optional[datetime] = None
     received_at: Optional[datetime] = None
@@ -345,6 +349,22 @@ class ProductItemHistoryOut(BaseModel):
     summary: ProductItemHistorySummaryOut
     stock_balances: List[ProductStockBalanceOut] = Field(default_factory=list)
     transfers: List[ProductItemTransferHistoryOut] = Field(default_factory=list)
+
+
+class ProductItemLogOut(BaseModel):
+    event_time: datetime
+    event_type: str
+    product_item_id: int
+    product_item_qr_code: str
+    product_id: int
+    product_name: str
+    lot_id: int
+    location_id: Optional[int] = None
+    from_location_id: Optional[int] = None
+    to_location_id: Optional[int] = None
+    doc_type: Optional[str] = None
+    doc_id: Optional[int] = None
+    details: Optional[str] = None
 
 
 class ScanOut(BaseModel):

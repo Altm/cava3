@@ -1,6 +1,9 @@
 <template>
   <div class="page">
-    <h2>Список единиц (QR)</h2>
+    <div class="page-head">
+      <h2>Список единиц (QR)</h2>
+      <RouterLink class="btn btn-outline" to="/serial/scan/items-log">Общий лог item</RouterLink>
+    </div>
 
     <div class="card">
       <div class="form-row">
@@ -211,6 +214,13 @@ watch(
 <style scoped>
 .page {
   padding: 20px;
+}
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 .card {
   border: 1px solid #ddd;

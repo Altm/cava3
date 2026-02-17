@@ -137,6 +137,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/serial/scan/items-log',
+      name: 'SerialItemsLog',
+      component: () => import('@/views/SerialItemsLogView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/serial/boxes/manage',
       name: 'SerialBoxesManage',
       component: () => import('@/views/SerialBoxesManageView.vue'),
