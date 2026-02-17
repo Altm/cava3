@@ -179,6 +179,34 @@ export interface SaleListItem {
   confirmedAt?: string | null
 }
 
+export interface SaleDetailLine {
+  id: number
+  productId: number
+  productName: string
+  productSku?: string | null
+  quantity: string
+  unitId: number
+  unitCode: string
+  currency: string
+  lineTotalAmount: string
+}
+
+export interface SaleDetail {
+  id: number
+  saleId?: number | null
+  eventId: string
+  status: string
+  terminalId?: string | null
+  locationId: number
+  locationName?: string | null
+  userId?: number | null
+  totalAmount: string
+  createdAt: string
+  confirmedAt?: string | null
+  payload: Record<string, any>
+  lines: SaleDetailLine[]
+}
+
 // Define the attribute structure as it comes from the API after snakeToCamel conversion
 export interface ProductAttribute {
   productAttributeId: number;
@@ -469,6 +497,16 @@ async updateProduct(id: number, data: ProductForm) {
     const query = queryParams.toString()
     const url = query ? `/sales/list?${query}` : '/sales/list'
     const res = await api.get<SaleListItem[]>(url)
+    return res.data
+  },
+
+  async getSale(id: number): Promise<SaleDetail> {
+    const res = await api.get<SaleDetail>(`/sales/${id}`)
+    return res.data
+  },
+
+  async confirmSale(id: number): Promise<SaleDetail> {
+    const res = await api.post<SaleDetail>(`/sales/${id}/confirm`)
     return res.data
   },
 

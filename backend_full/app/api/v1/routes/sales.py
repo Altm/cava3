@@ -1,8 +1,10 @@
+import json
 from typing import Callable
 
 from fastapi import APIRouter, Depends, Header, Request
 
 from app.api.v1.deps.uow import get_uow_factory
+from app.audit.context import reset_audit_user_id, set_audit_user_id
 from app.application.common import dispatch_command, dispatch_query
 from app.application.common.uow import AbstractUnitOfWork
 from app.application.sales.handlers import (
@@ -21,6 +23,38 @@ from app.application.sales.handlers import (
 router = APIRouter(prefix="/sales", tags=["sales"])
 
 
+def _to_int(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_user_id(payload: dict | None) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    direct = _to_int(payload.get("user_id"))
+    if direct is not None:
+        return direct
+
+    sales = payload.get("sales")
+    if isinstance(sales, list):
+        for sale in sales:
+            if isinstance(sale, dict):
+                nested = _to_int(sale.get("user_id"))
+                if nested is not None:
+                    return nested
+
+    events = payload.get("events")
+    if isinstance(events, list):
+        for event in events:
+            if isinstance(event, dict):
+                nested = _to_int(event.get("user_id"))
+                if nested is not None:
+                    return nested
+    return None
+
+
 @router.post("")
 async def submit_sale(
     request: Request,
@@ -31,19 +65,27 @@ async def submit_sale(
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
     body = await request.body()
-    return dispatch_command(
-        uow_factory,
-        SubmitSaleHandler(),
-        SubmitSaleCommand(
-            method=request.method,
-            path=request.url.path,
-            body=body,
-            payload=payload,
-            terminal_id=x_terminal_id,
-            signature=x_signature,
-            timestamp=x_timestamp,
-        ),
-    )
+    extracted_user_id = _extract_user_id(payload)
+    if extracted_user_id is not None:
+        request.state.request_user_id_override = extracted_user_id
+    token = set_audit_user_id(extracted_user_id) if extracted_user_id is not None else None
+    try:
+        return dispatch_command(
+            uow_factory,
+            SubmitSaleHandler(),
+            SubmitSaleCommand(
+                method=request.method,
+                path=request.url.path,
+                body=body,
+                payload=payload,
+                terminal_id=x_terminal_id,
+                signature=x_signature,
+                timestamp=x_timestamp,
+            ),
+        )
+    finally:
+        if token is not None:
+            reset_audit_user_id(token)
 
 
 @router.post("/daily-log")
@@ -56,19 +98,27 @@ async def daily_log(
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
     body = await request.body()
-    return dispatch_command(
-        uow_factory,
-        DailyLogHandler(),
-        DailyLogCommand(
-            method=request.method,
-            path=request.url.path,
-            body=body,
-            payload=payload,
-            terminal_id=x_terminal_id,
-            signature=x_signature,
-            timestamp=x_timestamp,
-        ),
-    )
+    extracted_user_id = _extract_user_id(payload)
+    if extracted_user_id is not None:
+        request.state.request_user_id_override = extracted_user_id
+    token = set_audit_user_id(extracted_user_id) if extracted_user_id is not None else None
+    try:
+        return dispatch_command(
+            uow_factory,
+            DailyLogHandler(),
+            DailyLogCommand(
+                method=request.method,
+                path=request.url.path,
+                body=body,
+                payload=payload,
+                terminal_id=x_terminal_id,
+                signature=x_signature,
+                timestamp=x_timestamp,
+            ),
+        )
+    finally:
+        if token is not None:
+            reset_audit_user_id(token)
 
 
 @router.post("/register-sales-transactions")
@@ -80,18 +130,31 @@ async def register_sales_transactions(
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
     body = await request.body()
-    return dispatch_command(
-        uow_factory,
-        RegisterSalesTransactionsHandler(),
-        RegisterSalesTransactionsCommand(
-            method=request.method,
-            path=request.url.path,
-            body=body,
-            terminal_id=x_terminal_id,
-            signature=x_signature,
-            timestamp=x_timestamp,
-        ),
-    )
+    payload = None
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except Exception:
+        payload = None
+    extracted_user_id = _extract_user_id(payload)
+    if extracted_user_id is not None:
+        request.state.request_user_id_override = extracted_user_id
+    token = set_audit_user_id(extracted_user_id) if extracted_user_id is not None else None
+    try:
+        return dispatch_command(
+            uow_factory,
+            RegisterSalesTransactionsHandler(),
+            RegisterSalesTransactionsCommand(
+                method=request.method,
+                path=request.url.path,
+                body=body,
+                terminal_id=x_terminal_id,
+                signature=x_signature,
+                timestamp=x_timestamp,
+            ),
+        )
+    finally:
+        if token is not None:
+            reset_audit_user_id(token)
 
 
 @router.get("/generate-curl-example")

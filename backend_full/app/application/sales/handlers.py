@@ -111,7 +111,22 @@ class RegisterSalesTransactionsHandler:
             command.timestamp,
         )
         payload = json.loads(command.body.decode())
-        return {"status": "success", "received_data": payload}
+        db = uow.session
+        terminal = db.query(Terminal).filter_by(terminal_id=command.terminal_id).first()
+        if not terminal:
+            raise HTTPException(status_code=401, detail="Unknown terminal")
+
+        settings = get_settings()
+        service = SalesService(db)
+        try:
+            result = service.register_sales_transactions(
+                terminal=terminal,
+                payload=payload,
+                default_status=settings.sales_event_default_status,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return result
 
 
 class GenerateCurlExampleHandler:

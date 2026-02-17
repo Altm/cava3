@@ -6,7 +6,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import structlog
 from jose import jwt, JWTError
 from app.infrastructure.db.session import SessionLocal
-from app.models.models import RequestLog, User
+from app.models.models import RequestLog, Terminal, User
 from app.config import get_settings
 from app.audit.context import set_audit_user_id, reset_audit_user_id
 
@@ -19,12 +19,20 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         structlog.contextvars.bind_contextvars(request_id=request_id)
-        user_id = self._resolve_user_id(request)
+        terminal_public_id = (request.headers.get("X-Terminal-ID") or "").strip() or None
+
+        with SessionLocal() as lookup_session:
+            terminal_id = self._resolve_terminal_id(lookup_session, terminal_public_id)
+            user_id = self._resolve_user_id(lookup_session, request)
+
         audit_user_token = set_audit_user_id(user_id)
         start = time.time()
         try:
             response = await call_next(request)
             duration_ms = int((time.time() - start) * 1000)
+            effective_user_id = getattr(request.state, "request_user_id_override", None)
+            if effective_user_id is None:
+                effective_user_id = user_id
             try:
                 with SessionLocal() as session:
                     log_entry = RequestLog(
@@ -32,8 +40,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                         method=request.method,
                         path=str(request.url.path),
                         status_code=response.status_code,
-                        user_id=user_id,
-                        context={"duration_ms": duration_ms},
+                        user_id=effective_user_id,
+                        terminal_id=terminal_id,
+                        context={
+                            "duration_ms": duration_ms,
+                            "terminal_public_id": terminal_public_id,
+                        },
                     )
                     session.add(log_entry)
                     session.commit()
@@ -44,27 +56,26 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             reset_audit_user_id(audit_user_token)
 
     @staticmethod
-    def _resolve_user_id(request: Request) -> int | None:
+    def _resolve_user_id(session, request: Request) -> int | None:
         auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return None
-        token = auth_header[7:].strip()
-        if not token:
-            return None
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:].strip()
+            if token:
+                settings = get_settings()
+                try:
+                    payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+                    username = payload.get("sub")
+                    if username:
+                        user = session.query(User).filter(User.username == username, User.is_active == True).first()  # noqa: E712
+                        if user:
+                            return user.id
+                except JWTError:
+                    pass
+        return None
 
-        settings = get_settings()
-        try:
-            payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-        except JWTError:
+    @staticmethod
+    def _resolve_terminal_id(session, terminal_public_id: str | None) -> int | None:
+        if not terminal_public_id:
             return None
-
-        username = payload.get("sub")
-        if not username:
-            return None
-
-        try:
-            with SessionLocal() as session:
-                user = session.query(User).filter(User.username == username, User.is_active == True).first()  # noqa: E712
-                return user.id if user else None
-        except Exception:
-            return None
+        terminal = session.query(Terminal).filter(Terminal.terminal_id == terminal_public_id).first()
+        return terminal.id if terminal else None

@@ -66,6 +66,7 @@
               <th>Сумма</th>
               <th>Создано</th>
               <th>Подтверждено</th>
+              <th>Действия</th>
             </tr>
           </thead>
           <tbody>
@@ -80,12 +81,15 @@
               <td>{{ row.totalAmount }}</td>
               <td>{{ formatDate(row.createdAt) }}</td>
               <td>{{ formatDate(row.confirmedAt) }}</td>
+              <td>
+                <RouterLink class="btn btn-outline" :to="`/sales/view/${row.id}`">Просмотр</RouterLink>
+              </td>
             </tr>
             <tr v-if="!rows.length && !loading">
-              <td colspan="10">Нет данных</td>
+              <td colspan="11">Нет данных</td>
             </tr>
             <tr v-if="loading">
-              <td colspan="10">Загрузка...</td>
+              <td colspan="11">Загрузка...</td>
             </tr>
           </tbody>
         </table>

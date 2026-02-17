@@ -49,6 +49,10 @@ from app.application.simple_catalog.products import (
     UploadProductImageHandler,
 )
 from app.application.simple_catalog.sales import (
+    ConfirmSaleCommand,
+    ConfirmSaleHandler,
+    GetSaleHandler,
+    GetSaleQuery,
     ListSalesHandler,
     ListSalesQuery,
     SaleCheckoutCommand,
@@ -360,6 +364,32 @@ def get_sales_list(
             date_to=date_to,
             limit=limit,
         ),
+    )
+
+
+@router.get("/sales/{sale_event_id}", response_model=schemas.SaleDetailOut)
+def get_sale(
+    sale_event_id: int,
+    user=Depends(PermissionChecker(["sale.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    return dispatch_query(
+        uow_factory,
+        GetSaleHandler(),
+        GetSaleQuery(sale_event_id=sale_event_id),
+    )
+
+
+@router.post("/sales/{sale_event_id}/confirm", response_model=schemas.SaleDetailOut)
+def confirm_sale(
+    sale_event_id: int,
+    user=Depends(PermissionChecker(["sale.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    return dispatch_command(
+        uow_factory,
+        ConfirmSaleHandler(),
+        ConfirmSaleCommand(sale_event_id=sale_event_id),
     )
 
 

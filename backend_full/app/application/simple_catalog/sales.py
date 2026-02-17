@@ -5,7 +5,6 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_DOWN
-from uuid import uuid4
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
@@ -37,6 +36,16 @@ class ListSalesQuery:
     date_from: datetime | None
     date_to: datetime | None
     limit: int
+
+
+@dataclass(frozen=True)
+class GetSaleQuery:
+    sale_event_id: int
+
+
+@dataclass(frozen=True)
+class ConfirmSaleCommand:
+    sale_event_id: int
 
 
 @dataclass(frozen=True)
@@ -115,17 +124,16 @@ class ListSalesHandler:
         result: list[schemas.SaleListItemOut] = []
         for sale_event, terminal_public_id, location_name in rows:
             lines_count, total_amount = totals_by_event_id.get(sale_event.id, (0, Decimal("0")))
-            parsed_sale_id, parsed_user_id = self._extract_sale_payload_meta(sale_event.payload)
             result.append(
                 schemas.SaleListItemOut(
                     id=sale_event.id,
-                    sale_id=parsed_sale_id,
+                    sale_id=sale_event.sale_id,
                     event_id=sale_event.event_id,
                     status=sale_event.status,
                     terminal_id=terminal_public_id,
                     location_id=sale_event.location_id,
                     location_name=location_name,
-                    user_id=parsed_user_id,
+                    user_id=sale_event.user_id,
                     lines_count=lines_count,
                     total_amount=total_amount.quantize(Decimal("0.01")),
                     created_at=sale_event.created_at,
@@ -135,29 +143,89 @@ class ListSalesHandler:
         return result
 
     @staticmethod
-    def _extract_sale_payload_meta(payload: dict | None) -> tuple[int | None, int | None]:
-        if not isinstance(payload, dict):
-            return None, None
-        sales = payload.get("sales")
-        if not isinstance(sales, list) or not sales:
-            return None, None
-        first_sale = sales[0]
-        if not isinstance(first_sale, dict):
-            return None, None
-        return ListSalesHandler._to_int(first_sale.get("sale_id")), ListSalesHandler._to_int(first_sale.get("user_id"))
-
-    @staticmethod
-    def _to_int(value) -> int | None:
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-
-    @staticmethod
     def _as_naive_utc(value: datetime) -> datetime:
         if value.tzinfo is None:
             return value
         return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+class GetSaleHandler:
+    def handle(self, query: GetSaleQuery, uow: AbstractUnitOfWork) -> schemas.SaleDetailOut:
+        db = uow.session
+        row = (
+            db.query(
+                models.SaleEvent,
+                models.Terminal.terminal_id.label("terminal_public_id"),
+                models.Location.name.label("location_name"),
+            )
+            .join(models.Terminal, models.Terminal.id == models.SaleEvent.terminal_id)
+            .join(models.Location, models.Location.id == models.SaleEvent.location_id)
+            .filter(models.SaleEvent.id == query.sale_event_id)
+            .first()
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Sale not found")
+        sale_event, terminal_public_id, location_name = row
+
+        lines_rows = (
+            db.query(
+                models.SaleLine,
+                models.Product.name.label("product_name"),
+                models.Product.sku.label("product_sku"),
+                models.Unit.code.label("unit_code"),
+            )
+            .join(models.Product, models.Product.id == models.SaleLine.product_id)
+            .join(models.Unit, models.Unit.id == models.SaleLine.unit_id)
+            .filter(models.SaleLine.sale_event_id == sale_event.id)
+            .order_by(models.SaleLine.id.asc())
+            .all()
+        )
+        detail_lines: list[schemas.SaleDetailLineOut] = []
+        total_amount = Decimal("0")
+        for sale_line, product_name, product_sku, unit_code in lines_rows:
+            line_total = Decimal(str(sale_line.price or 0)).quantize(Decimal("0.01"))
+            total_amount += line_total
+            detail_lines.append(
+                schemas.SaleDetailLineOut(
+                    id=sale_line.id,
+                    product_id=sale_line.product_id,
+                    product_name=product_name,
+                    product_sku=product_sku,
+                    quantity=Decimal(str(sale_line.quantity)),
+                    unit_id=sale_line.unit_id,
+                    unit_code=unit_code,
+                    currency=sale_line.currency,
+                    line_total_amount=line_total,
+                )
+            )
+
+        return schemas.SaleDetailOut(
+            id=sale_event.id,
+            sale_id=sale_event.sale_id,
+            event_id=sale_event.event_id,
+            status=sale_event.status,
+            terminal_id=terminal_public_id,
+            location_id=sale_event.location_id,
+            location_name=location_name,
+            user_id=sale_event.user_id,
+            total_amount=total_amount.quantize(Decimal("0.01")),
+            created_at=sale_event.created_at,
+            confirmed_at=sale_event.confirmed_at,
+            payload=sale_event.payload if isinstance(sale_event.payload, dict) else {},
+            lines=detail_lines,
+        )
+
+
+class ConfirmSaleHandler:
+    def handle(self, command: ConfirmSaleCommand, uow: AbstractUnitOfWork) -> schemas.SaleDetailOut:
+        db = uow.session
+        sale_event = db.query(models.SaleEvent).filter(models.SaleEvent.id == command.sale_event_id).first()
+        if not sale_event:
+            raise HTTPException(status_code=404, detail="Sale not found")
+        if sale_event.status != "confirmed":
+            sale_event.status = "confirmed"
+            sale_event.confirmed_at = datetime.utcnow()
+        return GetSaleHandler().handle(GetSaleQuery(sale_event_id=sale_event.id), uow)
 
 
 class SalesCheckoutHandler:
@@ -240,14 +308,6 @@ class SalesCheckoutHandler:
             terminal=terminal,
             payload=register_payload,
         )
-        self._persist_sale_event(
-            db=db,
-            sale_id=sale_id,
-            terminal=terminal,
-            sold_at=now_utc,
-            payload=register_payload,
-            lines=resolved_lines,
-        )
 
         return schemas.SaleCheckoutOut(
             sale_id=sale_id,
@@ -272,38 +332,6 @@ class SalesCheckoutHandler:
             register_payload=register_payload,
             register_response=register_response,
         )
-
-    @staticmethod
-    def _persist_sale_event(
-        *,
-        db: Session,
-        sale_id: int,
-        terminal: models.Terminal,
-        sold_at: datetime,
-        payload: dict,
-        lines: list[_ResolvedLine],
-    ) -> None:
-        sale_event = models.SaleEvent(
-            event_id=f"checkout:{sale_id}:{uuid4()}",
-            terminal_id=terminal.id,
-            location_id=terminal.location_id,
-            payload=payload,
-            status="confirmed",
-            confirmed_at=sold_at,
-        )
-        db.add(sale_event)
-        db.flush()
-        for line in lines:
-            db.add(
-                models.SaleLine(
-                    sale_event_id=sale_event.id,
-                    product_id=line.product.id,
-                    quantity=line.quantity,
-                    unit_id=line.unit_id,
-                    currency="USD",
-                    price=line.total_price,
-                )
-            )
 
     def _handle_product_line(
         self,
@@ -332,7 +360,41 @@ class SalesCheckoutHandler:
                 limit=qty_base_int,
             )
             if len(items) < qty_base_int:
-                raise HTTPException(status_code=409, detail="Insufficient serialized stock")
+                available = self._count_sellable_items(
+                    db=db,
+                    location_id=terminal.location_id,
+                    product_id=product.id,
+                )
+                if available == 0 and self.settings.sales_allow_aggregate_fallback_for_serial:
+                    stock_service.adjust_stock(
+                        location_id=terminal.location_id,
+                        product_id=product.id,
+                        quantity=-quantity,
+                        unit_id=unit_id,
+                    )
+                    sold_item_ids = []
+                    unit_price = self._resolve_unit_price(
+                        db=db,
+                        location_id=terminal.location_id,
+                        product=product,
+                        unit_id=unit_id,
+                        ratio_to_base=ratio_to_base,
+                    )
+                    total_price = (unit_price * quantity).quantize(Decimal("0.01"))
+                    return _ResolvedLine(
+                        kind="product",
+                        product=product,
+                        quantity=quantity,
+                        unit_id=unit.id,
+                        unit_code=unit.code,
+                        unit_price=unit_price,
+                        total_price=total_price,
+                        resolved_item_ids=sold_item_ids,
+                    )
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Insufficient serialized stock: requested={qty_base_int}, available={available}",
+                )
             sold_item_ids: list[int] = []
             for item in items:
                 self._sell_item(serial_stock, terminal.location_id, item, adjust_stock=True)
@@ -634,7 +696,7 @@ class SalesCheckoutHandler:
                 {
                     "sale_id": sale_id,
                     "terminal_id": terminal_id,
-                    "user_id": user_id or 0,
+                    "user_id": user_id,
                     "timestamp": sold_at.isoformat().replace("+00:00", "Z"),
                     "items": sale_items,
                 }
@@ -712,7 +774,7 @@ class SalesCheckoutHandler:
                 models.ProductItem.product_id == product_id,
                 models.ProductItem.status == "in_stock",
                 models.ProductItem.reserved_transfer_doc_id.is_(None),
-                models.Receipt.status == "posted",
+                models.Receipt.status != "void",
                 or_(
                     models.ProductItemPour.product_item_id.is_(None),
                     models.ProductItemPour.glasses_sold == 0,
@@ -734,13 +796,33 @@ class SalesCheckoutHandler:
                 models.ProductItem.product_id == product_id,
                 models.ProductItem.status == "in_stock",
                 models.ProductItem.reserved_transfer_doc_id.is_(None),
-                models.Receipt.status == "posted",
+                models.Receipt.status != "void",
             )
             .order_by(models.StockLot.received_at.asc(), models.ProductItem.created_at.asc(), models.ProductItem.id.asc())
             .limit(1)
         )
         query_builder = self._with_row_lock(query_builder, skip_locked=True)
         return query_builder.first()
+
+    def _count_sellable_items(self, *, db: Session, location_id: int, product_id: int) -> int:
+        return (
+            db.query(models.ProductItem.id)
+            .join(models.StockLot, models.StockLot.id == models.ProductItem.lot_id)
+            .join(models.Receipt, models.Receipt.id == models.StockLot.receipt_id)
+            .outerjoin(models.ProductItemPour, models.ProductItemPour.product_item_id == models.ProductItem.id)
+            .filter(
+                models.ProductItem.location_id == location_id,
+                models.ProductItem.product_id == product_id,
+                models.ProductItem.status == "in_stock",
+                models.ProductItem.reserved_transfer_doc_id.is_(None),
+                models.Receipt.status != "void",
+                or_(
+                    models.ProductItemPour.product_item_id.is_(None),
+                    models.ProductItemPour.glasses_sold == 0,
+                ),
+            )
+            .count()
+        )
 
     def _consume_glasses_from_item(
         self,

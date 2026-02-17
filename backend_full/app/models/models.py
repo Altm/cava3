@@ -4,6 +4,7 @@ from typing import Optional
 from uuid import UUID, uuid4
 from sqlalchemy import (
     Boolean,
+    BigInteger,
     CheckConstraint,
     Column,
     DateTime,
@@ -320,6 +321,8 @@ class SaleEvent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[str] = mapped_column(String(128), unique=True, comment="Idempotency key for sales")
+    sale_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, comment="External sale identifier from request")
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="External operator/user identifier from request")
     terminal_id: Mapped[int] = mapped_column(ForeignKey("terminal.id"), comment="Terminal reference")
     location_id: Mapped[int] = mapped_column(ForeignKey("location.id"), comment="Location reference")
     payload: Mapped[dict] = mapped_column(JSON, comment="Original payload for audit")

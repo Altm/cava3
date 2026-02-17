@@ -277,4 +277,32 @@ class SaleListItemOut(BaseModel):
     confirmed_at: Optional[datetime] = None
 
 
+class SaleDetailLineOut(BaseModel):
+    id: int
+    product_id: int
+    product_name: str
+    product_sku: Optional[str] = None
+    quantity: Decimal
+    unit_id: int
+    unit_code: str
+    currency: str
+    line_total_amount: Decimal
+
+
+class SaleDetailOut(BaseModel):
+    id: int
+    sale_id: Optional[int] = None
+    event_id: str
+    status: str
+    terminal_id: Optional[str] = None
+    location_id: int
+    location_name: Optional[str] = None
+    user_id: Optional[int] = None
+    total_amount: Decimal
+    created_at: datetime
+    confirmed_at: Optional[datetime] = None
+    payload: Dict[str, Any]
+    lines: List[SaleDetailLineOut] = []
+
+
 ProductComponentTreeNode.model_rebuild()
