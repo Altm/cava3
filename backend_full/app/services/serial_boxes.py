@@ -44,7 +44,7 @@ class BoxService:
             raise HTTPException(status_code=409, detail="Box is not active")
         # Session in tests uses autoflush=False; ensure box membership updates are persisted.
         self.db.flush()
-        if not box.items:
+        if int(box.quantity or 0) <= 0:
             raise HTTPException(status_code=422, detail="Cannot seal empty box")
         box.sealed = True
         return box

@@ -37,6 +37,11 @@ class GetInventoryExpectedQuery:
 
 
 @dataclass(frozen=True)
+class GetInventoryResultQuery:
+    inventory_doc_id: int
+
+
+@dataclass(frozen=True)
 class StartInventoryCommand:
     inventory_doc_id: int
 
@@ -199,6 +204,101 @@ class GetInventoryExpectedHandler:
             remaining_expected_count=len(rows),
             boxes=boxes,
             single_items=single_items,
+        )
+
+
+class GetInventoryResultHandler:
+    def handle(self, query: GetInventoryResultQuery, uow: AbstractUnitOfWork) -> schemas.InventoryResultOut:
+        db = uow.session
+        doc = db.query(InventoryDoc).filter(InventoryDoc.id == query.inventory_doc_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Inventory doc not found")
+        if doc.status != "closed":
+            raise HTTPException(status_code=409, detail="Inventory result is available only for closed docs")
+
+        rows = (
+            db.query(
+                InventoryItem.state.label("inventory_state"),
+                ProductItem.id.label("product_item_id"),
+                ProductItem.qr_code.label("product_item_qr_code"),
+                ProductItem.product_id,
+                Product.name.label("product_name"),
+                ProductItem.box_id,
+                Box.qr_code.label("box_qr_code"),
+            )
+            .join(ProductItem, ProductItem.id == InventoryItem.product_item_id)
+            .join(Product, Product.id == ProductItem.product_id)
+            .outerjoin(Box, Box.id == ProductItem.box_id)
+            .filter(
+                InventoryItem.inventory_doc_id == doc.id,
+                InventoryItem.state.in_(("scanned", "missing")),
+            )
+            .order_by(InventoryItem.id.asc())
+            .all()
+        )
+
+        accounted_items: list[schemas.InventoryResultItemOut] = []
+        unaccounted_items: list[schemas.InventoryResultItemOut] = []
+        box_stats: dict[int, dict] = {}
+
+        for row in rows:
+            item = schemas.InventoryResultItemOut(
+                product_item_id=row.product_item_id,
+                product_item_qr_code=row.product_item_qr_code,
+                product_id=row.product_id,
+                product_name=row.product_name,
+                box_id=row.box_id,
+                box_qr_code=row.box_qr_code,
+            )
+            if row.inventory_state == "scanned":
+                accounted_items.append(item)
+            elif row.inventory_state == "missing":
+                unaccounted_items.append(item)
+
+            if row.box_id is None:
+                continue
+            if row.box_id not in box_stats:
+                box_stats[row.box_id] = {
+                    "box_qr_code": row.box_qr_code or "",
+                    "counted_items": 0,
+                    "missing_items": 0,
+                }
+            if row.inventory_state == "scanned":
+                box_stats[row.box_id]["counted_items"] += 1
+            elif row.inventory_state == "missing":
+                box_stats[row.box_id]["missing_items"] += 1
+
+        accounted_boxes: list[schemas.InventoryResultBoxOut] = []
+        unaccounted_boxes: list[schemas.InventoryResultBoxOut] = []
+        for box_id, info in box_stats.items():
+            counted_items = int(info["counted_items"])
+            missing_items = int(info["missing_items"])
+            total_items = counted_items + missing_items
+            box_row = schemas.InventoryResultBoxOut(
+                box_id=box_id,
+                box_qr_code=str(info["box_qr_code"]),
+                status="accounted" if missing_items == 0 and counted_items > 0 else "partial" if counted_items > 0 else "missing",
+                counted_items=counted_items,
+                missing_items=missing_items,
+                total_items=total_items,
+            )
+            if box_row.status == "accounted":
+                accounted_boxes.append(box_row)
+            else:
+                unaccounted_boxes.append(box_row)
+
+        accounted_items.sort(key=lambda row: row.product_item_id)
+        unaccounted_items.sort(key=lambda row: row.product_item_id)
+        accounted_boxes.sort(key=lambda row: row.box_id)
+        unaccounted_boxes.sort(key=lambda row: row.box_id)
+        return schemas.InventoryResultOut(
+            inventory_doc_id=doc.id,
+            location_id=doc.location_id,
+            status=doc.status,
+            accounted_items=accounted_items,
+            unaccounted_items=unaccounted_items,
+            accounted_boxes=accounted_boxes,
+            unaccounted_boxes=unaccounted_boxes,
         )
 
 

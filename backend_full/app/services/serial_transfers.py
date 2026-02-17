@@ -523,6 +523,10 @@ class TransferService:
         item.status = "in_stock"
         item.reserved_transfer_doc_id = None
         item.reserved_at = None
+        if item.box_id is not None:
+            box = self.db.query(Box).get(item.box_id)
+            if box and box.location_id != doc.to_location_id:
+                box.location_id = doc.to_location_id
         ti.received_at = now
         # aggregated stock: bar availability increases on receipt
         self.stock.adjust_base_units(doc.to_location_id, item.product_id, 1)

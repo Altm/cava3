@@ -20,8 +20,15 @@ from app.services.serial_receipts import ReceiptService
 from app.services.serial_boxes import BoxService
 from app.services.serial_transfers import TransferService
 from app.services.serial_inventories import InventoryService
-from app.application.serial.inventories import GetInventoryExpectedHandler, GetInventoryExpectedQuery
+from app.application.simple_catalog.sales import SaleCheckoutCommand, SalesCheckoutHandler
+from app.application.serial.inventories import (
+    GetInventoryExpectedHandler,
+    GetInventoryExpectedQuery,
+    GetInventoryResultHandler,
+    GetInventoryResultQuery,
+)
 from app.infrastructure.db.uow import BoundSessionUnitOfWork
+from app.schemas import simple as simple_schemas
 from app.api.v1.routes.transfers_serial import list_transfer_items
 from app.api.v1.routes.scan import get_product_item_history
 from app.api.v1.routes.receipts import get_receipt_items
@@ -263,6 +270,219 @@ def test_inventory_expected_list_hides_scanned_items(db_session):
     assert payload.boxes == []
     assert len(payload.single_items) == 1
     assert payload.single_items[0].product_item_id == items[2].id
+
+
+def test_inventory_scan_open_box_marks_expected_items_scanned(db_session):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, _bar = _seed_locations(db_session)
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("2"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+    items = db_session.query(ProductItem).order_by(ProductItem.id.asc()).all()
+
+    bs = BoxService(db_session)
+    box = bs.create(product_id=product.id, lot_id=items[0].lot_id, location_id=wh.id, sealed=False)
+    bs.add_item_by_qr(box.id, items[0].qr_code)
+    bs.add_item_by_qr(box.id, items[1].qr_code)
+
+    inv = InventoryService(db_session)
+    doc = inv.create(location_id=wh.id)
+    inv.start(doc.id)
+
+    scan_res = inv.scan(doc.id, box.qr_code)
+    assert scan_res["scanned_in_box"] == 2
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        payload = GetInventoryExpectedHandler().handle(GetInventoryExpectedQuery(inventory_doc_id=doc.id), uow)
+
+    assert payload.remaining_expected_count == 0
+    assert payload.boxes == []
+    assert payload.single_items == []
+
+
+def test_sales_checkout_sells_fifo_items_and_reduces_stock(db_session, monkeypatch):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, _bar = _seed_locations(db_session)
+
+    product.base_cost = Decimal("15.00")
+    db_session.flush()
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("3"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+    items = db_session.query(ProductItem).order_by(ProductItem.id.asc()).all()
+
+    terminal = Terminal(terminal_id="T-1", location_id=wh.id, secret_hash="secret", status="active")
+    db_session.add(terminal)
+    db_session.flush()
+
+    def _fake_send_register_request(self, *, db, terminal, payload):
+        return {"status": "ok", "received_sales_count": len(payload.get("sales", []))}
+
+    monkeypatch.setattr(SalesCheckoutHandler, "_send_register_transactions_request", _fake_send_register_request)
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        result = SalesCheckoutHandler().handle(
+            SaleCheckoutCommand(
+                payload=simple_schemas.SaleCheckoutRequest(
+                    lines=[
+                        simple_schemas.SaleCheckoutLineIn(
+                            kind="product",
+                            product_id=product.id,
+                            quantity=Decimal("2"),
+                            unit_id=base_unit.id,
+                        )
+                    ]
+                ),
+                user_id=77,
+            ),
+            uow,
+        )
+
+    assert result.lines
+    assert result.lines[0].resolved_item_ids == [items[0].id, items[1].id]
+    assert result.lines[0].quantity == Decimal("2")
+    assert result.register_response["status"] == "ok"
+
+    updated = db_session.query(ProductItem).order_by(ProductItem.id.asc()).all()
+    assert updated[0].status == "sold"
+    assert updated[1].status == "sold"
+    assert updated[2].status == "in_stock"
+
+    stock = db_session.query(Stock).filter_by(location_id=wh.id, product_id=product.id).first()
+    assert stock is not None
+    assert Decimal(stock.quantity) == Decimal("1")
+
+
+def test_inventory_close_write_off_sets_lost_metadata(db_session):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, _bar = _seed_locations(db_session)
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("2"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+
+    inv = InventoryService(db_session)
+    doc = inv.create(location_id=wh.id)
+    inv.start(doc.id)
+    close_res = inv.close(doc.id)
+    assert close_res["missing"] == 2
+
+    items = db_session.query(ProductItem).order_by(ProductItem.id.asc()).all()
+    assert {row.status for row in items} == {"lost"}
+    assert {row.lost_reason for row in items} == {"missing_inventory"}
+    assert {row.lost_doc_type for row in items} == {"inventory"}
+    assert {row.lost_doc_id for row in items} == {doc.id}
+
+    stock = db_session.query(Stock).filter_by(location_id=wh.id, product_id=product.id).first()
+    assert stock is not None
+    assert Decimal(stock.quantity) == Decimal("0")
+
+
+def test_inventory_result_closed_contains_accounted_and_unaccounted_lists(db_session):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, _bar = _seed_locations(db_session)
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("2"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+    items = db_session.query(ProductItem).order_by(ProductItem.id.asc()).all()
+
+    bs = BoxService(db_session)
+    box = bs.create(product_id=product.id, lot_id=items[0].lot_id, location_id=wh.id, sealed=False)
+    bs.add_item_by_qr(box.id, items[0].qr_code)
+    bs.add_item_by_qr(box.id, items[1].qr_code)
+    bs.seal_box(box.id)
+
+    inv = InventoryService(db_session)
+    doc = inv.create(location_id=wh.id)
+    inv.start(doc.id)
+    inv.scan(doc.id, items[0].qr_code)
+    inv.close(doc.id)
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        result = GetInventoryResultHandler().handle(GetInventoryResultQuery(inventory_doc_id=doc.id), uow)
+
+    assert result.inventory_doc_id == doc.id
+    assert len(result.accounted_items) == 1
+    assert len(result.unaccounted_items) == 1
+    assert result.accounted_items[0].product_item_qr_code == items[0].qr_code
+    assert result.unaccounted_items[0].product_item_qr_code == items[1].qr_code
+    assert len(result.unaccounted_boxes) == 1
+    assert result.unaccounted_boxes[0].box_qr_code == box.qr_code
+    assert result.unaccounted_boxes[0].status == "partial"
+    assert result.unaccounted_boxes[0].counted_items == 1
+    assert result.unaccounted_boxes[0].missing_items == 1
+
+
+def test_inventory_scan_box_repairs_stale_box_location(db_session):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, bar = _seed_locations(db_session)
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("1"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+    item = db_session.query(ProductItem).first()
+
+    bs = BoxService(db_session)
+    box = bs.create(product_id=product.id, lot_id=item.lot_id, location_id=wh.id, sealed=False)
+    bs.add_item_by_qr(box.id, item.qr_code)
+    bs.seal_box(box.id)
+
+    # simulate stale location mismatch: item already in bar, box still points to warehouse
+    item.location_id = bar.id
+    item.status = "in_stock"
+    box.location_id = wh.id
+    db_session.flush()
+
+    inv = InventoryService(db_session)
+    doc = inv.create(location_id=bar.id)
+    inv.start(doc.id)
+    scan_res = inv.scan(doc.id, box.qr_code)
+    assert scan_res["scanned_in_box"] == 1
+    assert box.location_id == bar.id
+
+
+def test_transfer_receive_item_updates_box_location(db_session):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, bar = _seed_locations(db_session)
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("2"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+    items = db_session.query(ProductItem).order_by(ProductItem.id.asc()).all()
+
+    bs = BoxService(db_session)
+    box = bs.create(product_id=product.id, lot_id=items[0].lot_id, location_id=wh.id, sealed=False)
+    bs.add_item_by_qr(box.id, items[0].qr_code)
+    bs.add_item_by_qr(box.id, items[1].qr_code)
+    bs.seal_box(box.id)
+
+    ts = TransferService(db_session)
+    doc = ts.create(from_location_id=wh.id, to_location_id=bar.id)
+    ts.plan_fifo(doc.id, product.id, qty_base=2)
+    ts.scan(doc.id, box.qr_code, mode="picking")
+    ts.ship(doc.id)
+
+    ts.scan(doc.id, items[0].qr_code, mode="receiving")
+    assert box.location_id == bar.id
+
+    ts.scan(doc.id, items[1].qr_code, mode="receiving")
+    close_res = ts.close(doc.id)
+    assert close_res["lost_items"] == 0
 
 
 def test_transfer_items_view_marks_lost_rows(db_session):

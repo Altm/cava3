@@ -303,6 +303,34 @@ class InventoryExpectedListOut(BaseModel):
     single_items: List[InventoryExpectedItemOut] = Field(default_factory=list)
 
 
+class InventoryResultItemOut(BaseModel):
+    product_item_id: int
+    product_item_qr_code: str
+    product_id: int
+    product_name: str
+    box_id: Optional[int] = None
+    box_qr_code: Optional[str] = None
+
+
+class InventoryResultBoxOut(BaseModel):
+    box_id: int
+    box_qr_code: str
+    status: str
+    counted_items: int
+    missing_items: int
+    total_items: int
+
+
+class InventoryResultOut(BaseModel):
+    inventory_doc_id: int
+    location_id: int
+    status: str
+    accounted_items: List[InventoryResultItemOut] = Field(default_factory=list)
+    unaccounted_items: List[InventoryResultItemOut] = Field(default_factory=list)
+    accounted_boxes: List[InventoryResultBoxOut] = Field(default_factory=list)
+    unaccounted_boxes: List[InventoryResultBoxOut] = Field(default_factory=list)
+
+
 class InventoryDocListOut(BaseModel):
     id: int
     location_id: int

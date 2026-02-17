@@ -126,7 +126,6 @@ class InventoryService:
                 item.lost_reason = "missing_inventory"
                 item.lost_doc_type = "inventory"
                 item.lost_doc_id = doc.id
-                item.box_id = None
                 by_product[item.product_id] = by_product.get(item.product_id, 0) + 1
 
         if box_detach_counts:
@@ -141,6 +140,8 @@ class InventoryService:
 
         doc.status = "closed"
         doc.closed_at = now
+        # Tests run with autoflush=False; persist close results for read-after-write handlers.
+        self.db.flush()
         return {"inventory_doc_id": doc.id, "missing": len(missing_item_ids)}
 
     # ---- internals ----
@@ -180,9 +181,22 @@ class InventoryService:
         if not box or box.status != "active":
             raise HTTPException(status_code=404, detail="Box not found")
         if box.location_id != doc.location_id:
-            raise HTTPException(status_code=409, detail="Box is in a different location")
-        if not box.sealed:
-            raise HTTPException(status_code=409, detail="Box is open; scan items individually")
+            has_expected_here = (
+                self.db.query(InventoryItem.id)
+                .join(ProductItem, ProductItem.id == InventoryItem.product_item_id)
+                .filter(
+                    InventoryItem.inventory_doc_id == doc.id,
+                    InventoryItem.state == "expected",
+                    ProductItem.box_id == box.id,
+                    ProductItem.location_id == doc.location_id,
+                    ProductItem.status == "in_stock",
+                )
+                .first()
+                is not None
+            )
+            if not has_expected_here:
+                raise HTTPException(status_code=409, detail="Box is in a different location")
+            box.location_id = doc.location_id
 
         now = datetime.utcnow()
         # Mark all expected items in this box as scanned
@@ -193,6 +207,8 @@ class InventoryService:
                 InventoryItem.inventory_doc_id == doc.id,
                 InventoryItem.state == "expected",
                 ProductItem.box_id == box.id,
+                ProductItem.location_id == doc.location_id,
+                ProductItem.status == "in_stock",
             )
             .all()
         )
@@ -204,6 +220,8 @@ class InventoryService:
                     InventoryItem.inventory_doc_id == doc.id,
                     InventoryItem.state == "expected",
                     ProductItem.box_id == box.id,
+                    ProductItem.location_id == doc.location_id,
+                    ProductItem.status == "in_stock",
                 )
                 .with_for_update()
                 .all()

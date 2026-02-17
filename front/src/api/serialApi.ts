@@ -247,6 +247,34 @@ export interface InventoryExpectedListOut {
   single_items: InventoryExpectedItemOut[]
 }
 
+export interface InventoryResultItemOut {
+  product_item_id: number
+  product_item_qr_code: string
+  product_id: number
+  product_name: string
+  box_id?: number | null
+  box_qr_code?: string | null
+}
+
+export interface InventoryResultBoxOut {
+  box_id: number
+  box_qr_code: string
+  status: string
+  counted_items: number
+  missing_items: number
+  total_items: number
+}
+
+export interface InventoryResultOut {
+  inventory_doc_id: number
+  location_id: number
+  status: string
+  accounted_items: InventoryResultItemOut[]
+  unaccounted_items: InventoryResultItemOut[]
+  accounted_boxes: InventoryResultBoxOut[]
+  unaccounted_boxes: InventoryResultBoxOut[]
+}
+
 export interface ProductItemListOut {
   id: number
   uuid: string
@@ -527,6 +555,10 @@ export const serialApi = {
   },
   async getInventoryExpected(inventory_doc_id: number): Promise<InventoryExpectedListOut> {
     const res = await api.get(`/inventories/${inventory_doc_id}/expected`)
+    return res.data
+  },
+  async getInventoryResult(inventory_doc_id: number): Promise<InventoryResultOut> {
+    const res = await api.get(`/inventories/${inventory_doc_id}/result`)
     return res.data
   },
 

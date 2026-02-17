@@ -179,6 +179,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/serial/inventories/view/:id',
+      name: 'SerialInventoryView',
+      component: () => import('@/views/SerialInventoryViewView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/serial/items/history/:id',
       name: 'SerialItemHistory',
       component: () => import('@/views/SerialItemHistoryView.vue'),

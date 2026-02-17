@@ -15,6 +15,8 @@ from app.application.serial.inventories import (
     GetInventoryExpectedQuery,
     GetInventoryHandler,
     GetInventoryQuery,
+    GetInventoryResultHandler,
+    GetInventoryResultQuery,
     ListInventoriesHandler,
     ListInventoriesQuery,
     ScanInventoryCommand,
@@ -86,6 +88,20 @@ def get_inventory_expected(
         uow_factory,
         GetInventoryExpectedHandler(),
         GetInventoryExpectedQuery(inventory_doc_id=inventory_doc_id),
+    )
+
+
+@router.get("/{inventory_doc_id}/result", response_model=schemas.InventoryResultOut)
+def get_inventory_result(
+    inventory_doc_id: int,
+    user=Depends(PermissionChecker(["inventories.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Возвращает итог учтено/не учтено для закрытой инвентаризации."""
+    return dispatch_query(
+        uow_factory,
+        GetInventoryResultHandler(),
+        GetInventoryResultQuery(inventory_doc_id=inventory_doc_id),
     )
 
 

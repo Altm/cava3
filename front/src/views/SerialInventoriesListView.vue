@@ -59,10 +59,13 @@
               <td>{{ formatDate(row.updated_at) }}</td>
               <td>{{ row.created_by_user_id ?? '-' }}</td>
               <td>
+                <RouterLink v-if="canView(row.status)" class="btn btn-outline" :to="`/serial/inventories/view/${row.id}`">
+                  Просмотр
+                </RouterLink>
                 <RouterLink v-if="canEdit(row.status)" class="btn btn-outline" :to="`/serial/inventories/edit/${row.id}`">
                   Редактировать
                 </RouterLink>
-                <span v-else>-</span>
+                <span v-if="!canView(row.status) && !canEdit(row.status)">-</span>
               </td>
             </tr>
             <tr v-if="!rows.length && !loading">
@@ -104,6 +107,7 @@ const locationLabel = (locationId: number) => {
 }
 
 const canEdit = (status: string) => !['closed', 'void'].includes(status)
+const canView = (status: string) => status === 'closed'
 
 const loadRows = async () => {
   try {
