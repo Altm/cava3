@@ -542,6 +542,7 @@ def _sync_calculator_registry(db) -> list[_CalculatorVersionRow]:
 
 
 def _resolve_calculator_version(*, db, payload: schemas.PriceRevisionCreate) -> models.PriceCalculatorVersion:
+    stale_version_id = False
     if payload.calculator_version_id is not None:
         version = (
             db.query(models.PriceCalculatorVersion)
@@ -554,8 +555,9 @@ def _resolve_calculator_version(*, db, payload: schemas.PriceRevisionCreate) -> 
             .first()
         )
         if not version:
-            raise HTTPException(status_code=404, detail="Calculator version not found")
-        return version
+            stale_version_id = True
+        else:
+            return version
 
     if payload.calculator_file and payload.calculator_class:
         version = (
@@ -572,6 +574,12 @@ def _resolve_calculator_version(*, db, payload: schemas.PriceRevisionCreate) -> 
         )
         if version:
             return version
+
+    if stale_version_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Calculator version not found for selected id and implementation",
+        )
 
     raise HTTPException(
         status_code=400,

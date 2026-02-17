@@ -218,7 +218,12 @@ const formatDate = (value?: string | null) => {
 const parseCalculatorParams = () => {
   const raw = form.value.calculatorParamsJson?.trim()
   if (!raw) return {}
-  const parsed = JSON.parse(raw)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('Некорректный JSON параметров. Пример: {"multiplier":"1.05","offset":"0"}')
+  }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('JSON параметров должен быть объектом')
   }

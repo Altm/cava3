@@ -206,6 +206,39 @@ def test_price_revision_calculator_mode(db_session):
     assert line.amount == Decimal("112.00")
 
 
+def test_price_revision_calculator_mode_fallbacks_from_stale_version_id(db_session):
+    location, unit, product1, _product2 = _seed_price_context(db_session)
+    db_session.add(
+        PriceList(
+            location_id=location.id,
+            product_id=product1.id,
+            unit_id=unit.id,
+            currency="EUR",
+            amount=Decimal("100.00"),
+        )
+    )
+    db_session.flush()
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        detail = CreatePriceRevisionHandler().handle(
+            CreatePriceRevisionCommand(
+                payload=schemas.PriceRevisionCreate(
+                    location_id=location.id,
+                    name="calculator stale id fallback",
+                    mode="calculator",
+                    calculator_version_id=999999,
+                    calculator_file="example_multiplier.py",
+                    calculator_class="ExampleMultiplierCalculator",
+                    calculator_params={"multiplier": "1.1", "offset": "2"},
+                ),
+                created_by_user_id=5,
+            ),
+            uow,
+        )
+    assert detail.calculator_version_id is not None
+    assert detail.calculator_version_id != 999999
+
+
 def test_price_calculators_list_contains_example(db_session):
     with BoundSessionUnitOfWork(db_session) as uow:
         rows = ListPriceCalculatorsHandler().handle(ListPriceCalculatorsQuery(), uow)
