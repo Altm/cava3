@@ -16,6 +16,7 @@ def get_current_user_info(
     user=Depends(get_current_user),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает профиль текущего авторизованного пользователя."""
     return dispatch_query(
         uow_factory,
         GetCurrentUserInfoHandler(),

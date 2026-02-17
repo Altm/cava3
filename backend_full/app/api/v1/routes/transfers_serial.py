@@ -39,6 +39,7 @@ def create_transfer(
     user=Depends(PermissionChecker(["transfers.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Создаёт документ перемещения между локациями."""
     return dispatch_command(
         uow_factory,
         CreateTransferHandler(),
@@ -58,6 +59,7 @@ def list_transfers(
     user=Depends(PermissionChecker(["transfers.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает список документов перемещения с фильтрами."""
     return dispatch_query(
         uow_factory,
         ListTransfersHandler(),
@@ -79,6 +81,7 @@ def get_transfer(
     user=Depends(PermissionChecker(["transfers.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает карточку документа перемещения."""
     return dispatch_query(uow_factory, GetTransferHandler(), GetTransferQuery(transfer_doc_id=transfer_doc_id))
 
 
@@ -88,6 +91,7 @@ def list_transfer_items(
     user=Depends(PermissionChecker(["transfers.write"])),
     db: Session = Depends(get_db),
 ):
+    """Возвращает список item, участвующих в перемещении."""
     with BoundSessionUnitOfWork(db) as uow:
         return ListTransferItemsHandler().handle(ListTransferItemsQuery(transfer_doc_id=transfer_doc_id), uow)
 
@@ -99,6 +103,7 @@ def plan_transfer(
     user=Depends(PermissionChecker(["transfers.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Планирует отбор item по товару и количеству (FIFO)."""
     return dispatch_command(
         uow_factory,
         PlanTransferHandler(),
@@ -113,6 +118,7 @@ def remove_transfer_item(
     user=Depends(PermissionChecker(["transfers.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Удаляет item из плана перемещения."""
     return dispatch_command(
         uow_factory,
         RemoveTransferItemHandler(),
@@ -127,6 +133,7 @@ def scan_transfer(
     user=Depends(PermissionChecker(["transfers.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Обрабатывает скан ITM/BOX на этапе отбора или приёмки."""
     return dispatch_command(
         uow_factory,
         ScanTransferHandler(),
@@ -140,6 +147,7 @@ def ship_transfer(
     user=Depends(PermissionChecker(["transfers.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Переводит документ в статус отгрузки."""
     return dispatch_command(
         uow_factory,
         ShipTransferHandler(),
@@ -153,6 +161,7 @@ def close_transfer(
     user=Depends(PermissionChecker(["transfers.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Закрывает перемещение и списывает неполученные item как lost."""
     return dispatch_command(
         uow_factory,
         CloseTransferHandler(),

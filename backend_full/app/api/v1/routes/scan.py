@@ -37,6 +37,7 @@ def list_product_items(
     user=Depends(PermissionChecker(["qr.scan"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает список serial item с фильтрами."""
     return dispatch_query(
         uow_factory,
         ListProductItemsHandler(),
@@ -59,6 +60,7 @@ def get_product_item_history(
     user=Depends(PermissionChecker(["qr.scan"])),
     db: Session = Depends(get_db),
 ):
+    """Возвращает полную историю движения конкретного item."""
     with BoundSessionUnitOfWork(db) as uow:
         return GetProductItemHistoryHandler().handle(GetProductItemHistoryQuery(product_item_id=product_item_id), uow)
 
@@ -76,6 +78,7 @@ def list_product_item_log(
     user=Depends(PermissionChecker(["qr.scan"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает общий журнал событий product_item."""
     return dispatch_query(
         uow_factory,
         ListProductItemLogHandler(),
@@ -98,4 +101,5 @@ def scan_qr(
     user=Depends(PermissionChecker(["qr.scan"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Универсально резолвит QR ITM/BOX и возвращает сущность."""
     return dispatch_command(uow_factory, ScanQrHandler(), ScanQrCommand(qr_code=qr_code))

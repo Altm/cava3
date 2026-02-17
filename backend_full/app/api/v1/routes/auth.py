@@ -16,6 +16,7 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Выдаёт access token по username/password."""
     return dispatch_command(
         uow_factory,
         LoginHandler(),

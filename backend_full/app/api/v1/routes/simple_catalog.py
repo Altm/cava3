@@ -90,6 +90,7 @@ def get_units(
     user=Depends(PermissionChecker(["unit.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает справочник единиц измерения."""
     return dispatch_query(uow_factory, ListUnitsHandler(), ListUnitsQuery())
 
 
@@ -99,6 +100,7 @@ def create_unit(
     user=Depends(PermissionChecker(["unit.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Создаёт новую единицу измерения."""
     return dispatch_command(uow_factory, CreateUnitHandler(), CreateUnitCommand(payload=unit))
 
 
@@ -107,6 +109,7 @@ def get_product_types(
     user=Depends(PermissionChecker(["product_type.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает список типов товаров."""
     return dispatch_query(uow_factory, ListProductTypesHandler(), ListProductTypesQuery())
 
 
@@ -116,6 +119,7 @@ def get_product_type(
     user=Depends(PermissionChecker(["product_type.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает тип товара по id."""
     return dispatch_query(uow_factory, GetProductTypeHandler(), GetProductTypeQuery(product_type_id=product_type_id))
 
 
@@ -125,6 +129,7 @@ def create_product_type(
     user=Depends(PermissionChecker(["product_type.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Создаёт тип товара."""
     return dispatch_command(uow_factory, CreateProductTypeHandler(), CreateProductTypeCommand(payload=payload))
 
 
@@ -135,6 +140,7 @@ def update_product_type(
     user=Depends(PermissionChecker(["product_type.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Обновляет тип товара."""
     return dispatch_command(
         uow_factory,
         UpdateProductTypeHandler(),
@@ -148,6 +154,7 @@ def delete_product_type(
     user=Depends(PermissionChecker(["product_type.delete"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Удаляет тип товара."""
     return dispatch_command(
         uow_factory,
         DeleteProductTypeHandler(),
@@ -161,6 +168,7 @@ def create_attribute_definition(
     user=Depends(PermissionChecker(["attribute_definition.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Создаёт определение атрибута товара."""
     return dispatch_command(
         uow_factory,
         CreateAttributeDefinitionHandler(),
@@ -174,6 +182,7 @@ def create_product(
     user=Depends(PermissionChecker(["product.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Создаёт товар."""
     return dispatch_command(uow_factory, CreateProductHandler(), CreateProductCommand(payload=product))
 
 
@@ -187,6 +196,7 @@ def get_products(
     user=Depends(PermissionChecker(["product.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает список товаров с фильтрами и пагинацией."""
     return dispatch_query(
         uow_factory,
         ListProductsHandler(),
@@ -208,6 +218,7 @@ def get_products_count(
     user=Depends(PermissionChecker(["product.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает количество товаров по фильтрам."""
     return dispatch_query(
         uow_factory,
         ProductsCountHandler(),
@@ -221,6 +232,7 @@ def get_product(
     user=Depends(PermissionChecker(["product.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает товар по id."""
     return dispatch_query(uow_factory, GetProductHandler(), GetProductQuery(product_id=product_id))
 
 
@@ -230,6 +242,7 @@ def get_product_view(
     user=Depends(PermissionChecker(["product.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает детальную карточку товара для просмотра."""
     return dispatch_query(uow_factory, GetProductViewHandler(), GetProductViewQuery(product_id=product_id))
 
 
@@ -240,6 +253,7 @@ async def upload_product_image(
     user=Depends(PermissionChecker(["product.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Загружает/обновляет изображение товара."""
     content = await file.read()
     return dispatch_command(
         uow_factory,
@@ -260,6 +274,7 @@ def update_product(
     user=Depends(PermissionChecker(["product.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Обновляет товар по id."""
     return dispatch_command(
         uow_factory,
         UpdateProductHandler(),
@@ -273,6 +288,7 @@ def delete_product(
     user=Depends(PermissionChecker(["product.delete"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Удаляет товар по id."""
     return dispatch_command(
         uow_factory,
         DeleteProductHandler(),
@@ -285,6 +301,7 @@ def get_unit_conversions(
     user=Depends(PermissionChecker(["unit_conversion.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает конверсии единиц (legacy API)."""
     logger.warning("UnitConversion API is deprecated. Use ProductUnit for product-specific conversions.")
     return dispatch_query(uow_factory, ListUnitConversionsHandler(), ListUnitConversionsQuery())
 
@@ -295,6 +312,7 @@ def create_unit_conversion(
     user=Depends(PermissionChecker(["unit_conversion.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Создаёт конверсию единиц (legacy API)."""
     logger.error("UnitConversion API is deprecated. Use ProductUnit for product-specific conversions.")
     return dispatch_command(
         uow_factory,
@@ -308,6 +326,7 @@ def get_locations(
     user=Depends(PermissionChecker(["location.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает список локаций."""
     return dispatch_query(uow_factory, ListLocationsHandler(), ListLocationsQuery())
 
 
@@ -317,6 +336,7 @@ def create_location(
     user=Depends(PermissionChecker(["location.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Создаёт новую локацию."""
     return dispatch_command(uow_factory, CreateLocationHandler(), CreateLocationCommand(payload=location))
 
 
@@ -326,6 +346,7 @@ def sell_product(
     user=Depends(PermissionChecker(["sale.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Проводит продажу товара по legacy сценарию."""
     return dispatch_command(uow_factory, SellProductHandler(), SellProductCommand(payload=sale_request))
 
 
@@ -335,6 +356,7 @@ def checkout_sales(
     user=Depends(PermissionChecker(["sale.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Проводит продажу через единый checkout orchestration."""
     return dispatch_command(
         uow_factory,
         SalesCheckoutHandler(),
@@ -353,6 +375,7 @@ def get_sales_list(
     user=Depends(PermissionChecker(["sale.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает список событий продаж с фильтрами."""
     return dispatch_query(
         uow_factory,
         ListSalesHandler(),
@@ -373,6 +396,7 @@ def get_sale(
     user=Depends(PermissionChecker(["sale.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает детальную карточку продажи."""
     return dispatch_query(
         uow_factory,
         GetSaleHandler(),
@@ -386,6 +410,7 @@ def confirm_sale(
     user=Depends(PermissionChecker(["sale.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Подтверждает продажу и переводит её в confirmed."""
     return dispatch_command(
         uow_factory,
         ConfirmSaleHandler(),
@@ -399,6 +424,7 @@ def sell_wine_glass(
     user=Depends(PermissionChecker(["sale.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Проводит продажу бокала вина (legacy сценарий)."""
     return dispatch_command(uow_factory, SellWineGlassHandler(), SellWineGlassCommand(payload=sale_request))
 
 
@@ -409,6 +435,7 @@ def update_unit(
     user=Depends(PermissionChecker(["unit.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Обновляет единицу измерения."""
     return dispatch_command(
         uow_factory,
         UpdateUnitHandler(),
@@ -422,4 +449,5 @@ def delete_unit(
     user=Depends(PermissionChecker(["unit.delete"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Удаляет единицу измерения."""
     return dispatch_command(uow_factory, DeleteUnitHandler(), DeleteUnitCommand(unit_id=unit_id))

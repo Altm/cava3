@@ -18,6 +18,7 @@ def create_user(
     user=Depends(PermissionChecker(["user.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Создаёт пользователя с ролями и правами по payload."""
     return dispatch_command(uow_factory, CreateUserHandler(), CreateUserCommand(payload=payload))
 
 
@@ -26,4 +27,5 @@ def list_users(
     user=Depends(PermissionChecker(["user.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает список пользователей системы."""
     return dispatch_query(uow_factory, ListUsersHandler(), ListUsersQuery())

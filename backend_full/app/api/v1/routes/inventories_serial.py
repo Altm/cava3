@@ -11,6 +11,8 @@ from app.application.serial.inventories import (
     CloseInventoryHandler,
     CreateInventoryCommand,
     CreateInventoryHandler,
+    GetInventoryExpectedHandler,
+    GetInventoryExpectedQuery,
     GetInventoryHandler,
     GetInventoryQuery,
     ListInventoriesHandler,
@@ -31,6 +33,7 @@ def create_inventory(
     user=Depends(PermissionChecker(["inventories.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Создаёт документ инвентаризации по локации."""
     return dispatch_command(
         uow_factory,
         CreateInventoryHandler(),
@@ -48,6 +51,7 @@ def list_inventories(
     user=Depends(PermissionChecker(["inventories.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает список документов инвентаризации с фильтрами."""
     return dispatch_query(
         uow_factory,
         ListInventoriesHandler(),
@@ -67,7 +71,22 @@ def get_inventory(
     user=Depends(PermissionChecker(["inventories.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает сводную информацию по инвентаризации."""
     return dispatch_query(uow_factory, GetInventoryHandler(), GetInventoryQuery(inventory_doc_id=inventory_doc_id))
+
+
+@router.get("/{inventory_doc_id}/expected", response_model=schemas.InventoryExpectedListOut)
+def get_inventory_expected(
+    inventory_doc_id: int,
+    user=Depends(PermissionChecker(["inventories.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Возвращает список ожидаемых к сканированию коробок и item."""
+    return dispatch_query(
+        uow_factory,
+        GetInventoryExpectedHandler(),
+        GetInventoryExpectedQuery(inventory_doc_id=inventory_doc_id),
+    )
 
 
 @router.post("/{inventory_doc_id}/start")
@@ -76,6 +95,7 @@ def start_inventory(
     user=Depends(PermissionChecker(["inventories.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Формирует ожидаемый список item и переводит документ в counting."""
     return dispatch_command(
         uow_factory,
         StartInventoryHandler(),
@@ -90,6 +110,7 @@ def scan_inventory(
     user=Depends(PermissionChecker(["inventories.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Обрабатывает скан item/коробки в документе инвентаризации."""
     return dispatch_command(
         uow_factory,
         ScanInventoryHandler(),
@@ -103,6 +124,7 @@ def close_inventory(
     user=Depends(PermissionChecker(["inventories.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Закрывает инвентаризацию и списывает missing как lost."""
     return dispatch_command(
         uow_factory,
         CloseInventoryHandler(),

@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import HTTPException
 
 from app.application.common.uow import AbstractUnitOfWork
-from app.models.models import InventoryDoc, InventoryItem
+from app.models.models import Box, InventoryDoc, InventoryItem, Product, ProductItem, Receipt, StockLot
 from app.schemas import serial as schemas
 from app.services.serial_inventories import InventoryService
 
@@ -28,6 +28,11 @@ class ListInventoriesQuery:
 
 @dataclass(frozen=True)
 class GetInventoryQuery:
+    inventory_doc_id: int
+
+
+@dataclass(frozen=True)
+class GetInventoryExpectedQuery:
     inventory_doc_id: int
 
 
@@ -96,6 +101,104 @@ class GetInventoryHandler:
             scanned_count=scanned_count,
             missing_count=missing_count,
             unexpected_count=unexpected_count,
+        )
+
+
+class GetInventoryExpectedHandler:
+    def handle(self, query: GetInventoryExpectedQuery, uow: AbstractUnitOfWork) -> schemas.InventoryExpectedListOut:
+        db = uow.session
+        doc = db.query(InventoryDoc).filter(InventoryDoc.id == query.inventory_doc_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Inventory doc not found")
+
+        if doc.status == "draft":
+            rows = (
+                db.query(
+                    ProductItem.id.label("product_item_id"),
+                    ProductItem.qr_code.label("product_item_qr_code"),
+                    ProductItem.product_id,
+                    Product.name.label("product_name"),
+                    ProductItem.box_id,
+                    Box.qr_code.label("box_qr_code"),
+                    Box.sealed.label("box_sealed"),
+                    Box.quantity.label("box_quantity"),
+                )
+                .join(Product, Product.id == ProductItem.product_id)
+                .join(StockLot, StockLot.id == ProductItem.lot_id)
+                .join(Receipt, Receipt.id == StockLot.receipt_id)
+                .outerjoin(Box, Box.id == ProductItem.box_id)
+                .filter(
+                    ProductItem.location_id == doc.location_id,
+                    ProductItem.status == "in_stock",
+                    Receipt.status == "posted",
+                )
+                .order_by(ProductItem.id.asc())
+                .all()
+            )
+        else:
+            rows = (
+                db.query(
+                    ProductItem.id.label("product_item_id"),
+                    ProductItem.qr_code.label("product_item_qr_code"),
+                    ProductItem.product_id,
+                    Product.name.label("product_name"),
+                    ProductItem.box_id,
+                    Box.qr_code.label("box_qr_code"),
+                    Box.sealed.label("box_sealed"),
+                    Box.quantity.label("box_quantity"),
+                )
+                .join(InventoryItem, InventoryItem.product_item_id == ProductItem.id)
+                .join(Product, Product.id == ProductItem.product_id)
+                .outerjoin(Box, Box.id == ProductItem.box_id)
+                .filter(
+                    InventoryItem.inventory_doc_id == doc.id,
+                    InventoryItem.state == "expected",
+                )
+                .order_by(ProductItem.id.asc())
+                .all()
+            )
+
+        boxes_map: dict[int, schemas.InventoryExpectedBoxOut] = {}
+        single_items: list[schemas.InventoryExpectedItemOut] = []
+
+        for row in rows:
+            item_row = schemas.InventoryExpectedItemOut(
+                product_item_id=row.product_item_id,
+                product_item_qr_code=row.product_item_qr_code,
+                product_id=row.product_id,
+                product_name=row.product_name,
+                box_id=row.box_id,
+                box_qr_code=row.box_qr_code,
+                box_sealed=row.box_sealed,
+            )
+            if row.box_id is None:
+                single_items.append(item_row)
+                continue
+
+            if row.box_id not in boxes_map:
+                boxes_map[row.box_id] = schemas.InventoryExpectedBoxOut(
+                    box_id=row.box_id,
+                    box_qr_code=row.box_qr_code or "",
+                    sealed=bool(row.box_sealed),
+                    quantity=int(row.box_quantity or 0),
+                    items_remaining=0,
+                    items=[],
+                )
+            box_row = boxes_map[row.box_id]
+            box_row.items_remaining += 1
+            if not box_row.sealed:
+                box_row.items.append(item_row)
+
+        boxes = sorted(boxes_map.values(), key=lambda row: (0 if row.sealed else 1, row.box_id))
+        single_items.sort(key=lambda row: row.product_item_id)
+
+        return schemas.InventoryExpectedListOut(
+            inventory_doc_id=doc.id,
+            location_id=doc.location_id,
+            status=doc.status,
+            remaining_expected_count=len(rows),
+            boxes=boxes,
+            single_items=single_items,
         )
 
 

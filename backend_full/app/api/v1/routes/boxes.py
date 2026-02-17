@@ -33,6 +33,7 @@ def create_box(
     user=Depends(PermissionChecker(["boxes.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Создаёт коробку для выбранного товара/партии/локации."""
     return dispatch_command(uow_factory, CreateBoxHandler(), CreateBoxCommand(payload=payload))
 
 
@@ -48,6 +49,7 @@ def list_boxes(
     user=Depends(PermissionChecker(["boxes.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает список коробок с фильтрами."""
     return dispatch_query(
         uow_factory,
         ListBoxesHandler(),
@@ -69,6 +71,7 @@ def get_box(
     user=Depends(PermissionChecker(["boxes.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает коробку по внутреннему id."""
     return dispatch_query(uow_factory, GetBoxHandler(), GetBoxQuery(box_id=box_id))
 
 
@@ -78,6 +81,7 @@ def open_box(
     user=Depends(PermissionChecker(["boxes.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Открывает коробку (sealed=false) для частичных операций."""
     return dispatch_command(uow_factory, OpenBoxHandler(), OpenBoxCommand(box_id=box_id))
 
 
@@ -87,6 +91,7 @@ def seal_box(
     user=Depends(PermissionChecker(["boxes.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Закрывает коробку (sealed=true)."""
     return dispatch_command(uow_factory, SealBoxHandler(), SealBoxCommand(box_id=box_id))
 
 
@@ -97,6 +102,7 @@ def add_item_to_box(
     user=Depends(PermissionChecker(["boxes.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Добавляет item в коробку по QR коду единицы."""
     return dispatch_command(
         uow_factory,
         AddItemToBoxHandler(),
@@ -110,4 +116,5 @@ def box_labels(
     user=Depends(PermissionChecker(["boxes.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает список QR-этикеток коробки для печати."""
     return dispatch_query(uow_factory, BoxLabelsHandler(), BoxLabelsQuery(box_id=box_id))

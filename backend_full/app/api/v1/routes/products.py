@@ -23,6 +23,7 @@ def list_products(
     user=Depends(PermissionChecker(["product.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает список продуктов (raw payload)."""
     products = dispatch_query(uow_factory, ListRawProductsHandler(), ListRawProductsQuery())
     return jsonable_encoder(products)
 
@@ -33,6 +34,7 @@ def create_product(
     user=Depends(PermissionChecker(["product.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Создаёт продукт из raw payload."""
     product = dispatch_command(uow_factory, CreateRawProductHandler(), CreateRawProductCommand(payload=payload))
     return jsonable_encoder(product)
 
@@ -44,6 +46,7 @@ def update_product(
     user=Depends(PermissionChecker(["product.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Обновляет продукт по id из raw payload."""
     product = dispatch_command(
         uow_factory,
         UpdateRawProductHandler(),

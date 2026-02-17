@@ -18,6 +18,7 @@ def adjust_stock(
     user=Depends(PermissionChecker(["stock.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Выполняет ручную корректировку остатков по товару и локации."""
     return dispatch_command(
         uow_factory,
         AdjustStockHandler(),

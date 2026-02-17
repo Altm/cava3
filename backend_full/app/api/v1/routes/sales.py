@@ -64,6 +64,7 @@ async def submit_sale(
     x_timestamp: str = Header(..., alias="X-Timestamp"),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Принимает единичное событие продажи от терминала."""
     body = await request.body()
     extracted_user_id = _extract_user_id(payload)
     if extracted_user_id is not None:
@@ -97,6 +98,7 @@ async def daily_log(
     x_timestamp: str = Header(..., alias="X-Timestamp"),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Принимает пакет daily-log событий продаж от терминала."""
     body = await request.body()
     extracted_user_id = _extract_user_id(payload)
     if extracted_user_id is not None:
@@ -129,6 +131,7 @@ async def register_sales_transactions(
     x_timestamp: str = Header(..., alias="X-Timestamp"),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Регистрирует пакет sales transactions в формате терминала."""
     body = await request.body()
     payload = None
     try:
@@ -161,6 +164,7 @@ async def register_sales_transactions(
 async def generate_curl_example(
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает пример curl для интеграции с sales API."""
     return dispatch_query(uow_factory, GenerateCurlExampleHandler(), GenerateCurlExampleQuery())
 
 
@@ -168,4 +172,5 @@ async def generate_curl_example(
 async def generate_curl_command(
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает готовую команду curl для текущих настроек."""
     return dispatch_query(uow_factory, GenerateCurlCommandHandler(), GenerateCurlCommandQuery())

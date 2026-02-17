@@ -275,6 +275,34 @@ class InventoryDocDetailOut(BaseModel):
     unexpected_count: int = 0
 
 
+class InventoryExpectedItemOut(BaseModel):
+    product_item_id: int
+    product_item_qr_code: str
+    product_id: int
+    product_name: str
+    box_id: Optional[int] = None
+    box_qr_code: Optional[str] = None
+    box_sealed: Optional[bool] = None
+
+
+class InventoryExpectedBoxOut(BaseModel):
+    box_id: int
+    box_qr_code: str
+    sealed: bool
+    quantity: int
+    items_remaining: int
+    items: List[InventoryExpectedItemOut] = Field(default_factory=list)
+
+
+class InventoryExpectedListOut(BaseModel):
+    inventory_doc_id: int
+    location_id: int
+    status: str
+    remaining_expected_count: int
+    boxes: List[InventoryExpectedBoxOut] = Field(default_factory=list)
+    single_items: List[InventoryExpectedItemOut] = Field(default_factory=list)
+
+
 class InventoryDocListOut(BaseModel):
     id: int
     location_id: int

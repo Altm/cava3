@@ -40,6 +40,62 @@
         <pre v-if="log.length" class="pre">{{ log.join('\n') }}</pre>
       </div>
     </div>
+
+    <div v-if="expected" class="card">
+      <h3>Предполагаемый список для сканирования</h3>
+      <div class="meta"><b>Осталось к скану:</b> {{ expected.remaining_expected_count }}</div>
+
+      <div class="table-wrap" v-if="expected.boxes.length">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Коробка</th>
+              <th>QR</th>
+              <th>Статус</th>
+              <th>Осталось item</th>
+              <th>Содержимое (для open)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="box in expected.boxes" :key="box.box_id" :class="box.sealed ? 'row-box-closed' : 'row-box-open'">
+              <td>#{{ box.box_id }}</td>
+              <td>{{ box.box_qr_code }}</td>
+              <td>{{ box.sealed ? 'closed' : 'open' }}</td>
+              <td>{{ box.items_remaining }}</td>
+              <td>
+                <div v-if="box.sealed">Сканируйте коробку целиком</div>
+                <div v-else>
+                  <div v-for="item in box.items" :key="item.product_item_id">
+                    {{ item.product_item_id }} | {{ item.product_name }} | {{ item.product_item_qr_code }}
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-wrap" v-if="expected.single_items.length">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Название</th>
+              <th>QR</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in expected.single_items" :key="item.product_item_id">
+              <td>{{ item.product_item_id }}</td>
+              <td>{{ item.product_name }}</td>
+              <td>{{ item.product_item_qr_code }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-if="!expected.boxes.length && !expected.single_items.length" class="meta">Нет элементов для сканирования</div>
+    </div>
   </div>
 </template>
 
@@ -47,18 +103,19 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { productApi, type Location } from '@/api/productApi'
-import { serialApi, type InventoryDocDetailOut } from '@/api/serialApi'
+import { serialApi, type InventoryDocDetailOut, type InventoryExpectedListOut } from '@/api/serialApi'
 
 const route = useRoute()
 const inventoryId = Number(route.params.id)
 
 const locations = ref<Location[]>([])
 const doc = ref<InventoryDocDetailOut | null>(null)
+const expected = ref<InventoryExpectedListOut | null>(null)
 const scanQr = ref('')
 const log = ref<string[]>([])
 
 const canStart = computed(() => doc.value?.status === 'draft')
-const canScan = computed(() => doc.value?.status === 'counting')
+const canScan = computed(() => doc.value?.status === 'counting' || doc.value?.status === 'draft')
 const canClose = computed(() => doc.value?.status === 'counting')
 
 const locationLabel = (locationId: number) => {
@@ -69,6 +126,7 @@ const locationLabel = (locationId: number) => {
 const reload = async () => {
   try {
     doc.value = await serialApi.getInventory(inventoryId)
+    expected.value = await serialApi.getInventoryExpected(inventoryId)
   } catch (e: any) {
     alert(e?.response?.data?.detail ?? e?.message ?? 'Ошибка')
   }
@@ -86,8 +144,19 @@ const start = async () => {
 
 const scan = async () => {
   try {
-    const res = await serialApi.scanInventory(inventoryId, scanQr.value.trim())
-    log.value.unshift(`SCAN ${scanQr.value.trim()} => ${JSON.stringify(res)}`)
+    const qr = scanQr.value.trim()
+    if (!qr) return
+    if (doc.value?.status === 'draft') {
+      const startRes = await serialApi.startInventory(inventoryId)
+      log.value.unshift(`AUTO-START => ${JSON.stringify(startRes)}`)
+      await reload()
+    }
+    if (doc.value?.status !== 'counting') {
+      alert(`Документ в статусе "${doc.value?.status ?? '-'}". Сканирование недоступно.`)
+      return
+    }
+    const res = await serialApi.scanInventory(inventoryId, qr)
+    log.value.unshift(`SCAN ${qr} => ${JSON.stringify(res)}`)
     scanQr.value = ''
     await reload()
   } catch (e: any) {
@@ -189,6 +258,27 @@ onMounted(async () => {
   padding: 12px;
   border-radius: 6px;
   overflow: auto;
+}
+.table-wrap {
+  overflow: auto;
+  margin-top: 12px;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table th,
+.table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 8px;
+  text-align: left;
+  font-size: 0.92rem;
+}
+.row-box-closed {
+  background: #ecfdf5;
+}
+.row-box-open {
+  background: #fef2f2;
 }
 @media (max-width: 1024px) {
   .grid {

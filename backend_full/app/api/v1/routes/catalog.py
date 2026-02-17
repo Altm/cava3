@@ -17,4 +17,5 @@ def get_catalog(
     user=Depends(PermissionChecker(["catalog.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает каталог товаров для указанной локации."""
     return dispatch_query(uow_factory, GetCatalogHandler(), GetCatalogQuery(location=location))

@@ -47,6 +47,7 @@ def create_receipt(
     user=Depends(PermissionChecker(["receipts.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Создаёт документ приёмки."""
     return dispatch_command(
         uow_factory,
         CreateReceiptHandler(),
@@ -65,6 +66,7 @@ def list_receipts(
     user=Depends(PermissionChecker(["receipts.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает список документов приёмки с фильтрами."""
     return dispatch_query(
         uow_factory,
         ListReceiptsHandler(),
@@ -85,6 +87,7 @@ def get_receipt(
     user=Depends(PermissionChecker(["receipts.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает карточку документа приёмки."""
     return dispatch_query(uow_factory, GetReceiptHandler(), GetReceiptQuery(receipt_id=receipt_id))
 
 
@@ -94,6 +97,7 @@ def get_receipt_lines(
     user=Depends(PermissionChecker(["receipts.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает строки документа приёмки."""
     return dispatch_query(uow_factory, GetReceiptLinesHandler(), GetReceiptLinesQuery(receipt_id=receipt_id))
 
 
@@ -103,6 +107,7 @@ def get_receipt_items(
     user=Depends(PermissionChecker(["receipts.read"])),
     db: Session = Depends(get_db),
 ):
+    """Возвращает содержимое приёмки: созданные item и связанные данные."""
     with BoundSessionUnitOfWork(db) as uow:
         return GetReceiptItemsHandler().handle(GetReceiptItemsQuery(receipt_id=receipt_id), uow)
 
@@ -114,6 +119,7 @@ def add_receipt_line(
     user=Depends(PermissionChecker(["receipts.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Добавляет строку товара в документ приёмки."""
     return dispatch_command(
         uow_factory,
         AddReceiptLineHandler(),
@@ -128,6 +134,7 @@ def remove_receipt_line(
     user=Depends(PermissionChecker(["receipts.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Удаляет строку из документа приёмки."""
     return dispatch_command(
         uow_factory,
         RemoveReceiptLineHandler(),
@@ -143,6 +150,7 @@ def update_receipt_line(
     user=Depends(PermissionChecker(["receipts.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Обновляет количество в строке приёмки."""
     return dispatch_command(
         uow_factory,
         UpdateReceiptLineHandler(),
@@ -156,6 +164,7 @@ def generate_receipt(
     user=Depends(PermissionChecker(["receipts.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Генерирует serial item для документа приёмки."""
     return dispatch_command(
         uow_factory,
         GenerateReceiptHandler(),
@@ -169,6 +178,7 @@ def post_receipt(
     user=Depends(PermissionChecker(["receipts.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Проводит приёмку и переводит item в in_stock."""
     return dispatch_command(
         uow_factory,
         PostReceiptHandler(),
@@ -182,6 +192,7 @@ def void_receipt(
     user=Depends(PermissionChecker(["receipts.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Аннулирует документ приёмки."""
     return dispatch_command(
         uow_factory,
         VoidReceiptHandler(),
@@ -195,6 +206,7 @@ def receipt_item_labels(
     user=Depends(PermissionChecker(["receipts.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Возвращает QR-этикетки item для печати."""
     return dispatch_query(
         uow_factory,
         ReceiptItemLabelsHandler(),
@@ -209,6 +221,7 @@ def receipt_auto_box(
     user=Depends(PermissionChecker(["receipts.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
+    """Автоматически формирует коробки из item приёмки."""
     return dispatch_command(
         uow_factory,
         ReceiptAutoBoxHandler(),

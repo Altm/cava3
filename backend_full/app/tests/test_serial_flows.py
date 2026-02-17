@@ -20,6 +20,8 @@ from app.services.serial_receipts import ReceiptService
 from app.services.serial_boxes import BoxService
 from app.services.serial_transfers import TransferService
 from app.services.serial_inventories import InventoryService
+from app.application.serial.inventories import GetInventoryExpectedHandler, GetInventoryExpectedQuery
+from app.infrastructure.db.uow import BoundSessionUnitOfWork
 from app.api.v1.routes.transfers_serial import list_transfer_items
 from app.api.v1.routes.scan import get_product_item_history
 from app.api.v1.routes.receipts import get_receipt_items
@@ -184,6 +186,83 @@ def test_inventory_close_marks_missing_as_lost_and_decrements_stock(db_session):
 
     stock = db_session.query(Stock).filter_by(location_id=wh.id, product_id=product.id).first()
     assert Decimal(stock.quantity) == Decimal("2")
+
+
+def test_inventory_expected_list_groups_boxes_and_single_items(db_session):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, _bar = _seed_locations(db_session)
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("4"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+
+    items = db_session.query(ProductItem).order_by(ProductItem.id.asc()).all()
+    bs = BoxService(db_session)
+
+    closed_box = bs.create(product_id=product.id, lot_id=items[0].lot_id, location_id=wh.id, sealed=False)
+    bs.add_item_by_qr(closed_box.id, items[0].qr_code)
+    bs.add_item_by_qr(closed_box.id, items[1].qr_code)
+    bs.seal_box(closed_box.id)
+
+    open_box = bs.create(product_id=product.id, lot_id=items[0].lot_id, location_id=wh.id, sealed=False)
+    bs.add_item_by_qr(open_box.id, items[2].qr_code)
+
+    inv = InventoryService(db_session)
+    doc = inv.create(location_id=wh.id)
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        payload = GetInventoryExpectedHandler().handle(GetInventoryExpectedQuery(inventory_doc_id=doc.id), uow)
+
+    assert payload.status == "draft"
+    assert payload.remaining_expected_count == 4
+    assert len(payload.boxes) == 2
+    assert len(payload.single_items) == 1
+    assert payload.single_items[0].product_item_id == items[3].id
+
+    closed_rows = [row for row in payload.boxes if row.sealed]
+    assert closed_rows
+    assert closed_rows[0].items_remaining == 2
+    assert closed_rows[0].items == []
+
+    open_rows = [row for row in payload.boxes if not row.sealed]
+    assert open_rows
+    assert open_rows[0].items_remaining == 1
+    assert len(open_rows[0].items) == 1
+    assert open_rows[0].items[0].product_item_id == items[2].id
+
+
+def test_inventory_expected_list_hides_scanned_items(db_session):
+    product, base_unit = _seed_serial_product(db_session)
+    wh, _bar = _seed_locations(db_session)
+
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, product.id, qty=Decimal("3"), unit_id=base_unit.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+    items = db_session.query(ProductItem).order_by(ProductItem.id.asc()).all()
+
+    bs = BoxService(db_session)
+    box = bs.create(product_id=product.id, lot_id=items[0].lot_id, location_id=wh.id, sealed=False)
+    bs.add_item_by_qr(box.id, items[0].qr_code)
+    bs.add_item_by_qr(box.id, items[1].qr_code)
+    bs.seal_box(box.id)
+
+    inv = InventoryService(db_session)
+    doc = inv.create(location_id=wh.id)
+    inv.start(doc.id)
+    inv.scan(doc.id, box.qr_code)
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        payload = GetInventoryExpectedHandler().handle(GetInventoryExpectedQuery(inventory_doc_id=doc.id), uow)
+
+    assert payload.status == "counting"
+    assert payload.remaining_expected_count == 1
+    assert payload.boxes == []
+    assert len(payload.single_items) == 1
+    assert payload.single_items[0].product_item_id == items[2].id
 
 
 def test_transfer_items_view_marks_lost_rows(db_session):
