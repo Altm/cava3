@@ -197,6 +197,24 @@ class ProductUnit(ProductUnitCreate):
         from_attributes = True
 
 
+class ProductGlassLinkUpdate(BaseModel):
+    bottle_unit_id: int
+    glass_unit_id: int
+    glasses_in_bottle: int = Field(..., gt=0)
+    glass_discrete_step: Optional[Decimal] = Field(default=Decimal("1"), gt=0)
+
+
+class ProductGlassLinkOut(BaseModel):
+    product_id: int
+    base_unit_id: int
+    bottle_unit_id: int
+    bottle_ratio_to_base: Decimal
+    glass_unit_id: int
+    glass_ratio_to_base: Decimal
+    glasses_in_bottle: int
+    product_units: List[ProductUnit] = []
+
+
 class ProductTypeUnitCreate(BaseModel):
     unit_id: int
     ratio_to_base: Decimal = Field(..., gt=0)

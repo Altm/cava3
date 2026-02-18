@@ -7,6 +7,8 @@ from app.models.models import (
     ProductType,
     Product,
     ProductUnit,
+    ProductTypeUnit,
+    ProductComposite,
     Location,
     Receipt,
     ProductItem,
@@ -421,6 +423,241 @@ def test_sales_checkout_product_line_with_portion_unit_uses_glass_flow(db_sessio
     stock = db_session.query(Stock).filter_by(location_id=wh.id, product_id=product.id).first()
     assert stock is not None
     assert Decimal(str(stock.quantity)) == Decimal("0.8")
+
+
+def test_sales_checkout_composite_product_consumes_component_item_fractions(db_session, monkeypatch):
+    bottle = Unit(code="bottle", description="Bottle", unit_type="base", is_discrete=True)
+    portion = Unit(code="glass", description="Glass", unit_type="portion", is_discrete=True)
+    plate = Unit(code="plate", description="Plate", unit_type="base", is_discrete=True)
+    db_session.add_all([bottle, portion, plate])
+    db_session.flush()
+
+    simple_type = ProductType(name="ingredient", description="Ingredient", is_composite=False)
+    composite_type = ProductType(name="dish", description="Dish", is_composite=True)
+    db_session.add_all([simple_type, composite_type])
+    db_session.flush()
+
+    c1 = Product(
+        name="Comp-1",
+        sku="COMP-1",
+        primary_category="ingredient",
+        product_type_id=simple_type.id,
+        base_unit_id=bottle.id,
+        base_cost=Decimal("10.00"),
+        is_active=True,
+    )
+    c2 = Product(
+        name="Comp-2",
+        sku="COMP-2",
+        primary_category="ingredient",
+        product_type_id=simple_type.id,
+        base_unit_id=bottle.id,
+        base_cost=Decimal("10.00"),
+        is_active=True,
+    )
+    c3 = Product(
+        name="Comp-3",
+        sku="COMP-3",
+        primary_category="ingredient",
+        product_type_id=simple_type.id,
+        base_unit_id=bottle.id,
+        base_cost=Decimal("10.00"),
+        is_active=True,
+    )
+    dish = Product(
+        name="Sandwich",
+        sku="SANDWICH-1",
+        primary_category="dish",
+        product_type_id=composite_type.id,
+        base_unit_id=plate.id,
+        base_cost=Decimal("30.00"),
+        is_active=True,
+    )
+    db_session.add_all([c1, c2, c3, dish])
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            ProductUnit(product_id=c1.id, unit_id=bottle.id, ratio_to_base=Decimal("1.0")),
+            ProductUnit(product_id=c1.id, unit_id=portion.id, ratio_to_base=Decimal("0.2")),
+            ProductUnit(product_id=c2.id, unit_id=bottle.id, ratio_to_base=Decimal("1.0")),
+            ProductUnit(product_id=c2.id, unit_id=portion.id, ratio_to_base=Decimal("0.2")),
+            ProductUnit(product_id=c3.id, unit_id=bottle.id, ratio_to_base=Decimal("1.0")),
+            ProductUnit(product_id=c3.id, unit_id=portion.id, ratio_to_base=Decimal("0.2")),
+            ProductUnit(product_id=dish.id, unit_id=plate.id, ratio_to_base=Decimal("1.0")),
+        ]
+    )
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            ProductComposite(parent_product_id=dish.id, component_product_id=c1.id, quantity=Decimal("0.2"), unit_id=bottle.id),
+            ProductComposite(parent_product_id=dish.id, component_product_id=c2.id, quantity=Decimal("0.2"), unit_id=bottle.id),
+            ProductComposite(parent_product_id=dish.id, component_product_id=c3.id, quantity=Decimal("0.2"), unit_id=bottle.id),
+        ]
+    )
+    db_session.flush()
+
+    wh, _bar = _seed_locations(db_session)
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, c1.id, qty=Decimal("1"), unit_id=bottle.id)
+    rs.add_line(receipt.id, c2.id, qty=Decimal("1"), unit_id=bottle.id)
+    rs.add_line(receipt.id, c3.id, qty=Decimal("1"), unit_id=bottle.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+
+    terminal = Terminal(terminal_id="T-1", location_id=wh.id, secret_hash="secret", status="active")
+    db_session.add(terminal)
+    db_session.flush()
+
+    def _fake_send_register_request(self, *, db, terminal, payload):
+        return {"status": "ok", "received_sales_count": len(payload.get("sales", []))}
+
+    monkeypatch.setattr(SalesCheckoutHandler, "_send_register_transactions_request", _fake_send_register_request)
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        result = SalesCheckoutHandler().handle(
+            SaleCheckoutCommand(
+                payload=simple_schemas.SaleCheckoutRequest(
+                    lines=[
+                        simple_schemas.SaleCheckoutLineIn(
+                            kind="product",
+                            product_id=dish.id,
+                            quantity=Decimal("1"),
+                            unit_id=plate.id,
+                        )
+                    ]
+                ),
+                user_id=55,
+            ),
+            uow,
+        )
+
+    assert result.lines
+    assert result.lines[0].product_id == dish.id
+    assert result.lines[0].quantity == Decimal("1")
+    assert len(result.lines[0].resolved_item_ids) == 3
+
+    component_items = (
+        db_session.query(ProductItem)
+        .filter(ProductItem.product_id.in_([c1.id, c2.id, c3.id]))
+        .order_by(ProductItem.product_id.asc())
+        .all()
+    )
+    assert len(component_items) == 3
+    for item in component_items:
+        assert item.status == "in_stock"
+        pour = db_session.query(ProductItemPour).filter_by(product_item_id=item.id).first()
+        assert pour is not None
+        assert pour.glasses_total == 5
+        assert pour.glasses_sold == 1
+
+    for component_product in (c1, c2, c3):
+        stock = db_session.query(Stock).filter_by(location_id=wh.id, product_id=component_product.id).first()
+        assert stock is not None
+        assert Decimal(str(stock.quantity)) == Decimal("0.8")
+
+    composite_stock = db_session.query(Stock).filter_by(location_id=wh.id, product_id=dish.id).first()
+    assert composite_stock is None
+
+
+def test_sales_checkout_composite_uses_type_unit_conversion_for_components(db_session, monkeypatch):
+    bottle = Unit(code="bottle", description="Bottle", unit_type="base", is_discrete=True)
+    glass = Unit(code="glass", description="Glass", unit_type="portion", is_discrete=True)
+    plate = Unit(code="plate", description="Plate", unit_type="base", is_discrete=True)
+    db_session.add_all([bottle, glass, plate])
+    db_session.flush()
+
+    ingredient_type = ProductType(name="ingredient-type", description="Ingredient", is_composite=False)
+    dish_type = ProductType(name="dish-type", description="Dish", is_composite=True)
+    db_session.add_all([ingredient_type, dish_type])
+    db_session.flush()
+
+    db_session.add(
+        ProductTypeUnit(product_type_id=ingredient_type.id, unit_id=glass.id, ratio_to_base=Decimal("0.2"))
+    )
+    db_session.flush()
+
+    component = Product(
+        name="Type-unit ingredient",
+        sku="TYPE-ING-1",
+        primary_category="ingredient",
+        product_type_id=ingredient_type.id,
+        base_unit_id=bottle.id,
+        base_cost=Decimal("8.00"),
+        is_active=True,
+    )
+    dish = Product(
+        name="Type-unit dish",
+        sku="TYPE-DISH-1",
+        primary_category="dish",
+        product_type_id=dish_type.id,
+        base_unit_id=plate.id,
+        base_cost=Decimal("20.00"),
+        is_active=True,
+    )
+    db_session.add_all([component, dish])
+    db_session.flush()
+    db_session.add_all(
+        [
+            ProductUnit(product_id=component.id, unit_id=bottle.id, ratio_to_base=Decimal("1.0")),
+            ProductUnit(product_id=dish.id, unit_id=plate.id, ratio_to_base=Decimal("1.0")),
+        ]
+    )
+    db_session.add(
+        ProductComposite(
+            parent_product_id=dish.id,
+            component_product_id=component.id,
+            quantity=Decimal("1"),
+            unit_id=glass.id,
+        )
+    )
+    db_session.flush()
+
+    wh, _bar = _seed_locations(db_session)
+    rs = ReceiptService(db_session)
+    receipt = rs.create(to_location_id=wh.id)
+    rs.add_line(receipt.id, component.id, qty=Decimal("1"), unit_id=bottle.id)
+    rs.generate(receipt.id)
+    rs.post(receipt.id)
+
+    terminal = Terminal(terminal_id="T-1", location_id=wh.id, secret_hash="secret", status="active")
+    db_session.add(terminal)
+    db_session.flush()
+
+    def _fake_send_register_request(self, *, db, terminal, payload):
+        return {"status": "ok", "received_sales_count": len(payload.get("sales", []))}
+
+    monkeypatch.setattr(SalesCheckoutHandler, "_send_register_transactions_request", _fake_send_register_request)
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        result = SalesCheckoutHandler().handle(
+            SaleCheckoutCommand(
+                payload=simple_schemas.SaleCheckoutRequest(
+                    lines=[
+                        simple_schemas.SaleCheckoutLineIn(
+                            kind="product",
+                            product_id=dish.id,
+                            quantity=Decimal("1"),
+                            unit_id=plate.id,
+                        )
+                    ]
+                ),
+                user_id=56,
+            ),
+            uow,
+        )
+
+    assert result.lines
+    assert result.lines[0].product_id == dish.id
+    assert len(result.lines[0].resolved_item_ids) == 1
+
+    component_item = db_session.query(ProductItem).filter(ProductItem.product_id == component.id).first()
+    assert component_item is not None
+    pour = db_session.query(ProductItemPour).filter_by(product_item_id=component_item.id).first()
+    assert pour is not None
+    assert pour.glasses_sold == 1
 
 
 def test_inventory_close_write_off_sets_lost_metadata(db_session):

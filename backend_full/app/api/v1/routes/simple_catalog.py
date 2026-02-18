@@ -49,6 +49,8 @@ from app.application.simple_catalog.products import (
     ListProductsQuery,
     ProductsCountHandler,
     ProductsCountQuery,
+    SetProductGlassLinkCommand,
+    SetProductGlassLinkHandler,
     UpdateProductCommand,
     UpdateProductHandler,
     UploadProductImageCommand,
@@ -297,6 +299,21 @@ def update_product(
         uow_factory,
         UpdateProductHandler(),
         UpdateProductCommand(product_id=product_id, payload=product_update),
+    )
+
+
+@router.put("/products/{product_id}/glass-link", response_model=schemas.ProductGlassLinkOut)
+def set_product_glass_link(
+    product_id: int,
+    payload: schemas.ProductGlassLinkUpdate,
+    user=Depends(PermissionChecker(["product.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Быстро настраивает связь «бутылка ↔ бокал» для товара."""
+    return dispatch_command(
+        uow_factory,
+        SetProductGlassLinkHandler(),
+        SetProductGlassLinkCommand(product_id=product_id, payload=payload),
     )
 
 

@@ -261,6 +261,24 @@ export interface Product {
   productUnits?: ProductUnit[];  // Add product-specific units
 }
 
+export interface ProductGlassLinkRequest {
+  bottleUnitId: number
+  glassUnitId: number
+  glassesInBottle: number
+  glassDiscreteStep?: string | number | null
+}
+
+export interface ProductGlassLinkOut {
+  productId: number
+  baseUnitId: number
+  bottleUnitId: number
+  bottleRatioToBase: string
+  glassUnitId: number
+  glassRatioToBase: string
+  glassesInBottle: number
+  productUnits: ProductUnit[]
+}
+
 export interface ProductMetaView {
   image?: string | null
   bodyHtml?: string | null
@@ -565,7 +583,7 @@ export const productApi = {
     return api.post('/products/', payload)
   },
 
-async updateProduct(id: number, data: ProductForm) {
+  async updateProduct(id: number, data: ProductForm) {
   // 🔒 Validation: productTypeId must be a number > 0
   if (!data.productTypeId || typeof data.productTypeId !== 'number' || data.productTypeId <= 0) {
     throw new Error('Invalid productTypeId')
@@ -619,6 +637,17 @@ async updateProduct(id: number, data: ProductForm) {
 
   return api.put(`/products/${id}`, payload)
 },
+
+  async updateProductGlassLink(productId: number, payload: ProductGlassLinkRequest): Promise<ProductGlassLinkOut> {
+    const requestPayload = {
+      bottle_unit_id: payload.bottleUnitId,
+      glass_unit_id: payload.glassUnitId,
+      glasses_in_bottle: payload.glassesInBottle,
+      glass_discrete_step: payload.glassDiscreteStep ?? 1,
+    }
+    const res = await api.put<ProductGlassLinkOut>(`/products/${productId}/glass-link`, requestPayload)
+    return res.data
+  },
 
   async sellProduct(saleRequest: SaleRequest): Promise<SaleResponse> {
     return api.post('/sales/', saleRequest).then(res => res.data);

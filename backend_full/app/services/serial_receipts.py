@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.models.models import Receipt, ReceiptLine, StockLot, ProductItem, Product, Unit, ProductUnit, Box
+from app.models.models import Receipt, ReceiptLine, StockLot, ProductItem, Product, Unit, ProductTypeUnit, ProductUnit, Box
 from app.services.serial_stock import SerialStockLedger
 
 
@@ -491,10 +491,25 @@ class ReceiptService:
             .filter(ProductUnit.product_id == product_id, ProductUnit.unit_id == unit_id)
             .first()
         )
-        if not pu:
-            raise HTTPException(status_code=422, detail="Missing product unit conversion")
-        ratio = Decimal(str(pu.ratio_to_base))
-        qty_base = qty * ratio
-        if qty_base != qty_base.to_integral_value():
-            raise HTTPException(status_code=422, detail="Quantity must be integer in base units for serialized receipt")
-        return int(qty_base)
+        if pu:
+            ratio = Decimal(str(pu.ratio_to_base))
+            qty_base = qty * ratio
+            if qty_base != qty_base.to_integral_value():
+                raise HTTPException(status_code=422, detail="Quantity must be integer in base units for serialized receipt")
+            return int(qty_base)
+        if product.product_type_id:
+            type_unit = (
+                self.db.query(ProductTypeUnit)
+                .filter(
+                    ProductTypeUnit.product_type_id == product.product_type_id,
+                    ProductTypeUnit.unit_id == unit_id,
+                )
+                .first()
+            )
+            if type_unit:
+                ratio = Decimal(str(type_unit.ratio_to_base))
+                qty_base = qty * ratio
+                if qty_base != qty_base.to_integral_value():
+                    raise HTTPException(status_code=422, detail="Quantity must be integer in base units for serialized receipt")
+                return int(qty_base)
+        raise HTTPException(status_code=422, detail="Missing product unit conversion")

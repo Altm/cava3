@@ -5,7 +5,7 @@ from decimal import Decimal
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.models import Product, ProductUnit, Stock
+from app.models.models import Product, ProductTypeUnit, ProductUnit, Stock
 
 
 class StockService:
@@ -59,7 +59,19 @@ class StockService:
             .filter(ProductUnit.product_id == product_id, ProductUnit.unit_id == from_unit_id)
             .first()
         )
-        if not pu:
-            raise HTTPException(status_code=422, detail="Missing product unit conversion")
-        ratio = Decimal(str(pu.ratio_to_base))
-        return qty * ratio
+        if pu:
+            ratio = Decimal(str(pu.ratio_to_base))
+            return qty * ratio
+        if product.product_type_id:
+            type_unit = (
+                self.db.query(ProductTypeUnit)
+                .filter(
+                    ProductTypeUnit.product_type_id == product.product_type_id,
+                    ProductTypeUnit.unit_id == from_unit_id,
+                )
+                .first()
+            )
+            if type_unit:
+                ratio = Decimal(str(type_unit.ratio_to_base))
+                return qty * ratio
+        raise HTTPException(status_code=422, detail="Missing product unit conversion")

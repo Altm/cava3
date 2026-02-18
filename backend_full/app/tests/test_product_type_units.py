@@ -10,6 +10,8 @@ from app.application.simple_catalog.product_types import (
 from app.application.simple_catalog.products import (
     CreateProductCommand,
     CreateProductHandler,
+    SetProductGlassLinkCommand,
+    SetProductGlassLinkHandler,
 )
 from app.infrastructure.db.uow import BoundSessionUnitOfWork
 from app.models.models import ProductUnit, Unit
@@ -152,3 +154,65 @@ def test_non_strict_type_allows_extra_product_units(db_session):
         .first()
     )
     assert box_row is not None
+
+
+def test_set_product_glass_link_updates_ratio(db_session):
+    bottle, glass, _box = _seed_units(db_session)
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        product_type = CreateProductTypeHandler().handle(
+            CreateProductTypeCommand(
+                payload=schemas.ProductTypeCreate(
+                    name="WineFast",
+                    is_composite=False,
+                    strict_units_by_type=False,
+                    product_type_units=[
+                        schemas.ProductTypeUnitCreate(unit_id=glass.id, ratio_to_base=Decimal("0.2")),
+                    ],
+                )
+            ),
+            uow,
+        )
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        product = CreateProductHandler().handle(
+            CreateProductCommand(
+                payload=schemas.ProductCreate(
+                    product_type_id=product_type.id,
+                    name="Wine Fast Link",
+                    sku="W-FL",
+                    base_cost=Decimal("11.00"),
+                    stock=Decimal("0"),
+                    base_unit_id=bottle.id,
+                    product_units=[],
+                )
+            ),
+            uow,
+        )
+
+    with BoundSessionUnitOfWork(db_session) as uow:
+        result = SetProductGlassLinkHandler().handle(
+            SetProductGlassLinkCommand(
+                product_id=product.id,
+                payload=schemas.ProductGlassLinkUpdate(
+                    bottle_unit_id=bottle.id,
+                    glass_unit_id=glass.id,
+                    glasses_in_bottle=6,
+                ),
+            ),
+            uow,
+        )
+
+    assert result.product_id == product.id
+    assert result.bottle_unit_id == bottle.id
+    assert result.glass_unit_id == glass.id
+    assert result.glasses_in_bottle == 6
+    assert Decimal(str(result.glass_ratio_to_base)) == Decimal("0.166667")
+
+    glass_row = (
+        db_session.query(ProductUnit)
+        .filter(ProductUnit.product_id == product.id, ProductUnit.unit_id == glass.id)
+        .first()
+    )
+    assert glass_row is not None
+    assert Decimal(str(glass_row.ratio_to_base)) == Decimal("0.166667")

@@ -70,6 +70,12 @@ class DeleteProductCommand:
     product_id: int
 
 
+@dataclass(frozen=True)
+class SetProductGlassLinkCommand:
+    product_id: int
+    payload: schemas.ProductGlassLinkUpdate
+
+
 def _assert_no_component_cycles(db, parent_product_id: int, component_product_ids: list[int]) -> None:
     if parent_product_id in component_product_ids:
         raise HTTPException(status_code=400, detail="Composite product cannot include itself")
@@ -184,6 +190,38 @@ def _assert_strict_units(
                 status_code=400,
                 detail=f"Unit {unit.unit_id} is not allowed by product type strict units",
             )
+
+
+def _ratio_from_product_or_type(
+    db,
+    *,
+    product: models.Product,
+    unit_id: int,
+) -> Decimal | None:
+    if unit_id == product.base_unit_id:
+        return Decimal("1")
+    product_unit = (
+        db.query(models.ProductUnit.ratio_to_base)
+        .filter(
+            models.ProductUnit.product_id == product.id,
+            models.ProductUnit.unit_id == unit_id,
+        )
+        .first()
+    )
+    if product_unit:
+        return Decimal(str(product_unit[0]))
+    if product.product_type_id:
+        type_unit = (
+            db.query(models.ProductTypeUnit.ratio_to_base)
+            .filter(
+                models.ProductTypeUnit.product_type_id == product.product_type_id,
+                models.ProductTypeUnit.unit_id == unit_id,
+            )
+            .first()
+        )
+        if type_unit:
+            return Decimal(str(type_unit[0]))
+    return None
 
 
 class CreateProductHandler:
@@ -484,3 +522,104 @@ class DeleteProductHandler:
         db.query(models.ProductComposite).filter(models.ProductComposite.parent_product_id == product.id).delete()
         db.delete(product)
         return {"message": "Product deleted successfully"}
+
+
+class SetProductGlassLinkHandler:
+    def handle(self, command: SetProductGlassLinkCommand, uow: AbstractUnitOfWork) -> schemas.ProductGlassLinkOut:
+        db = uow.session
+        product = db.query(models.Product).get(command.product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+
+        payload = command.payload
+        bottle_unit_id = int(payload.bottle_unit_id)
+        glass_unit_id = int(payload.glass_unit_id)
+        if bottle_unit_id == glass_unit_id:
+            raise HTTPException(status_code=422, detail="Bottle unit and glass unit must be different")
+
+        bottle_unit = db.query(models.Unit).get(bottle_unit_id)
+        glass_unit = db.query(models.Unit).get(glass_unit_id)
+        if not bottle_unit or not glass_unit:
+            raise HTTPException(status_code=404, detail="Unit not found")
+        if glass_unit.unit_type != "portion":
+            raise HTTPException(status_code=422, detail="Glass unit must be of type 'portion'")
+
+        if product.product_type and product.product_type.strict_units_by_type:
+            allowed_rows = (
+                db.query(models.ProductTypeUnit.unit_id)
+                .filter(models.ProductTypeUnit.product_type_id == product.product_type_id)
+                .all()
+            )
+            allowed_unit_ids = {int(row[0]) for row in allowed_rows}
+            allowed_unit_ids.add(int(product.base_unit_id))
+            if bottle_unit_id not in allowed_unit_ids:
+                raise HTTPException(status_code=400, detail=f"Unit {bottle_unit_id} is not allowed by product type strict units")
+            if glass_unit_id not in allowed_unit_ids:
+                raise HTTPException(status_code=400, detail=f"Unit {glass_unit_id} is not allowed by product type strict units")
+
+        bottle_ratio = _ratio_from_product_or_type(db, product=product, unit_id=bottle_unit_id)
+        if bottle_ratio is None or bottle_ratio <= 0:
+            raise HTTPException(status_code=422, detail="Missing conversion for bottle unit")
+
+        glasses_in_bottle = Decimal(int(payload.glasses_in_bottle))
+        glass_ratio = (bottle_ratio / glasses_in_bottle).quantize(Decimal("0.000001"))
+        if glass_ratio <= 0:
+            raise HTTPException(status_code=422, detail="Invalid glass ratio")
+
+        existing_rows = db.query(models.ProductUnit).filter(models.ProductUnit.product_id == product.id).all()
+        by_unit_id = {row.unit_id: row for row in existing_rows}
+
+        base_row = by_unit_id.get(product.base_unit_id)
+        if base_row:
+            base_row.ratio_to_base = Decimal("1")
+            base_row.discrete_step = None
+        else:
+            db.add(
+                models.ProductUnit(
+                    product_id=product.id,
+                    unit_id=product.base_unit_id,
+                    ratio_to_base=Decimal("1"),
+                    discrete_step=None,
+                )
+            )
+
+        if bottle_unit_id != product.base_unit_id:
+            bottle_row = by_unit_id.get(bottle_unit_id)
+            if bottle_row:
+                bottle_row.ratio_to_base = bottle_ratio
+            else:
+                db.add(
+                    models.ProductUnit(
+                        product_id=product.id,
+                        unit_id=bottle_unit_id,
+                        ratio_to_base=bottle_ratio,
+                        discrete_step=None,
+                    )
+                )
+
+        glass_row = by_unit_id.get(glass_unit_id)
+        if glass_row:
+            glass_row.ratio_to_base = glass_ratio
+            glass_row.discrete_step = payload.glass_discrete_step
+        else:
+            db.add(
+                models.ProductUnit(
+                    product_id=product.id,
+                    unit_id=glass_unit_id,
+                    ratio_to_base=glass_ratio,
+                    discrete_step=payload.glass_discrete_step,
+                )
+            )
+        db.flush()
+        updated_product = db.query(models.Product).get(product.id)
+        serialized_units = serialize_product(updated_product, db).product_units or []
+        return schemas.ProductGlassLinkOut(
+            product_id=product.id,
+            base_unit_id=product.base_unit_id,
+            bottle_unit_id=bottle_unit_id,
+            bottle_ratio_to_base=bottle_ratio,
+            glass_unit_id=glass_unit_id,
+            glass_ratio_to_base=glass_ratio,
+            glasses_in_bottle=int(payload.glasses_in_bottle),
+            product_units=serialized_units,
+        )
