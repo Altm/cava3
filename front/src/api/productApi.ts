@@ -638,15 +638,19 @@ export const productApi = {
   return api.put(`/products/${id}`, payload)
 },
 
-  async updateProductGlassLink(productId: number, payload: ProductGlassLinkRequest): Promise<ProductGlassLinkOut> {
+  async updateProductFractionLink(productId: number, payload: ProductGlassLinkRequest): Promise<ProductGlassLinkOut> {
     const requestPayload = {
       bottle_unit_id: payload.bottleUnitId,
       glass_unit_id: payload.glassUnitId,
       glasses_in_bottle: payload.glassesInBottle,
       glass_discrete_step: payload.glassDiscreteStep ?? 1,
     }
-    const res = await api.put<ProductGlassLinkOut>(`/products/${productId}/glass-link`, requestPayload)
+    const res = await api.put<ProductGlassLinkOut>(`/products/${productId}/fraction-link`, requestPayload)
     return res.data
+  },
+
+  async updateProductGlassLink(productId: number, payload: ProductGlassLinkRequest): Promise<ProductGlassLinkOut> {
+    return this.updateProductFractionLink(productId, payload)
   },
 
   async sellProduct(saleRequest: SaleRequest): Promise<SaleResponse> {

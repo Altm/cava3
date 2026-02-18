@@ -23,7 +23,7 @@ const handleLogout = () => {
         <RouterLink to="/product-form">Создать товар</RouterLink> |
         <RouterLink to="/product-types">Типы товаров</RouterLink> |
         <RouterLink to="/units">Единицы измерения</RouterLink> |
-        <RouterLink to="/product-units">Бокал ↔ бутылка</RouterLink> |
+        <RouterLink to="/product-units">Дробные части</RouterLink> |
         <RouterLink to="/sales">Продажи</RouterLink> |
         <RouterLink to="/sales/list">Список продаж</RouterLink> |
         <RouterLink to="/prices">Прайсы</RouterLink> |

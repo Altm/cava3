@@ -364,28 +364,32 @@ class SalesCheckoutHandler:
 
         if self._is_serial_product(db, product):
             if unit.unit_type == "portion":
-                glasses_requested = self._portion_to_glasses_count(quantity=quantity, ratio_to_base=ratio_to_base)
-                resolved_glass = self._handle_glass_line(
+                qty_base = quantity * ratio_to_base
+                sold_item_ids = self._consume_serial_base_quantity(
                     db=db,
                     terminal=terminal,
-                    line=schemas.SaleCheckoutLineIn(
-                        kind="glass",
-                        product_id=product.id,
-                        quantity=Decimal(glasses_requested),
-                        unit_id=unit.id,
-                        item_qr_code=line.item_qr_code,
-                    ),
+                    product=product,
+                    base_quantity=qty_base,
                     stock_service=stock_service,
+                    not_enough_detail="Insufficient stock for fractional serialized sale",
                 )
+                unit_price = self._resolve_unit_price(
+                    db=db,
+                    location_id=terminal.location_id,
+                    product=product,
+                    unit_id=unit.id,
+                    ratio_to_base=ratio_to_base,
+                )
+                total_price = (unit_price * quantity).quantize(Decimal("0.01"))
                 return _ResolvedLine(
                     kind="product",
-                    product=resolved_glass.product,
+                    product=product,
                     quantity=quantity,
                     unit_id=unit.id,
                     unit_code=unit.code,
-                    unit_price=resolved_glass.unit_price,
-                    total_price=resolved_glass.total_price,
-                    resolved_item_ids=resolved_glass.resolved_item_ids,
+                    unit_price=unit_price,
+                    total_price=total_price,
+                    resolved_item_ids=sold_item_ids,
                 )
             qty_base = quantity * ratio_to_base
             qty_base_int = self._to_int_base_units(qty_base)
@@ -497,23 +501,20 @@ class SalesCheckoutHandler:
             component_product = self._get_product(db, component_product_id)
             if self._is_serial_product(db, component_product):
                 try:
-                    glasses_requested = self._base_to_glasses_count(required_base)
-                    consumed = self._handle_glass_line(
+                    consumed_item_ids = self._consume_serial_base_quantity(
                         db=db,
                         terminal=terminal,
-                        line=schemas.SaleCheckoutLineIn(
-                            kind="glass",
-                            product_id=component_product.id,
-                            quantity=Decimal(glasses_requested),
-                        ),
+                        product=component_product,
+                        base_quantity=required_base,
                         stock_service=stock_service,
+                        not_enough_detail="Insufficient serialized stock for component",
                     )
                 except HTTPException as exc:
                     raise HTTPException(
                         status_code=exc.status_code,
                         detail=f"Composite component '{component_product.name}': {exc.detail}",
                     ) from exc
-                resolved_item_ids.extend(consumed.resolved_item_ids)
+                resolved_item_ids.extend(consumed_item_ids)
                 continue
 
             stock_service.adjust_stock(
@@ -832,6 +833,56 @@ class SalesCheckoutHandler:
             resolved_item_ids=sorted(set(consumed_item_ids)),
         )
 
+    def _consume_serial_base_quantity(
+        self,
+        *,
+        db: Session,
+        terminal: models.Terminal,
+        product: models.Product,
+        base_quantity: Decimal,
+        stock_service: StockService,
+        not_enough_detail: str,
+    ) -> list[int]:
+        if base_quantity <= 0:
+            raise HTTPException(status_code=422, detail="Quantity must be positive")
+
+        part_ratio = self._resolve_serial_part_ratio(db=db, product=product)
+        parts_requested = self._decimal_to_positive_int(
+            base_quantity / part_ratio,
+            error_detail="Quantity must map to configured serialized part",
+        )
+        parts_per_item = self._decimal_to_positive_int(
+            Decimal("1") / part_ratio,
+            error_detail="Configured part unit cannot split serialized item exactly",
+        )
+
+        consumed_item_ids: list[int] = []
+        remaining = parts_requested
+        while remaining > 0:
+            candidate = self._select_next_pour_candidate(
+                db=db,
+                location_id=terminal.location_id,
+                product_id=product.id,
+            )
+            if not candidate:
+                raise HTTPException(status_code=409, detail=not_enough_detail)
+            consumed = self._consume_glasses_from_item(
+                db=db,
+                item=candidate,
+                glasses=remaining,
+                glasses_total=parts_per_item,
+            )
+            consumed_item_ids.append(candidate.id)
+            remaining -= consumed
+
+        stock_service.adjust_stock(
+            location_id=terminal.location_id,
+            product_id=product.id,
+            quantity=-base_quantity,
+            unit_id=product.base_unit_id,
+        )
+        return sorted(set(consumed_item_ids))
+
     def _build_register_payload(
         self,
         *,
@@ -1080,28 +1131,43 @@ class SalesCheckoutHandler:
             raise HTTPException(status_code=422, detail=f"{field_name} must be an integer")
         return quantity_int
 
-    def _portion_to_glasses_count(self, *, quantity: Decimal, ratio_to_base: Decimal) -> int:
-        glasses_per_bottle = int(self.settings.glasses_per_bottle)
-        if glasses_per_bottle <= 0:
-            raise HTTPException(status_code=500, detail="Invalid glasses_per_bottle configuration")
-        glasses_decimal = quantity * ratio_to_base * Decimal(glasses_per_bottle)
-        glasses_int = int(glasses_decimal.to_integral_value(rounding=ROUND_DOWN))
-        if Decimal(glasses_int) != glasses_decimal or glasses_int <= 0:
-            raise HTTPException(status_code=422, detail="Quantity must map to whole glasses")
-        return glasses_int
-
-    def _base_to_glasses_count(self, base_quantity: Decimal) -> int:
-        glasses_per_bottle = int(self.settings.glasses_per_bottle)
-        if glasses_per_bottle <= 0:
-            raise HTTPException(status_code=500, detail="Invalid glasses_per_bottle configuration")
-        glasses_decimal = base_quantity * Decimal(glasses_per_bottle)
-        glasses_int = int(glasses_decimal.to_integral_value(rounding=ROUND_DOWN))
-        if Decimal(glasses_int) != glasses_decimal or glasses_int <= 0:
-            raise HTTPException(
-                status_code=422,
-                detail="Quantity must map to supported serialized fractions",
+    def _resolve_serial_part_ratio(self, *, db: Session, product: models.Product) -> Decimal:
+        portion_row = (
+            db.query(models.ProductUnit.ratio_to_base)
+            .join(models.Unit, models.Unit.id == models.ProductUnit.unit_id)
+            .filter(
+                models.ProductUnit.product_id == product.id,
+                models.Unit.unit_type == "portion",
             )
-        return glasses_int
+            .order_by(models.ProductUnit.ratio_to_base.asc(), models.ProductUnit.unit_id.asc())
+            .first()
+        )
+        if portion_row:
+            return Decimal(str(portion_row[0]))
+        if product.product_type_id:
+            type_row = (
+                db.query(models.ProductTypeUnit.ratio_to_base)
+                .join(models.Unit, models.Unit.id == models.ProductTypeUnit.unit_id)
+                .filter(
+                    models.ProductTypeUnit.product_type_id == product.product_type_id,
+                    models.Unit.unit_type == "portion",
+                )
+                .order_by(models.ProductTypeUnit.ratio_to_base.asc(), models.ProductTypeUnit.unit_id.asc())
+                .first()
+            )
+            if type_row:
+                return Decimal(str(type_row[0]))
+        glasses_per_bottle = int(self.settings.glasses_per_bottle)
+        if glasses_per_bottle <= 0:
+            raise HTTPException(status_code=500, detail="Invalid glasses_per_bottle configuration")
+        return Decimal("1") / Decimal(glasses_per_bottle)
+
+    @staticmethod
+    def _decimal_to_positive_int(value: Decimal, *, error_detail: str) -> int:
+        integer = int(value.to_integral_value(rounding=ROUND_DOWN))
+        if Decimal(integer) != value or integer <= 0:
+            raise HTTPException(status_code=422, detail=error_detail)
+        return integer
 
     @staticmethod
     def _to_int_base_units(value: Decimal) -> int:

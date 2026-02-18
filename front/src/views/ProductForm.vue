@@ -4,7 +4,7 @@
       <h2>{{ isEditing ? 'Редактировать товар' : 'Создать товар' }}</h2>
       <div class="head-actions">
         <RouterLink class="btn btn-outline" to="/product-list">К списку</RouterLink>
-        <RouterLink class="btn btn-outline" to="/product-units">Бокал ↔ бутылка</RouterLink>
+        <RouterLink class="btn btn-outline" to="/product-units">Дробные части</RouterLink>
         <RouterLink
           v-if="isEditing && productIdValue"
           class="btn btn-secondary"

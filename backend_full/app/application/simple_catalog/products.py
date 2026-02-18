@@ -565,6 +565,8 @@ class SetProductGlassLinkHandler:
         glass_ratio = (bottle_ratio / glasses_in_bottle).quantize(Decimal("0.000001"))
         if glass_ratio <= 0:
             raise HTTPException(status_code=422, detail="Invalid glass ratio")
+        if glass_ratio >= bottle_ratio:
+            raise HTTPException(status_code=422, detail="Fraction unit must be smaller than parent unit")
 
         existing_rows = db.query(models.ProductUnit).filter(models.ProductUnit.product_id == product.id).all()
         by_unit_id = {row.unit_id: row for row in existing_rows}

@@ -317,6 +317,21 @@ def set_product_glass_link(
     )
 
 
+@router.put("/products/{product_id}/fraction-link", response_model=schemas.ProductGlassLinkOut)
+def set_product_fraction_link(
+    product_id: int,
+    payload: schemas.ProductGlassLinkUpdate,
+    user=Depends(PermissionChecker(["product.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Быстро настраивает связь «крупная единица ↔ дробная часть» для товара."""
+    return dispatch_command(
+        uow_factory,
+        SetProductGlassLinkHandler(),
+        SetProductGlassLinkCommand(product_id=product_id, payload=payload),
+    )
+
+
 @router.delete("/products/{product_id}")
 def delete_product(
     product_id: int,

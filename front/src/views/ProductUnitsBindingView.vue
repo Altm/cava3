@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <div class="page-head">
-      <h2>Связь бокала и бутылки</h2>
+      <h2>Связь продукта и дробной части</h2>
       <RouterLink class="btn btn-outline" to="/product-list">К списку товаров</RouterLink>
     </div>
 
@@ -27,10 +27,10 @@
               <th>ID</th>
               <th>Товар</th>
               <th>Базовая единица</th>
-              <th>Бутылка</th>
-              <th>Бокал</th>
-              <th>Бокалов в бутылке</th>
-              <th>Коэф. бокала</th>
+              <th>Крупная единица</th>
+              <th>Дробная единица</th>
+              <th>Дробных в 1 крупной</th>
+              <th>Коэф. дробной</th>
               <th>Статус</th>
               <th>Действия</th>
             </tr>
@@ -77,7 +77,7 @@
                 <span>{{ previewGlassRatio(row) }}</span>
               </td>
               <td>
-                <span v-if="!glassOptions(row).length" class="muted">Нет бокального юнита</span>
+                <span v-if="!glassOptions(row).length" class="muted">Нет доступных дробных юнитов</span>
                 <span v-else-if="!hasValidEditor(row)" class="muted">Заполните поля</span>
                 <span v-else class="ok">Готово</span>
               </td>
@@ -177,22 +177,28 @@ const bottleOptions = (product: Product): Unit[] => {
   const options = [...ids]
     .map((id) => unitById.value.get(id))
     .filter((row): row is Unit => !!row)
-    .filter((row) => row.unitType !== 'portion')
   return options.sort((a, b) => a.code.localeCompare(b.code))
 }
 
 const glassOptions = (product: Product): Unit[] => {
+  const editor = editors.value[product.id]
+  const selectedParentUnitId = editor?.bottleUnitId ?? product.baseUnitId
+  const parentRatio = ratioToBase(product, selectedParentUnitId)
   const ids = new Set<number>()
   for (const row of sortedUnits(product)) {
-    const unit = unitById.value.get(Number(row.unitId))
-    if (unit?.unitType === 'portion') ids.add(unit.id)
+    const ratio = Number(row.ratioToBase)
+    if (!Number.isFinite(ratio) || ratio <= 0) continue
+    if (parentRatio && ratio >= parentRatio) continue
+    ids.add(Number(row.unitId))
   }
   const fromProduct = [...ids]
     .map((id) => unitById.value.get(id))
     .filter((row): row is Unit => !!row)
     .sort((a, b) => a.code.localeCompare(b.code))
   if (fromProduct.length) return fromProduct
-  return units.value.filter((row) => row.unitType === 'portion').sort((a, b) => a.code.localeCompare(b.code))
+  return units.value
+    .filter((row) => row.id !== selectedParentUnitId)
+    .sort((a, b) => a.code.localeCompare(b.code))
 }
 
 const estimateGlassesInBottle = (product: Product, bottleUnitId: number, glassUnitId: number): number => {
@@ -247,7 +253,7 @@ const saveGlassLink = async (product: Product) => {
   }
   try {
     editor.saving = true
-    const updated = await productApi.updateProductGlassLink(product.id, {
+    const updated = await productApi.updateProductFractionLink(product.id, {
       bottleUnitId: editor.bottleUnitId,
       glassUnitId: editor.glassUnitId,
       glassesInBottle: editor.glassesInBottle,
