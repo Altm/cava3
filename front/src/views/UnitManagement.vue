@@ -13,7 +13,7 @@
           <th>Код</th>
           <th>Описание</th>
           <th>Тип</th>
-          <th>Дискретная</th>
+          <th>Целые значения</th>
           <th>Действия</th>
         </tr>
       </thead>
@@ -64,7 +64,7 @@
           <div class="form-group">
             <label>
               <input type="checkbox" v-model="form.isDiscrete" />
-              Дискретная
+              Только целые значения
             </label>
           </div>
           
