@@ -6,6 +6,11 @@ import ProductTypeManagement from '@/views/ProductTypeManagement.vue'
 import Login from '@/views/Login.vue'
 import { isAuthenticated } from '@/api/authApi'
 
+// Products 2 routes imports
+import ProductListView2 from '@/views/ProductListView2.vue'
+import ProductForm2 from '@/views/ProductForm2.vue'
+import ProductView2 from '@/views/ProductView2.vue'
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -43,6 +48,34 @@ const router = createRouter({
       path: '/product-view/:id',
       name: 'ProductView',
       component: () => import('@/views/ProductView.vue'),
+      props: true,
+      meta: { requiresAuth: true }
+    },
+    
+    // Products 2 Routes (Enhanced product management with fractional units)
+    {
+      path: '/products2',
+      name: 'Products2List',
+      component: ProductListView2,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/products2/create',
+      name: 'Products2Create',
+      component: ProductForm2,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/products2/:id/edit',
+      name: 'Products2Edit',
+      component: ProductForm2,
+      props: (route) => ({ productId: Number(route.params.id) }),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/products2/:id',
+      name: 'Products2View',
+      component: ProductView2,
       props: true,
       meta: { requiresAuth: true }
     },

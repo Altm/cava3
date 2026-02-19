@@ -318,8 +318,13 @@ class CreateProductHandler:
 
 class ListProductsHandler:
     def handle(self, query: ListProductsQuery, uow: AbstractUnitOfWork) -> list[schemas.Product]:
+        from sqlalchemy.orm import joinedload
         db = uow.session
-        query_builder = db.query(models.Product)
+        query_builder = db.query(models.Product).options(
+            joinedload(models.Product.product_type),
+            joinedload(models.Product.product_units),
+            joinedload(models.Product.components),
+        )
 
         if query.product_type_id:
             query_builder = query_builder.filter(models.Product.product_type_id == query.product_type_id)
@@ -362,8 +367,13 @@ class ProductsCountHandler:
 
 class GetProductHandler:
     def handle(self, query: GetProductQuery, uow: AbstractUnitOfWork) -> schemas.Product:
+        from sqlalchemy.orm import joinedload
         db = uow.session
-        product = db.query(models.Product).get(query.product_id)
+        product = db.query(models.Product).options(
+            joinedload(models.Product.product_type),
+            joinedload(models.Product.product_units),
+            joinedload(models.Product.components),
+        ).get(query.product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
         calculator = ProductAvailabilityCalculator(db)
@@ -372,8 +382,14 @@ class GetProductHandler:
 
 class GetProductViewHandler:
     def handle(self, query: GetProductViewQuery, uow: AbstractUnitOfWork) -> schemas.ProductView:
+        from sqlalchemy.orm import joinedload
         db = uow.session
-        product = db.query(models.Product).get(query.product_id)
+        product = db.query(models.Product).options(
+            joinedload(models.Product.product_type),
+            joinedload(models.Product.product_units),
+            joinedload(models.Product.components),
+            joinedload(models.Product.meta),
+        ).get(query.product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
         calculator = ProductAvailabilityCalculator(db)

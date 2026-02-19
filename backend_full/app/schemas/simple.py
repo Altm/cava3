@@ -188,6 +188,11 @@ class ProductUnitCreate(BaseModel):
     discrete_step: Optional[Decimal] = None
 
 
+class ProductUnitUpdate(BaseModel):
+    ratio_to_base: Decimal = Field(..., gt=0)
+    discrete_step: Optional[Decimal] = None
+
+
 class ProductUnit(ProductUnitCreate):
     id: Optional[int] = None
     product_id: int
@@ -320,6 +325,16 @@ class ProductUpdate(BaseModel):
 class ProductComponentCreate(BaseModel):
     component_product_id: int
     quantity: Decimal
+    unit_id: Optional[int] = None
+    substitution_allowed: bool = False
+    rounding: Optional[str] = None
+
+
+class ProductComponentUpdate(BaseModel):
+    quantity: Optional[Decimal] = None
+    unit_id: Optional[int] = None
+    substitution_allowed: Optional[bool] = None
+    rounding: Optional[str] = None
 
 
 class ProductComponent(ProductComponentCreate):

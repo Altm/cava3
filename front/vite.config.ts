@@ -26,7 +26,6 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://backend_full:8000',
-        // ИЛИ target: 'http://127.0.0.1:8001', если запускаете фронт локально
         changeOrigin: true,
         secure: false,
       },

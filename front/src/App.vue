@@ -19,20 +19,36 @@ const handleLogout = () => {
     <nav>
       <template v-if="authStore.isAuthenticated">
         <RouterLink to="/">Главная</RouterLink> |
-        <RouterLink to="/product-list">Список товаров</RouterLink> |
-        <RouterLink to="/product-form">Создать товар</RouterLink> |
-        <RouterLink to="/product-types">Типы товаров</RouterLink> |
-        <RouterLink to="/units">Единицы измерения</RouterLink> |
-        <RouterLink to="/product-units">Дробные части</RouterLink> |
-        <RouterLink to="/sales">Продажи</RouterLink> |
-        <RouterLink to="/sales/list">Список продаж</RouterLink> |
-        <RouterLink to="/prices">Прайсы</RouterLink> |
-        <RouterLink to="/lots">Партии</RouterLink> |
-        <RouterLink to="/serial/receipts">Приёмка (QR)</RouterLink> |
-        <RouterLink to="/serial/transfers">Перемещение (QR)</RouterLink> |
-        <RouterLink to="/serial/inventories">Инвентаризация (QR)</RouterLink> |
-        <RouterLink to="/serial/scan">Сканер QR</RouterLink> |
-        <RouterLink to="/serial/boxes/manage">Коробки (QR)</RouterLink> |
+        <span class="nav-group">
+          <strong>Продукты:</strong>
+          <RouterLink to="/products2">Продукты 2</RouterLink> |
+          <RouterLink to="/product-list">Список товаров</RouterLink> |
+          <RouterLink to="/product-form">Создать товар</RouterLink> |
+          <RouterLink to="/product-types">Типы товаров</RouterLink> |
+          <RouterLink to="/units">Единицы</RouterLink> |
+          <RouterLink to="/product-units">Дробные части</RouterLink>
+        </span> |
+        <span class="nav-group">
+          <strong>Продажи:</strong>
+          <RouterLink to="/sales">Продажи</RouterLink> |
+          <RouterLink to="/sales/list">Список</RouterLink>
+        </span> |
+        <span class="nav-group">
+          <strong>Цены:</strong>
+          <RouterLink to="/prices">Прайсы</RouterLink>
+        </span> |
+        <span class="nav-group">
+          <strong>Партии:</strong>
+          <RouterLink to="/lots">Партии</RouterLink>
+        </span> |
+        <span class="nav-group">
+          <strong>QR/Serial:</strong>
+          <RouterLink to="/serial/receipts">Приёмка</RouterLink> |
+          <RouterLink to="/serial/transfers">Перемещение</RouterLink> |
+          <RouterLink to="/serial/inventories">Инвентаризация</RouterLink> |
+          <RouterLink to="/serial/scan">Сканер</RouterLink> |
+          <RouterLink to="/serial/boxes/manage">Коробки</RouterLink>
+        </span> |
         <a href="#" @click="handleLogout">Выйти</a>
       </template>
       <template v-else>
@@ -75,6 +91,26 @@ nav a {
 
 nav a:first-of-type {
   border: 0;
+}
+
+.nav-group {
+  display: inline-block;
+}
+
+.nav-group strong {
+  color: #64748b;
+  font-size: 0.9em;
+  margin-right: 0.5rem;
+}
+
+.nav-group a {
+  border-left: 1px solid var(--color-border);
+  padding: 0 0.5rem;
+  font-size: 0.95em;
+}
+
+.nav-group a:first-of-type {
+  border-left: 1px solid var(--color-border);
 }
 
 @media (min-width: 1024px) {

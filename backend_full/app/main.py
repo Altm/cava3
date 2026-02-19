@@ -17,6 +17,7 @@ from app.api.v1.routes import (
     transfers_serial,
     inventories_serial,
     scan,
+    products2,
 )
 from app.audit.middleware import RequestLoggingMiddleware
 from app.audit.listeners import register_listeners
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(users.router, prefix="/api/v1")
     app.include_router(stock.router, prefix="/api/v1")
     app.include_router(simple_catalog.router, prefix="/api/v1")
+    app.include_router(products2.router, prefix="/api/v1")
     app.include_router(me.router, prefix="/api/v1")
     app.include_router(receipts.router, prefix="/api/v1")
     app.include_router(boxes.router, prefix="/api/v1")
