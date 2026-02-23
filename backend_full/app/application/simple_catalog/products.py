@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional
@@ -224,6 +225,105 @@ def _ratio_from_product_or_type(
     return None
 
 
+def _component_unit_id(component: schemas.ProductComponentCreate, *, fallback_base_unit_id: int) -> int:
+    return int(component.unit_id or fallback_base_unit_id)
+
+
+def _sync_composite_projection(
+    db,
+    *,
+    parent_product_id: int,
+    components: list[schemas.ProductComponentCreate],
+) -> None:
+    db.query(models.ProductComposite).filter(models.ProductComposite.parent_product_id == parent_product_id).delete()
+    for comp in components:
+        component_product = db.query(models.Product).get(comp.component_product_id)
+        if not component_product:
+            raise HTTPException(status_code=400, detail="Component product not found")
+        db.add(
+            models.ProductComposite(
+                parent_product_id=parent_product_id,
+                component_product_id=comp.component_product_id,
+                quantity=Decimal(str(comp.quantity)),
+                unit_id=_component_unit_id(comp, fallback_base_unit_id=component_product.base_unit_id),
+                substitution_allowed=bool(comp.substitution_allowed),
+                rounding=comp.rounding,
+                waste_factor=Decimal(str(comp.waste_factor or 0)),
+            )
+        )
+
+
+def _append_recipe_version(
+    db,
+    *,
+    product_id: int,
+    components: list[schemas.ProductComponentCreate],
+    created_by_user_id: int | None = None,
+) -> models.ProductRecipe:
+    now = datetime.utcnow()
+    active_rows = (
+        db.query(models.ProductRecipe)
+        .filter(
+            models.ProductRecipe.product_id == product_id,
+            models.ProductRecipe.is_active.is_(True),
+        )
+        .all()
+    )
+    for row in active_rows:
+        row.is_active = False
+        row.valid_to = now
+
+    max_version = (
+        db.query(models.func.max(models.ProductRecipe.version))
+        .filter(models.ProductRecipe.product_id == product_id)
+        .scalar()
+    )
+    next_version = int(max_version or 0) + 1
+
+    recipe = models.ProductRecipe(
+        product_id=product_id,
+        version=next_version,
+        is_active=True,
+        valid_from=now,
+        valid_to=None,
+        created_by=created_by_user_id,
+    )
+    db.add(recipe)
+    db.flush()
+
+    for comp in components:
+        component_product = db.query(models.Product).get(comp.component_product_id)
+        if not component_product:
+            raise HTTPException(status_code=400, detail="Component product not found")
+        db.add(
+            models.ProductRecipeComponent(
+                recipe_id=recipe.id,
+                component_product_id=comp.component_product_id,
+                quantity=Decimal(str(comp.quantity)),
+                unit_id=_component_unit_id(comp, fallback_base_unit_id=component_product.base_unit_id),
+                substitution_allowed=bool(comp.substitution_allowed),
+                rounding=comp.rounding,
+                waste_factor=Decimal(str(comp.waste_factor or 0)),
+            )
+        )
+    return recipe
+
+
+def _deactivate_active_recipes(db, *, product_id: int) -> None:
+    now = datetime.utcnow()
+    rows = (
+        db.query(models.ProductRecipe)
+        .filter(
+            models.ProductRecipe.product_id == product_id,
+            models.ProductRecipe.is_active.is_(True),
+        )
+        .all()
+    )
+    for row in rows:
+        row.is_active = False
+        row.valid_to = now
+
+
 class CreateProductHandler:
     def handle(self, command: CreateProductCommand, uow: AbstractUnitOfWork) -> schemas.Product:
         db = uow.session
@@ -256,6 +356,8 @@ class CreateProductHandler:
             primary_category=pt.name,
             base_unit_id=product.base_unit_id,
             base_cost=product.base_cost,
+            default_portion_size=product.default_portion_size,
+            portions_per_unit=product.portions_per_unit,
             is_active=True,
         )
         db.add(db_product)
@@ -290,18 +392,8 @@ class CreateProductHandler:
         if pt.is_composite:
             component_ids = [comp.component_product_id for comp in product.components]
             _assert_no_component_cycles(db, db_product.id, component_ids)
-            for comp in product.components:
-                component_product = db.query(models.Product).get(comp.component_product_id)
-                if not component_product:
-                    raise HTTPException(status_code=400, detail="Component product not found")
-                db.add(
-                    models.ProductComposite(
-                        parent_product_id=db_product.id,
-                        component_product_id=comp.component_product_id,
-                        quantity=Decimal(str(comp.quantity)),
-                        unit_id=component_product.base_unit_id,
-                    )
-                )
+            _sync_composite_projection(db, parent_product_id=db_product.id, components=product.components)
+            _append_recipe_version(db, product_id=db_product.id, components=product.components)
 
         loc = default_location(db)
         db.add(
@@ -462,6 +554,8 @@ class UpdateProductHandler:
         product.product_type_id = product_update.product_type_id
         product.name = product_update.name
         product.base_cost = product_update.base_cost
+        product.default_portion_size = product_update.default_portion_size
+        product.portions_per_unit = product_update.portions_per_unit
         product.base_unit_id = base_unit_id
 
         db.query(models.ProductAttributeValue).filter(models.ProductAttributeValue.product_id == product.id).delete()
@@ -489,22 +583,14 @@ class UpdateProductHandler:
             payload_units=resolved_payload_units,
         )
 
-        db.query(models.ProductComposite).filter(models.ProductComposite.parent_product_id == product.id).delete()
         if pt.is_composite:
             component_ids = [comp.component_product_id for comp in product_update.components]
             _assert_no_component_cycles(db, product.id, component_ids)
-            for comp in product_update.components:
-                component_product = db.query(models.Product).get(comp.component_product_id)
-                if not component_product:
-                    raise HTTPException(status_code=400, detail="Component product not found")
-                db.add(
-                    models.ProductComposite(
-                        parent_product_id=product.id,
-                        component_product_id=comp.component_product_id,
-                        quantity=Decimal(str(comp.quantity)),
-                        unit_id=component_product.base_unit_id,
-                    )
-                )
+            _sync_composite_projection(db, parent_product_id=product.id, components=product_update.components)
+            _append_recipe_version(db, product_id=product.id, components=product_update.components)
+        else:
+            db.query(models.ProductComposite).filter(models.ProductComposite.parent_product_id == product.id).delete()
+            _deactivate_active_recipes(db, product_id=product.id)
 
         loc = default_location(db)
         stock = (

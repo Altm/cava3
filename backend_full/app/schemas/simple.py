@@ -303,6 +303,8 @@ class ProductCreate(BaseModel):
     name: str
     sku: Optional[str] = None
     base_cost: Decimal
+    default_portion_size: Optional[Decimal] = None
+    portions_per_unit: Optional[int] = None
     stock: Decimal = Decimal("0")
     base_unit_id: Optional[int] = Field(default=None)  # Changed from base_unit_code to base_unit_id, made optional temporarily for frontend compatibility
     attributes: List[ProductAttributeValueCreate] = []
@@ -315,6 +317,8 @@ class ProductUpdate(BaseModel):
     name: str
     sku: Optional[str] = None
     base_cost: Decimal
+    default_portion_size: Optional[Decimal] = None
+    portions_per_unit: Optional[int] = None
     stock: Decimal = Decimal("0")
     base_unit_id: Optional[int] = Field(default=None)  # Changed from base_unit_code to base_unit_id, made optional temporarily for frontend compatibility
     attributes: List[ProductAttributeValueCreate] = []
@@ -328,6 +332,7 @@ class ProductComponentCreate(BaseModel):
     unit_id: Optional[int] = None
     substitution_allowed: bool = False
     rounding: Optional[str] = None
+    waste_factor: Decimal = Decimal("0")
 
 
 class ProductComponentUpdate(BaseModel):
@@ -335,6 +340,7 @@ class ProductComponentUpdate(BaseModel):
     unit_id: Optional[int] = None
     substitution_allowed: Optional[bool] = None
     rounding: Optional[str] = None
+    waste_factor: Optional[Decimal] = None
 
 
 class ProductComponent(ProductComponentCreate):
@@ -343,6 +349,7 @@ class ProductComponent(ProductComponentCreate):
     unit_id: int
     substitution_allowed: bool = False
     rounding: Optional[str] = None
+    waste_factor: Decimal = Decimal("0")
 
     class Config:
         from_attributes = True
@@ -381,6 +388,8 @@ class Product(BaseModel):
     product_type_id: int
     name: str
     base_cost: Decimal
+    default_portion_size: Optional[Decimal] = None
+    portions_per_unit: Optional[int] = None
     stock: Decimal
     is_composite: bool
     base_unit_id: int  # Added base_unit_id

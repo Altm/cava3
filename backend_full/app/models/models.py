@@ -153,6 +153,16 @@ class Product(Base):
     #unit_cost: Mapped[Decimal] = mapped_column(DECIMAL(18, 2), default=Decimal("0.00"), comment="Unit cost for catalog")
     tax_flags: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, comment="Tax or regulatory flags")
     base_cost: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True, comment="Base cost per unit")
+    default_portion_size: Mapped[Optional[Decimal]] = mapped_column(
+        DECIMAL(18, 6),
+        nullable=True,
+        comment="Default portion size in base units",
+    )
+    portions_per_unit: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Number of portions in one base unit",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
     
@@ -167,6 +177,11 @@ class Product(Base):
     product_units: Mapped[list["ProductUnit"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     stocks = relationship("Stock", back_populates="product")
     meta: Mapped[list["ProductMeta"]] = relationship(back_populates="product", cascade="all, delete-orphan")
+    recipes: Mapped[list["ProductRecipe"]] = relationship(
+        "ProductRecipe",
+        back_populates="product",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def is_composite(self) -> bool:
@@ -289,6 +304,13 @@ class ProductComposite(Base):
     unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id"), comment="Unit for component quantity")
     substitution_allowed: Mapped[bool] = mapped_column(Boolean, default=False, comment="If substitutions allowed")
     rounding: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, comment="Rounding rule identifier")
+    waste_factor: Mapped[Decimal] = mapped_column(
+        DECIMAL(6, 4),
+        nullable=False,
+        default=Decimal("0"),
+        server_default="0",
+        comment="Expected loss share for this component (0.05 = 5%)",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
     __table_args__ = (
@@ -304,6 +326,63 @@ class ProductComposite(Base):
         foreign_keys=[component_product_id]
     )
     unit: Mapped["Unit"] = relationship("Unit", back_populates="product_composites")
+
+
+class ProductRecipe(Base):
+    """Versioned recipe for composite product."""
+
+    __tablename__ = "product_recipe"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("product.id", ondelete="CASCADE"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=func.true())
+    valid_from: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
+    valid_to: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    product: Mapped["Product"] = relationship("Product", back_populates="recipes")
+    components: Mapped[list["ProductRecipeComponent"]] = relationship(
+        "ProductRecipeComponent",
+        back_populates="recipe",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("product_id", "version", name="uq_product_recipe_product_version"),
+    )
+
+
+class ProductRecipeComponent(Base):
+    """Recipe component for versioned recipe."""
+
+    __tablename__ = "product_recipe_component"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    recipe_id: Mapped[int] = mapped_column(ForeignKey("product_recipe.id", ondelete="CASCADE"), nullable=False)
+    component_product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), nullable=False)
+    unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id"), nullable=False)
+    substitution_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=func.false())
+    rounding: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    waste_factor: Mapped[Decimal] = mapped_column(
+        DECIMAL(6, 4),
+        nullable=False,
+        default=Decimal("0"),
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    recipe: Mapped["ProductRecipe"] = relationship("ProductRecipe", back_populates="components")
+    unit: Mapped["Unit"] = relationship("Unit")
+
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_product_recipe_component_quantity_positive"),
+        CheckConstraint("waste_factor >= 0", name="ck_product_recipe_component_waste_non_negative"),
+    )
 
 
 class Location(Base):
@@ -704,8 +783,8 @@ class ProductItem(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     box: Mapped[Optional["Box"]] = relationship("Box", back_populates="items")
-    pour_state: Mapped[Optional["ProductItemPour"]] = relationship(
-        "ProductItemPour",
+    usage_state: Mapped[Optional["ProductItemUsage"]] = relationship(
+        "ProductItemUsage",
         back_populates="product_item",
         uselist=False,
         cascade="all, delete-orphan",
@@ -738,27 +817,50 @@ class TransferItem(Base):
     )
 
 
-class ProductItemPour(Base):
-    """Per-item pour progress for glass sales (e.g. bottle -> glasses)."""
+class ProductItemUsage(Base):
+    """Per-item partial usage progress for serialized items."""
 
-    __tablename__ = "product_item_pour"
+    __tablename__ = "product_item_usage"
 
     product_item_id: Mapped[int] = mapped_column(
         ForeignKey("product_item.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    glasses_total: Mapped[int] = mapped_column(Integer, nullable=False)
-    glasses_sold: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    total_units: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), nullable=False)
+    used_units: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), nullable=False, default=Decimal("0"), server_default="0")
+    unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id"), nullable=False, comment="UoM for partial consumption")
+    metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, comment="Additional usage metadata")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     __table_args__ = (
-        CheckConstraint("glasses_total > 0", name="ck_product_item_pour_total_positive"),
-        CheckConstraint("glasses_sold >= 0", name="ck_product_item_pour_sold_non_negative"),
-        CheckConstraint("glasses_sold <= glasses_total", name="ck_product_item_pour_sold_le_total"),
+        CheckConstraint("total_units > 0", name="ck_product_item_usage_total_positive"),
+        CheckConstraint("used_units >= 0", name="ck_product_item_usage_used_non_negative"),
+        CheckConstraint("used_units <= total_units", name="ck_product_item_usage_used_le_total"),
     )
 
-    product_item: Mapped["ProductItem"] = relationship("ProductItem", back_populates="pour_state")
+    product_item: Mapped["ProductItem"] = relationship("ProductItem", back_populates="usage_state")
+    unit: Mapped["Unit"] = relationship("Unit")
+
+    @property
+    def glasses_total(self):
+        return self.total_units
+
+    @glasses_total.setter
+    def glasses_total(self, value):
+        self.total_units = Decimal(str(value))
+
+    @property
+    def glasses_sold(self):
+        return self.used_units
+
+    @glasses_sold.setter
+    def glasses_sold(self, value):
+        self.used_units = Decimal(str(value))
+
+
+# Backward-compat alias for older code/tests.
+ProductItemPour = ProductItemUsage
 
 
 class InventoryDoc(Base):

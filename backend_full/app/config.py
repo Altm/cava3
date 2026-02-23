@@ -25,9 +25,6 @@ class Settings(BaseSettings):
         True,
         env="SALES_ALLOW_AGGREGATE_FALLBACK_FOR_SERIAL",
     )
-    glasses_per_bottle: int = 5
-    loaf_fraction: str = "0.1"
-    jar_fraction: str = "0.1"
     admin_username: str = Field("admin", env="ADMIN_USERNAME")
     admin_password: str = Field("admin", env="ADMIN_PASSWORD")
     default_location_id: int = Field(1, env="DEFAULT_LOCATION_ID")

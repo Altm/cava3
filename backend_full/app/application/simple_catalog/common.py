@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal, ROUND_DOWN
 from typing import Optional
 
@@ -34,7 +35,7 @@ class ProductAvailabilityCalculator:
         self.db = db
         self.location_id = location_id
         self._product_cache: dict[int, models.Product] = {}
-        self._component_cache: dict[int, list[models.ProductComposite]] = {}
+        self._component_cache: dict[int, list] = {}
         self._ratio_cache: dict[tuple[int, int], Optional[Decimal]] = {}
         self._stock_base_cache: dict[int, Decimal] = {}
         self._available_cache: dict[int, Decimal] = {}
@@ -63,6 +64,23 @@ class ProductAvailabilityCalculator:
         cached = self._component_cache.get(product_id)
         if cached is not None:
             return cached
+        if hasattr(models, "ProductRecipe") and hasattr(models, "ProductRecipeComponent"):
+            now = datetime.utcnow()
+            recipe_rows = (
+                self.db.query(models.ProductRecipeComponent)
+                .join(models.ProductRecipe, models.ProductRecipe.id == models.ProductRecipeComponent.recipe_id)
+                .filter(
+                    models.ProductRecipe.product_id == product_id,
+                    models.ProductRecipe.is_active.is_(True),
+                    models.ProductRecipe.valid_from <= now,
+                    (models.ProductRecipe.valid_to.is_(None) | (models.ProductRecipe.valid_to > now)),
+                )
+                .order_by(models.ProductRecipeComponent.id.asc())
+                .all()
+            )
+            if recipe_rows:
+                self._component_cache[product_id] = recipe_rows
+                return recipe_rows
         rows = (
             self.db.query(models.ProductComposite)
             .filter(models.ProductComposite.parent_product_id == product_id)
@@ -145,6 +163,7 @@ class ProductAvailabilityCalculator:
                     min_bundles = Decimal("0")
                     break
                 required_qty = Decimal(str(comp.quantity or 0))
+                required_qty *= Decimal("1") + Decimal(str(getattr(comp, "waste_factor", 0) or 0))
                 if required_qty <= 0:
                     continue
                 required_ratio = self._ratio_to_base(component_product, comp.unit_id)
@@ -374,6 +393,7 @@ def serialize_product(
             unit_id=c.unit_id,
             substitution_allowed=c.substitution_allowed,
             rounding=c.rounding,
+            waste_factor=Decimal(str(c.waste_factor or 0)),
         )
         for c in db_product.components
     ]
@@ -386,6 +406,8 @@ def serialize_product(
         product_type_id=db_product.product_type_id,
         name=db_product.name,
         base_cost=db_product.base_cost or Decimal("0"),
+        default_portion_size=Decimal(str(db_product.default_portion_size)) if db_product.default_portion_size is not None else None,
+        portions_per_unit=db_product.portions_per_unit,
         stock=total_stock,
         is_composite=db_product.product_type.is_composite,
         base_unit_id=db_product.base_unit_id,

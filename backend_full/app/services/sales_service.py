@@ -5,7 +5,8 @@ from hashlib import sha1
 from typing import List
 from sqlalchemy.orm import Session
 from app.common.errors import IdempotencyError
-from app.models.models import Product, ProductComposite, SaleEvent, SaleLine, Terminal, Unit
+from app.domain.composite import CompositeCycleError, CompositeDecompositionService
+from app.models.models import Product, SaleEvent, SaleLine, Terminal, Unit
 from app.services.stock_service import StockService
 import structlog
 
@@ -193,19 +194,32 @@ class SalesService:
             return None
 
     def _expand_components(self, product_id: int, quantity: Decimal, unit_id: int) -> List[dict]:
-        components = self.db.query(ProductComposite).filter_by(parent_product_id=product_id).all()
-        if not components:
-            return [{"product_id": product_id, "quantity": quantity, "unit_id": unit_id}]
-        expanded: List[dict] = []
-        for comp in components:
-            expanded.append(
+        product = self.db.query(Product).get(product_id)
+        if not product:
+            return []
+        ratio_to_base = Decimal("1")
+        if unit_id != product.base_unit_id:
+            ratio_to_base = self.stock_service._to_base(product.id, unit_id, Decimal("1"))  # noqa: SLF001
+
+        qty_base = Decimal(quantity) * Decimal(str(ratio_to_base))
+        decomposition = CompositeDecompositionService(self.db)
+        try:
+            requirements = decomposition.decompose(product_id=product_id, quantity_base=qty_base)
+        except CompositeCycleError:
+            return []
+        result: list[dict] = []
+        for req in requirements:
+            leaf = self.db.query(Product).get(req.product_id)
+            if not leaf:
+                continue
+            result.append(
                 {
-                    "product_id": comp.component_product_id,
-                    "quantity": quantity * Decimal(comp.quantity),
-                    "unit_id": comp.unit_id,
+                    "product_id": req.product_id,
+                    "quantity": req.quantity_base,
+                    "unit_id": leaf.base_unit_id,
                 }
             )
-        return expanded
+        return result
 
     def reconcile_daily(self, terminal_id: int, location_id: int, events: List[dict]) -> dict:
         applied_events = []

@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.application.common.uow import AbstractUnitOfWork
 from app.config import get_settings
+from app.domain.composite import CompositeCycleError, CompositeDecompositionService
+from app.domain.events import ProductSoldEvent
 from app.models import models
 from app.schemas import simple as schemas
 from app.security.hmac import _generate_hmac_signature
@@ -309,6 +311,15 @@ class SalesCheckoutHandler:
             terminal=terminal,
             payload=register_payload,
         )
+        for line in resolved_lines:
+            uow.collect_event(
+                ProductSoldEvent(
+                    sale_id=sale_id,
+                    product_id=line.product.id,
+                    quantity=line.quantity,
+                    unit_id=line.unit_id,
+                )
+            )
 
         return schemas.SaleCheckoutOut(
             sale_id=sale_id,
@@ -482,24 +493,24 @@ class SalesCheckoutHandler:
         if qty_base <= 0:
             raise HTTPException(status_code=422, detail="quantity must be positive")
 
-        component_requirements: dict[int, Decimal] = {}
-        self._collect_composite_leaf_requirements(
-            db=db,
-            product=product,
-            required_base_qty=qty_base,
-            requirements=component_requirements,
-            active_stack=set(),
-        )
+        decomposition = CompositeDecompositionService(db)
+        try:
+            component_requirements = decomposition.decompose(product_id=product.id, quantity_base=qty_base)
+        except CompositeCycleError as exc:
+            raise HTTPException(status_code=409, detail=f"Composite cycle detected: {' -> '.join(map(str, exc.path))}") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
         if not component_requirements:
             raise HTTPException(status_code=422, detail="Composite product has no components")
 
         resolved_item_ids: list[int] = []
-        for component_product_id in sorted(component_requirements.keys()):
-            required_base = component_requirements[component_product_id]
+        for requirement in sorted(component_requirements, key=lambda row: row.product_id):
+            required_base = Decimal(str(requirement.quantity_base))
             if required_base <= 0:
                 continue
-            component_product = self._get_product(db, component_product_id)
-            if self._is_serial_product(db, component_product):
+            component_product = self._get_product(db, requirement.product_id)
+            if requirement.is_serial:
                 try:
                     consumed_item_ids = self._consume_serial_base_quantity(
                         db=db,
@@ -512,7 +523,7 @@ class SalesCheckoutHandler:
                 except HTTPException as exc:
                     raise HTTPException(
                         status_code=exc.status_code,
-                        detail=f"Composite component '{component_product.name}': {exc.detail}",
+                        detail=f"Composite component '{requirement.product_name}': {exc.detail}",
                     ) from exc
                 resolved_item_ids.extend(consumed_item_ids)
                 continue
@@ -543,51 +554,6 @@ class SalesCheckoutHandler:
             resolved_item_ids=sorted(set(resolved_item_ids)),
         )
 
-    def _collect_composite_leaf_requirements(
-        self,
-        *,
-        db: Session,
-        product: models.Product,
-        required_base_qty: Decimal,
-        requirements: dict[int, Decimal],
-        active_stack: set[int],
-    ) -> None:
-        if required_base_qty <= 0:
-            return
-
-        components = (
-            db.query(models.ProductComposite)
-            .filter(models.ProductComposite.parent_product_id == product.id)
-            .order_by(models.ProductComposite.id.asc())
-            .all()
-        )
-        if not (product.product_type and product.product_type.is_composite) or not components:
-            requirements[product.id] = requirements.get(product.id, Decimal("0")) + required_base_qty
-            return
-
-        if product.id in active_stack:
-            raise HTTPException(status_code=409, detail=f"Composite cycle detected at product_id={product.id}")
-
-        active_stack.add(product.id)
-        try:
-            for component in components:
-                component_product = self._get_product(db, component.component_product_id)
-                component_ratio_to_base = self._ratio_to_base(db, component_product, component.unit_id)
-                component_required_base = (
-                    required_base_qty
-                    * Decimal(str(component.quantity))
-                    * component_ratio_to_base
-                )
-                self._collect_composite_leaf_requirements(
-                    db=db,
-                    product=component_product,
-                    required_base_qty=component_required_base,
-                    requirements=requirements,
-                    active_stack=active_stack,
-                )
-        finally:
-            active_stack.remove(product.id)
-
     def _handle_item_qr_line(
         self,
         *,
@@ -610,13 +576,13 @@ class SalesCheckoutHandler:
             raise HTTPException(status_code=404, detail="Item not found")
         self._assert_item_sellable(item=item, location_id=terminal.location_id)
 
-        pour = (
+        usage = (
             db.query(models.ProductItemPour)
             .filter(models.ProductItemPour.product_item_id == item.id)
             .first()
         )
-        if pour and pour.glasses_sold > 0 and pour.glasses_sold < pour.glasses_total:
-            raise HTTPException(status_code=409, detail="Item is partially poured and cannot be sold as whole")
+        if usage and usage.used_units > 0 and usage.used_units < usage.total_units:
+            raise HTTPException(status_code=409, detail="Item is partially used and cannot be sold as whole")
 
         product = self._get_product(db, item.product_id)
         self._sell_item(serial_stock, terminal.location_id, item, adjust_stock=True)
@@ -687,14 +653,14 @@ class SalesCheckoutHandler:
             db.query(models.ProductItemPour.product_item_id)
             .filter(
                 models.ProductItemPour.product_item_id.in_([item.id for item in items]),
-                models.ProductItemPour.glasses_sold > 0,
-                models.ProductItemPour.glasses_sold < models.ProductItemPour.glasses_total,
+                models.ProductItemPour.used_units > 0,
+                models.ProductItemPour.used_units < models.ProductItemPour.total_units,
             )
             .first()
             is not None
         )
         if partial_pours_exist:
-            raise HTTPException(status_code=409, detail="Box contains partially poured items")
+            raise HTTPException(status_code=409, detail="Box contains partially used items")
 
         product = self._get_product(db, box.product_id)
         sold_item_ids: list[int] = []
@@ -745,9 +711,9 @@ class SalesCheckoutHandler:
         if line.product_id is None:
             raise HTTPException(status_code=422, detail="product_id is required for glass line")
         product = self._get_product(db, line.product_id)
-        glasses_requested = self._positive_integer_quantity(line.quantity, field_name="quantity")
+        portions_requested = self._positive_integer_quantity(line.quantity, field_name="quantity")
         if not self._is_serial_product(db, product):
-            raise HTTPException(status_code=422, detail="Glass sale is supported only for serialized products")
+            raise HTTPException(status_code=422, detail="Portion sale is supported only for serialized products")
 
         target_item = None
         if line.item_qr_code:
@@ -763,18 +729,31 @@ class SalesCheckoutHandler:
             if target_item.product_id != product.id:
                 raise HTTPException(status_code=422, detail="item_qr_code product does not match product_id")
 
-        glasses_per_bottle = int(self.settings.glasses_per_bottle)
-        if glasses_per_bottle <= 0:
-            raise HTTPException(status_code=500, detail="Invalid glasses_per_bottle configuration")
+        unit_id, unit_ratio = self._resolve_glass_unit(
+            db=db,
+            product=product,
+            requested_unit_id=line.unit_id,
+            ratio_per_glass=Decimal("1"),
+        )
+        part_ratio = self._resolve_serial_part_ratio(db=db, product=product)
+        parts_requested = self._decimal_to_positive_int(
+            (Decimal(portions_requested) * unit_ratio) / part_ratio,
+            error_detail="Quantity must map to configured serialized part",
+        )
+        parts_per_item = self._decimal_to_positive_int(
+            Decimal("1") / part_ratio,
+            error_detail="Configured part unit cannot split serialized item exactly",
+        )
 
         consumed_item_ids: list[int] = []
-        remaining = glasses_requested
+        remaining = parts_requested
         if target_item is not None:
             consumed = self._consume_glasses_from_item(
                 db=db,
                 item=target_item,
                 glasses=remaining,
-                glasses_total=glasses_per_bottle,
+                glasses_total=parts_per_item,
+                portion_unit_id=unit_id,
             )
             if consumed < remaining:
                 raise HTTPException(status_code=409, detail="Not enough remaining volume in selected item")
@@ -793,25 +772,19 @@ class SalesCheckoutHandler:
                     db=db,
                     item=candidate,
                     glasses=remaining,
-                    glasses_total=glasses_per_bottle,
+                    glasses_total=parts_per_item,
+                    portion_unit_id=unit_id,
                 )
                 consumed_item_ids.append(candidate.id)
                 remaining -= consumed
 
-        ratio_per_glass = Decimal("1") / Decimal(glasses_per_bottle)
         stock_service.adjust_stock(
             location_id=terminal.location_id,
             product_id=product.id,
-            quantity=-(ratio_per_glass * Decimal(glasses_requested)),
+            quantity=-(part_ratio * Decimal(parts_requested)),
             unit_id=product.base_unit_id,
         )
 
-        unit_id, unit_ratio = self._resolve_glass_unit(
-            db=db,
-            product=product,
-            requested_unit_id=line.unit_id,
-            ratio_per_glass=ratio_per_glass,
-        )
         unit = self._get_unit(db, unit_id)
         unit_price = self._resolve_unit_price(
             db=db,
@@ -820,7 +793,7 @@ class SalesCheckoutHandler:
             unit_id=unit_id,
             ratio_to_base=unit_ratio,
         )
-        quantity = Decimal(glasses_requested)
+        quantity = Decimal(portions_requested)
         total_price = (unit_price * quantity).quantize(Decimal("0.01"))
         return _ResolvedLine(
             kind="glass",
@@ -847,6 +820,7 @@ class SalesCheckoutHandler:
             raise HTTPException(status_code=422, detail="Quantity must be positive")
 
         part_ratio = self._resolve_serial_part_ratio(db=db, product=product)
+        part_unit_id = self._resolve_serial_part_unit_id(db=db, product=product, part_ratio=part_ratio)
         parts_requested = self._decimal_to_positive_int(
             base_quantity / part_ratio,
             error_detail="Quantity must map to configured serialized part",
@@ -871,6 +845,7 @@ class SalesCheckoutHandler:
                 item=candidate,
                 glasses=remaining,
                 glasses_total=parts_per_item,
+                portion_unit_id=part_unit_id,
             )
             consumed_item_ids.append(candidate.id)
             remaining -= consumed
@@ -993,7 +968,7 @@ class SalesCheckoutHandler:
                 models.Receipt.status != "void",
                 or_(
                     models.ProductItemPour.product_item_id.is_(None),
-                    models.ProductItemPour.glasses_sold == 0,
+                    models.ProductItemPour.used_units == 0,
                 ),
             )
             .order_by(models.StockLot.received_at.asc(), models.ProductItem.created_at.asc(), models.ProductItem.id.asc())
@@ -1034,7 +1009,7 @@ class SalesCheckoutHandler:
                 models.Receipt.status != "void",
                 or_(
                     models.ProductItemPour.product_item_id.is_(None),
-                    models.ProductItemPour.glasses_sold == 0,
+                    models.ProductItemPour.used_units == 0,
                 ),
             )
             .count()
@@ -1047,6 +1022,7 @@ class SalesCheckoutHandler:
         item: models.ProductItem,
         glasses: int,
         glasses_total: int,
+        portion_unit_id: int,
     ) -> int:
         if item.box_id is not None:
             box = item.box
@@ -1062,19 +1038,20 @@ class SalesCheckoutHandler:
         if not pour:
             pour = models.ProductItemPour(
                 product_item_id=item.id,
-                glasses_total=glasses_total,
-                glasses_sold=0,
+                total_units=Decimal(glasses_total),
+                used_units=Decimal("0"),
+                unit_id=portion_unit_id,
             )
             db.add(pour)
             db.flush()
 
-        remaining = pour.glasses_total - pour.glasses_sold
+        remaining = int((Decimal(str(pour.total_units)) - Decimal(str(pour.used_units))).to_integral_value(rounding=ROUND_DOWN))
         if remaining <= 0:
             return 0
 
         consumed = min(remaining, glasses)
-        pour.glasses_sold += consumed
-        if pour.glasses_sold >= pour.glasses_total:
+        pour.used_units = Decimal(str(pour.used_units)) + Decimal(consumed)
+        if pour.used_units >= pour.total_units:
             self._sell_item(None, item.location_id, item, adjust_stock=False)
         return consumed
 
@@ -1157,10 +1134,47 @@ class SalesCheckoutHandler:
             )
             if type_row:
                 return Decimal(str(type_row[0]))
-        glasses_per_bottle = int(self.settings.glasses_per_bottle)
-        if glasses_per_bottle <= 0:
-            raise HTTPException(status_code=500, detail="Invalid glasses_per_bottle configuration")
-        return Decimal("1") / Decimal(glasses_per_bottle)
+        if product.portions_per_unit:
+            portions_per_unit = int(product.portions_per_unit)
+            if portions_per_unit <= 0:
+                raise HTTPException(status_code=422, detail="Invalid portions_per_unit")
+            return Decimal("1") / Decimal(portions_per_unit)
+        if product.default_portion_size is not None:
+            portion_size = Decimal(str(product.default_portion_size))
+            if portion_size <= 0:
+                raise HTTPException(status_code=422, detail="Invalid default_portion_size")
+            return portion_size
+        raise HTTPException(status_code=422, detail="Missing serialized portion configuration")
+
+    def _resolve_serial_part_unit_id(self, *, db: Session, product: models.Product, part_ratio: Decimal) -> int:
+        product_row = (
+            db.query(models.ProductUnit.unit_id)
+            .join(models.Unit, models.Unit.id == models.ProductUnit.unit_id)
+            .filter(
+                models.ProductUnit.product_id == product.id,
+                models.Unit.unit_type == "portion",
+                models.ProductUnit.ratio_to_base == part_ratio,
+            )
+            .order_by(models.ProductUnit.unit_id.asc())
+            .first()
+        )
+        if product_row:
+            return int(product_row[0])
+        if product.product_type_id:
+            type_row = (
+                db.query(models.ProductTypeUnit.unit_id)
+                .join(models.Unit, models.Unit.id == models.ProductTypeUnit.unit_id)
+                .filter(
+                    models.ProductTypeUnit.product_type_id == product.product_type_id,
+                    models.Unit.unit_type == "portion",
+                    models.ProductTypeUnit.ratio_to_base == part_ratio,
+                )
+                .order_by(models.ProductTypeUnit.unit_id.asc())
+                .first()
+            )
+            if type_row:
+                return int(type_row[0])
+        return product.base_unit_id
 
     @staticmethod
     def _decimal_to_positive_int(value: Decimal, *, error_detail: str) -> int:
@@ -1238,11 +1252,11 @@ class SalesCheckoutHandler:
     ) -> tuple[int, Decimal]:
         if requested_unit_id is not None:
             if requested_unit_id == product.base_unit_id:
-                return requested_unit_id, ratio_per_glass
+                return requested_unit_id, Decimal("1")
             try:
                 return requested_unit_id, self._ratio_to_base(db, product, requested_unit_id)
             except HTTPException:
-                return requested_unit_id, ratio_per_glass
+                return requested_unit_id, Decimal("1")
 
         glass_unit = (
             db.query(models.ProductUnit.unit_id, models.ProductUnit.ratio_to_base)
@@ -1269,7 +1283,10 @@ class SalesCheckoutHandler:
             )
             if type_glass_unit:
                 return int(type_glass_unit[0]), Decimal(str(type_glass_unit[1]))
-        return product.base_unit_id, ratio_per_glass
+        try:
+            return product.base_unit_id, self._resolve_serial_part_ratio(db=db, product=product)
+        except HTTPException:
+            return product.base_unit_id, Decimal("1")
 
     @staticmethod
     def _is_serial_product(db: Session, product: models.Product) -> bool:

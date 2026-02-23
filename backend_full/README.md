@@ -49,6 +49,23 @@
 - добавлен флаг `product_type.strict_units_by_type`;
 - при создании/обновлении товара юниты могут наследоваться из типа автоматически, при strict режиме запрещены юниты вне списка типа.
 
+Дополнительно по составным товарам и продаже:
+- добавлен `CompositeDecompositionService` (`app/domain/composite.py`) для рекурсивной декомпозиции состава в листовые компоненты;
+- в декомпозиции добавлено кэширование, проверка циклов и трассировка пути;
+- добавлено версионирование рецептов: `product_recipe` и `product_recipe_component`;
+- в компоненты добавлен `waste_factor` и учёт эффективного расхода;
+- частичное списание сериализованных единиц обобщено через `product_item_usage` (`total_units/used_units/unit_id`);
+- расчёт порций в checkout теперь опирается на конверсии юнитов и поля товара (`default_portion_size`, `portions_per_unit`), без `config.glasses_per_bottle`.
+
+Дополнительно по архитектуре:
+- в UoW и dispatcher добавлена поддержка доменных событий;
+- после успешного checkout публикуется `ProductSoldEvent`;
+- подписки регистрируются через `app/domain/subscribers.py`.
+
+Дополнительно по тестам:
+- добавлен performance-сценарий `app/tests/test_sales_performance.py` (запуск только при `RUN_PERFORMANCE_TESTS=1`);
+- зарегистрирован pytest marker `performance` в `backend_full/pytest.ini`.
+
 ---
 
 ## Текущая структура и назначение
@@ -73,6 +90,8 @@
 - `app/models/models.py` — SQLAlchemy модели.
 - `app/schemas/{simple.py,serial.py}` — Pydantic-схемы API.
 - `app/services/*` — доменные сервисы (receipt/transfer/inventory/stock/sales и др.).
+- `app/domain/composite.py` — сервис декомпозиции составных товаров (с учётом versioned recipe).
+- `app/domain/{events.py,event_bus.py,subscribers.py}` — доменные события и подписчики.
 - `app/pricing_calculators/*` — файловые реализации расчётов с версиями.
 
 ### Cross-cutting
@@ -88,7 +107,7 @@
 2. В роуте применяются зависимости (`PermissionChecker`, `uow_factory`).
 3. Роут создаёт `Command` или `Query`.
 4. Вызывается:
-   - `dispatch_command(...)` — открывает UoW, выполняет handler, делает `commit`;
+   - `dispatch_command(...)` — открывает UoW, выполняет handler, делает `commit`, публикует накопленные доменные события;
    - `dispatch_query(...)` — открывает UoW, выполняет handler без `commit`.
 5. Handler в `app/application/<module>/*` выполняет бизнес-операцию:
    - напрямую через ORM (`uow.session`) и/или
@@ -192,6 +211,46 @@
 
 - `20260218_120000_add_stock_lot_purchase_price.py`
 - `20260218_130000_add_price_calculator_versions.py`
+- `20260218_150000_fix_unit_id_default.py`
+- `20260219_090000_add_recipe_and_item_usage.py`
 
 Запуск:
 - `docker compose exec backend_full alembic upgrade head`
+
+
+
+## Refactoring 3
+Декомпозиция составных в отдельный сервис
+Адекватность: высокая
+Важность: высокая (поддерживаемость/повторное использование)
+Риск/вред: в вашем примере cache_key = quantity.to_integral_value() вреден (ломает дроби 0.10/0.20). Кэш нужен по точному Decimal (с нормализацией), лучше в рамках одного запроса/UoW.
+
+product_item_pour → универсальное частичное использование
+Адекватность: высокая
+Важность: средняя/высокая (если реально будут не только бокалы)
+Риск/вред: unit_of_measure: str — плохая идея (потеря целостности). Нужен unit_id + FK на unit.
+
+Версионирование рецептов
+Адекватность: очень высокая
+Важность: очень высокая (история себестоимости, корректная ретроспектива продаж)
+Риск/вред: умеренная сложность миграции, но это правильное направление.
+
+waste_factor в компонентах
+Адекватность: высокая
+Важность: средняя (зависит от операционки кухни/бара)
+Риск/вред: если применять “в лоб”, можно искажать фактические списания. Нужны правила: нормативные потери vs фактический брак.
+
+Единый источник истины для порций
+Адекватность: высокая
+Важность: высокая
+Риск/вред: поля portions_per_unit/default_portion_size в product могут дублировать текущую модель product_unit/product_type_unit. Лучше SoT оставить в юнит-конверсиях, а config — только fallback по умолчанию.
+
+Нагрузочные тесты
+Адекватность: высокая
+Важность: средняя
+Риск/вред: пример с pytest + ThreadPool и допуском “15% фейлов” — слабый критерий. Лучше k6/Locust, отдельный стенд, четкие SLA (p95 latency, error rate <1%).
+
+Domain Events
+Адекватность: высокая
+Важность: средняя сейчас, высокая в росте
+Риск/вред: ранний полный event-driven может усложнить систему. Лучше постепенно: сначала внутренний dispatcher + outbox для внешних интеграций.

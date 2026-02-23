@@ -21,6 +21,7 @@ from app.api.v1.routes import (
 )
 from app.audit.middleware import RequestLoggingMiddleware
 from app.audit.listeners import register_listeners
+import app.domain.subscribers  # noqa: F401  # register domain event subscribers
 from app.infrastructure.db.session import SessionLocal
 from app.security.auth import get_password_hash
 from app.models.models import User

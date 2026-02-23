@@ -28,6 +28,7 @@ def dispatch_command(
     with uow_factory() as uow:
         result = handler.handle(command, uow)
         uow.commit()
+        uow.publish_events()
         return result
 
 

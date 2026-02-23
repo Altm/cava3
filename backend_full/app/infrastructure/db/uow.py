@@ -6,6 +6,7 @@ from typing import Callable
 from sqlalchemy.orm import Session
 
 from app.application.common.uow import AbstractUnitOfWork
+from app.domain.event_bus import event_bus
 from app.infrastructure.db.session import SessionLocal
 
 
@@ -13,6 +14,7 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
     def __init__(self, session_factory: Callable[[], Session] = SessionLocal):
         self._session_factory = session_factory
         self.session: Session | None = None
+        self._events: list[object] = []
 
     def __enter__(self) -> "SqlAlchemyUnitOfWork":
         self.session = self._session_factory()
@@ -34,10 +36,21 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
         self.session.close()
         self.session = None
 
+    def collect_event(self, event: object) -> None:
+        self._events.append(event)
+
+    def publish_events(self) -> None:
+        if not self._events:
+            return
+        events = list(self._events)
+        self._events.clear()
+        event_bus.publish_many(events)
+
 
 class BoundSessionUnitOfWork(AbstractUnitOfWork):
     def __init__(self, session: Session):
         self.session = session
+        self._events: list[object] = []
 
     def __enter__(self) -> "BoundSessionUnitOfWork":
         return self
@@ -50,6 +63,16 @@ class BoundSessionUnitOfWork(AbstractUnitOfWork):
 
     def close(self) -> None:
         return None
+
+    def collect_event(self, event: object) -> None:
+        self._events.append(event)
+
+    def publish_events(self) -> None:
+        if not self._events:
+            return
+        events = list(self._events)
+        self._events.clear()
+        event_bus.publish_many(events)
 
 
 @contextmanager

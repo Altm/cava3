@@ -262,7 +262,7 @@ class TransferService:
                     ProductItem.product_id == product_id,
                     ProductItem.status == "in_stock",
                     ProductItem.reserved_transfer_doc_id.is_(None),
-                    (ProductItemPour.product_item_id.is_(None) | (ProductItemPour.glasses_sold == 0)),
+                    (ProductItemPour.product_item_id.is_(None) | (ProductItemPour.used_units == 0)),
                 )
                 .order_by(ProductItem.id.asc())
                 .limit(box_qty)
@@ -292,7 +292,7 @@ class TransferService:
                     ProductItem.status == "in_stock",
                     ProductItem.reserved_transfer_doc_id.is_(None),
                     Receipt.status == "posted",
-                    (ProductItemPour.product_item_id.is_(None) | (ProductItemPour.glasses_sold == 0)),
+                    (ProductItemPour.product_item_id.is_(None) | (ProductItemPour.used_units == 0)),
                 )
                 .order_by(StockLot.received_at.asc(), ProductItem.created_at.asc(), ProductItem.id.asc())
             )
@@ -335,8 +335,8 @@ class TransferService:
         if item.location_id != doc.from_location_id:
             raise HTTPException(status_code=409, detail="Item is in a different location")
         pour = self.db.query(ProductItemPour).filter(ProductItemPour.product_item_id == item.id).first()
-        if pour and pour.glasses_sold > 0 and pour.glasses_sold < pour.glasses_total:
-            raise HTTPException(status_code=409, detail="Partially poured item cannot be transferred")
+        if pour and pour.used_units > 0 and pour.used_units < pour.total_units:
+            raise HTTPException(status_code=409, detail="Partially used item cannot be transferred")
 
         # Find transfer_item for this item in this doc
         ti = (
