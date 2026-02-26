@@ -12,6 +12,13 @@
         >
           Просмотр
         </RouterLink>
+        <RouterLink
+          v-if="isEditing && productIdValue"
+          class="btn btn-outline"
+          :to="`/products/${productIdValue}/recipes/history`"
+        >
+          История рецептов
+        </RouterLink>
       </div>
     </div>
 
@@ -390,8 +397,11 @@ const ensureBaseUnitBinding = () => {
   if (!baseUnitId) return
   const existingIndex = form.value.productUnits.findIndex((row) => Number(row.unit_id) === baseUnitId)
   if (existingIndex >= 0) {
-    form.value.productUnits[existingIndex].ratio_to_base = 1
-    form.value.productUnits[existingIndex].discrete_step = null
+    const existingRow = form.value.productUnits[existingIndex]
+    if (existingRow) {
+      existingRow.ratio_to_base = 1
+      existingRow.discrete_step = null
+    }
     return
   }
   form.value.productUnits.unshift({
@@ -592,7 +602,7 @@ const handleSubmit = async () => {
             value: String(value) // всегда строка для бэкенда
           }
         })
-        .filter(Boolean) as ApiAttribute[],
+        .filter(Boolean) as Array<{ product_attribute_id: number; value: string }>,
       components: isProductTypeComposite  // Use the composite flag from the product type
         ? form.value.components.map(c => ({
             component_product_id: c.componentProductId,

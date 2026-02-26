@@ -114,3 +114,58 @@ def test_recursive_component_tree_is_returned_for_product_view(db_session):
     assert combo_node.is_composite is True
     assert combo_node.available_quantity == Decimal("2")
     assert {node.component_product_id for node in combo_node.children} == {component_a.id, component_b.id}
+
+
+def test_composite_zero_stock_is_not_serialized_in_scientific_notation(db_session):
+    unit = Unit(code="pcs_zero", description="Pieces", unit_type="base", is_discrete=True)
+    simple_type = ProductType(name="simple_zero", is_composite=False)
+    composite_type = ProductType(name="composite_zero", is_composite=True)
+    location = Location(name="Warehouse Zero", code="warehouse-zero")
+    db_session.add_all([unit, simple_type, composite_type, location])
+    db_session.flush()
+
+    component = Product(
+        name="Component Zero",
+        sku="CMP-ZERO",
+        primary_category="simple",
+        product_type_id=simple_type.id,
+        base_unit_id=unit.id,
+        is_active=True,
+    )
+    composite = Product(
+        name="Composite Zero",
+        sku="COMPOSITE-ZERO",
+        primary_category="combo",
+        product_type_id=composite_type.id,
+        base_unit_id=unit.id,
+        is_active=True,
+    )
+    db_session.add_all([component, composite])
+    db_session.flush()
+
+    db_session.add(
+        ProductComposite(
+            parent_product_id=composite.id,
+            component_product_id=component.id,
+            quantity=Decimal("0.000001"),
+            unit_id=unit.id,
+        )
+    )
+    db_session.add(
+        Stock(
+            location_id=location.id,
+            product_id=component.id,
+            quantity=Decimal("0"),
+            unit_id=unit.id,
+        )
+    )
+    db_session.flush()
+
+    calculator = ProductAvailabilityCalculator(db_session)
+    available = calculator.available_quantity(composite.id)
+    serialized = serialize_product(composite, db_session, calculator=calculator)
+
+    assert available == Decimal("0")
+    assert str(available) == "0"
+    assert serialized.stock == Decimal("0")
+    assert str(serialized.stock) == "0"

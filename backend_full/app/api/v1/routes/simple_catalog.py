@@ -42,6 +42,8 @@ from app.application.simple_catalog.products import (
     DeleteProductCommand,
     DeleteProductHandler,
     GetProductHandler,
+    GetProductRecipeHistoryHandler,
+    GetProductRecipeHistoryQuery,
     GetProductQuery,
     GetProductViewHandler,
     GetProductViewQuery,
@@ -264,6 +266,28 @@ def get_product_view(
 ):
     """Возвращает детальную карточку товара для просмотра."""
     return dispatch_query(uow_factory, GetProductViewHandler(), GetProductViewQuery(product_id=product_id))
+
+
+@router.get("/products/{product_id}/recipes/history", response_model=schemas.ProductRecipeHistoryOut)
+def get_product_recipe_history(
+    product_id: int,
+    active_at: Optional[datetime] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    user=Depends(PermissionChecker(["product.read"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Возвращает историю версий рецепта товара с фильтрацией по дате действия."""
+    return dispatch_query(
+        uow_factory,
+        GetProductRecipeHistoryHandler(),
+        GetProductRecipeHistoryQuery(
+            product_id=product_id,
+            active_at=active_at,
+            date_from=date_from,
+            date_to=date_to,
+        ),
+    )
 
 
 @router.post("/products/{product_id}/image", response_model=schemas.ProductImageOut)

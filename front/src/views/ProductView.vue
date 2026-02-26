@@ -4,6 +4,7 @@
       <h2>Просмотр товара #{{ productId }}</h2>
       <div class="head-actions">
         <RouterLink class="btn btn-outline" to="/product-list">К списку</RouterLink>
+        <RouterLink class="btn btn-outline" :to="`/products/${productId}/recipes/history`">История рецептов</RouterLink>
         <RouterLink class="btn btn-primary" :to="`/product-form/${productId}`">Редактировать</RouterLink>
       </div>
     </div>

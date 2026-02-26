@@ -282,7 +282,10 @@ const createRevision = async () => {
 
     const created = await productApi.createPriceRevision(payload)
     if (created.items.length) {
-      openLots(created.items[0])
+      const firstItem = created.items[0]
+      if (firstItem) {
+        openLots(firstItem)
+      }
     } else {
       selectedLots.value = null
     }
@@ -320,10 +323,16 @@ onMounted(async () => {
     locations.value = loadedLocations
     calculators.value = loadedCalculators
     if (!form.value.locationId && locations.value.length) {
-      form.value.locationId = locations.value[0].id
+      const firstLocation = locations.value[0]
+      if (firstLocation) {
+        form.value.locationId = firstLocation.id
+      }
     }
     if (!form.value.calculatorVersionId && calculators.value.length) {
-      form.value.calculatorVersionId = calculators.value[0].versionId
+      const firstCalculator = calculators.value[0]
+      if (firstCalculator) {
+        form.value.calculatorVersionId = firstCalculator.versionId
+      }
     }
     await loadCurrent()
   } catch (error: any) {

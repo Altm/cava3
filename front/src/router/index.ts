@@ -51,6 +51,13 @@ const router = createRouter({
       props: true,
       meta: { requiresAuth: true }
     },
+    {
+      path: '/products/:id/recipes/history',
+      name: 'ProductRecipeHistory',
+      component: () => import('@/views/ProductRecipeHistoryView.vue'),
+      props: true,
+      meta: { requiresAuth: true }
+    },
     
     // Products 2 Routes (Enhanced product management with fractional units)
     {

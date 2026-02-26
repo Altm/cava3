@@ -40,7 +40,8 @@ export const useProductAutocomplete = (
     if (exactByName) return exactByName.id
 
     const partialMatches = products.value.filter((product) => product.name.toLowerCase().includes(normalizedValue))
-    return partialMatches.length === 1 ? partialMatches[0].id : 0
+    const firstMatch = partialMatches[0]
+    return partialMatches.length === 1 && firstMatch ? firstMatch.id : 0
   }
 
   const syncQueryBySelectedProductId = (productId?: number | null): void => {

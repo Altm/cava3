@@ -196,7 +196,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import type { ProductType, AttributeDefinition } from '@/api/productApi'
+import type { ProductType, AttributeDefinition, Unit } from '@/api/productApi'
 import { productApi } from '@/api/productApi'
 
 // Auth store
@@ -213,19 +213,43 @@ const loading = ref(false)
 const dialogVisible = ref(false)
 const editingProductType = ref<ProductType | null>(null)
 
+type EditableAttribute = Omit<AttributeDefinition, 'id' | 'unitId'> & {
+  id?: number
+  unitId: number | null
+}
+
+type ProductTypeFormState = {
+  id: number
+  name: string
+  description: string
+  isComposite: boolean
+  strictUnitsByType: boolean
+  attributes: EditableAttribute[]
+  productTypeUnits: Array<{ unitId: number; ratioToBase: number; discreteStep: number | null }>
+}
+
+const createEmptyAttribute = (sortOrder: number): EditableAttribute => ({
+  name: '',
+  code: '',
+  dataType: 'string',
+  unitId: null,
+  isRequired: false,
+  sortOrder,
+})
+
 // Form
-const form = ref({
+const form = ref<ProductTypeFormState>({
   id: 0,
   name: '',
   description: '',
   isComposite: false,
   strictUnitsByType: false,
-  attributes: [{ name: '', code: '', dataType: 'string', unitId: null, isRequired: false, sortOrder: 1 }] as AttributeDefinition[],
+  attributes: [createEmptyAttribute(1)],
   productTypeUnits: [] as Array<{ unitId: number; ratioToBase: number; discreteStep: number | null }>
 })
 
 // Units (will be loaded from API)
-const units = ref<any[]>([])
+const units = ref<Unit[]>([])
 
 // Methods
 const loadProductTypes = async () => {
@@ -265,9 +289,9 @@ const editProductType = (productType: ProductType) => {
 
   // Initialize attributes
   form.value.attributes = productType.attributes && productType.attributes.length > 0
-    ? [...productType.attributes.map(attr => ({
+    ? [...productType.attributes.map((attr) => ({
         ...attr,
-        unitId: attr.unitId || null,
+        unitId: attr.unitId ?? null,
         sortOrder: attr.sortOrder || 1  // Ensure sortOrder is set
       }))]
     : []
@@ -296,7 +320,7 @@ const deleteProductType = async (id: number) => {
 const addAttribute = () => {
   // Calculate the next sort order value
   const maxSortOrder = form.value.attributes.reduce((max, attr) => Math.max(max, attr.sortOrder || 0), 0)
-  form.value.attributes.push({ name: '', code: '', dataType: 'string', unitId: null, isRequired: false, sortOrder: maxSortOrder + 1 })
+  form.value.attributes.push(createEmptyAttribute(maxSortOrder + 1))
 }
 
 const removeAttribute = (index: number) => {
@@ -305,7 +329,7 @@ const removeAttribute = (index: number) => {
   // Если массив стал пустым, добавим один пустой атрибут для удобства
   if (form.value.attributes.length === 0) {
     const maxSortOrder = form.value.attributes.reduce((max, attr) => Math.max(max, attr.sortOrder || 0), 0)
-    form.value.attributes.push({ name: '', code: '', dataType: 'string', unitId: null, isRequired: false, sortOrder: maxSortOrder + 1 })
+    form.value.attributes.push(createEmptyAttribute(maxSortOrder + 1))
   }
 }
 

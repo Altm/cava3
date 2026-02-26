@@ -8,6 +8,7 @@ from typing import Optional
 from uuid import uuid4
 
 from fastapi import HTTPException
+from sqlalchemy import or_
 
 from app.application.common.uow import AbstractUnitOfWork
 from app.application.simple_catalog.common import (
@@ -50,6 +51,14 @@ class GetProductQuery:
 @dataclass(frozen=True)
 class GetProductViewQuery:
     product_id: int
+
+
+@dataclass(frozen=True)
+class GetProductRecipeHistoryQuery:
+    product_id: int
+    active_at: Optional[datetime]
+    date_from: Optional[datetime]
+    date_to: Optional[datetime]
 
 
 @dataclass(frozen=True)
@@ -324,6 +333,51 @@ def _deactivate_active_recipes(db, *, product_id: int) -> None:
         row.valid_to = now
 
 
+def _serialize_recipe_history(
+    *,
+    product: models.Product,
+    recipes: list[models.ProductRecipe],
+    component_names: dict[int, str],
+) -> schemas.ProductRecipeHistoryOut:
+    version_rows: list[schemas.ProductRecipeVersionOut] = []
+    for recipe in recipes:
+        component_rows: list[schemas.ProductRecipeComponentOut] = []
+        for component in recipe.components:
+            component_rows.append(
+                schemas.ProductRecipeComponentOut(
+                    id=component.id,
+                    component_product_id=component.component_product_id,
+                    component_product_name=component_names.get(component.component_product_id, f"#{component.component_product_id}"),
+                    quantity=Decimal(str(component.quantity)),
+                    unit_id=component.unit_id,
+                    unit_code=(component.unit.code if component.unit else str(component.unit_id)),
+                    substitution_allowed=bool(component.substitution_allowed),
+                    rounding=component.rounding,
+                    waste_factor=Decimal(str(component.waste_factor or 0)),
+                )
+            )
+        version_rows.append(
+            schemas.ProductRecipeVersionOut(
+                id=recipe.id,
+                product_id=recipe.product_id,
+                product_name=product.name,
+                version=recipe.version,
+                is_active=bool(recipe.is_active),
+                valid_from=recipe.valid_from,
+                valid_to=recipe.valid_to,
+                created_by=recipe.created_by,
+                created_at=recipe.created_at,
+                updated_at=recipe.updated_at,
+                components=component_rows,
+            )
+        )
+    return schemas.ProductRecipeHistoryOut(
+        product_id=product.id,
+        product_name=product.name,
+        versions=version_rows,
+    )
+
+
 class CreateProductHandler:
     def handle(self, command: CreateProductCommand, uow: AbstractUnitOfWork) -> schemas.Product:
         db = uow.session
@@ -486,6 +540,61 @@ class GetProductViewHandler:
             raise HTTPException(status_code=404, detail="Product not found")
         calculator = ProductAvailabilityCalculator(db)
         return serialize_product_view(product, db, calculator=calculator)
+
+
+class GetProductRecipeHistoryHandler:
+    def handle(self, query: GetProductRecipeHistoryQuery, uow: AbstractUnitOfWork) -> schemas.ProductRecipeHistoryOut:
+        from sqlalchemy.orm import joinedload
+
+        db = uow.session
+        product = db.query(models.Product).get(query.product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+
+        query_builder = (
+            db.query(models.ProductRecipe)
+            .options(
+                joinedload(models.ProductRecipe.components).joinedload(models.ProductRecipeComponent.unit),
+            )
+            .filter(models.ProductRecipe.product_id == query.product_id)
+        )
+
+        if query.active_at is not None:
+            query_builder = query_builder.filter(models.ProductRecipe.valid_from <= query.active_at).filter(
+                or_(
+                    models.ProductRecipe.valid_to.is_(None),
+                    models.ProductRecipe.valid_to > query.active_at,
+                )
+            )
+        if query.date_from is not None:
+            query_builder = query_builder.filter(models.ProductRecipe.valid_from >= query.date_from)
+        if query.date_to is not None:
+            query_builder = query_builder.filter(models.ProductRecipe.valid_from <= query.date_to)
+
+        recipes = query_builder.order_by(models.ProductRecipe.version.desc()).all()
+        component_product_ids = {
+            int(component.component_product_id)
+            for recipe in recipes
+            for component in recipe.components
+        }
+        component_names: dict[int, str] = {}
+        if component_product_ids:
+            component_rows = (
+                db.query(models.Product.id, models.Product.name)
+                .filter(models.Product.id.in_(component_product_ids))
+                .all()
+            )
+            component_names = {int(row[0]): str(row[1]) for row in component_rows}
+
+        response = _serialize_recipe_history(
+            product=product,
+            recipes=recipes,
+            component_names=component_names,
+        )
+        response.active_at = query.active_at
+        response.date_from = query.date_from
+        response.date_to = query.date_to
+        return response
 
 
 class UploadProductImageHandler:

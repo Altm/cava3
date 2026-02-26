@@ -79,8 +79,8 @@ export interface ProductType {
 export interface ProductForm {
   productTypeId: number
   name: string
-  baseCost: string              // ← строка, не number!
-  stock: string                 // ← строка
+  baseCost: string | number
+  stock: string | number
   baseUnitId: number            // ← добавляем baseUnitId
   isComposite?: boolean
   attributes: Record<string, any>
@@ -294,6 +294,41 @@ export interface ProductView extends Product {
   meta?: ProductMetaView | null
   componentTree?: ProductComponentTreeNode[]
   stockByLocation?: ProductStockLocationView[]
+}
+
+export interface ProductRecipeComponentOut {
+  id: number
+  componentProductId: number
+  componentProductName: string
+  quantity: string
+  unitId: number
+  unitCode: string
+  substitutionAllowed: boolean
+  rounding?: string | null
+  wasteFactor: string
+}
+
+export interface ProductRecipeVersionOut {
+  id: number
+  productId: number
+  productName: string
+  version: number
+  isActive: boolean
+  validFrom: string
+  validTo?: string | null
+  createdBy?: number | null
+  createdAt: string
+  updatedAt: string
+  components: ProductRecipeComponentOut[]
+}
+
+export interface ProductRecipeHistoryOut {
+  productId: number
+  productName: string
+  activeAt?: string | null
+  dateFrom?: string | null
+  dateTo?: string | null
+  versions: ProductRecipeVersionOut[]
 }
 
 export interface ProductComponentTreeNode {
@@ -711,6 +746,22 @@ export const productApi = {
 
   async getProductView(id: number): Promise<ProductView> {
     const res = await api.get<ProductView>(`/products/${id}/view`)
+    return res.data
+  },
+
+  async getProductRecipeHistory(
+    productId: number,
+    params?: { activeAt?: string; dateFrom?: string; dateTo?: string }
+  ): Promise<ProductRecipeHistoryOut> {
+    const queryParams = new URLSearchParams()
+    if (params?.activeAt) queryParams.append('active_at', params.activeAt)
+    if (params?.dateFrom) queryParams.append('date_from', params.dateFrom)
+    if (params?.dateTo) queryParams.append('date_to', params.dateTo)
+    const query = queryParams.toString()
+    const url = query
+      ? `/products/${productId}/recipes/history?${query}`
+      : `/products/${productId}/recipes/history`
+    const res = await api.get<ProductRecipeHistoryOut>(url)
     return res.data
   },
 

@@ -1,4 +1,4 @@
-import { App } from 'vue';
+import type { App } from 'vue';
 
 // Импортируем только нужные компоненты для уменьшения размера бандла
 import {
@@ -64,7 +64,7 @@ export default {
     app.use(ElLoading);
     
     // Глобальные директивы
-    app.use(ElLoading.directive);
+    app.directive('loading', ElLoading.directive);
     
     // Глобальные методы
     app.config.globalProperties.$message = ElMessage;

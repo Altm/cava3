@@ -423,6 +423,41 @@ class ProductImageOut(BaseModel):
     image_url: str
 
 
+class ProductRecipeComponentOut(BaseModel):
+    id: int
+    component_product_id: int
+    component_product_name: str
+    quantity: Decimal
+    unit_id: int
+    unit_code: str
+    substitution_allowed: bool = False
+    rounding: Optional[str] = None
+    waste_factor: Decimal = Decimal("0")
+
+
+class ProductRecipeVersionOut(BaseModel):
+    id: int
+    product_id: int
+    product_name: str
+    version: int
+    is_active: bool
+    valid_from: datetime
+    valid_to: Optional[datetime] = None
+    created_by: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+    components: List[ProductRecipeComponentOut] = []
+
+
+class ProductRecipeHistoryOut(BaseModel):
+    product_id: int
+    product_name: str
+    active_at: Optional[datetime] = None
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    versions: List[ProductRecipeVersionOut] = []
+
+
 class SaleRequest(BaseModel):
     product_id: int
     quantity: Decimal

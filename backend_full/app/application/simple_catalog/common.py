@@ -12,6 +12,15 @@ from app.models.models import ProductMeta
 from app.schemas import simple as schemas
 
 
+def _normalize_decimal_output(value: Decimal | int | float | None) -> Decimal:
+    if value is None:
+        return Decimal("0")
+    decimal_value = value if isinstance(value, Decimal) else Decimal(str(value))
+    if decimal_value == 0:
+        return Decimal("0")
+    return decimal_value
+
+
 def default_location(db: Session) -> models.Location:
     settings = get_settings()
     loc = db.query(models.Location).filter(models.Location.id == settings.default_location_id).first()
@@ -123,6 +132,7 @@ class ProductAvailabilityCalculator:
             if ratio is None:
                 continue
             total_base += qty_decimal * ratio
+        total_base = _normalize_decimal_output(total_base)
         self._stock_base_cache[product.id] = total_base
         return total_base
 
@@ -143,11 +153,13 @@ class ProductAvailabilityCalculator:
 
         own_stock_base = self._sum_stock_base(product)
         if not product.product_type or not product.product_type.is_composite:
+            own_stock_base = _normalize_decimal_output(own_stock_base)
             self._available_cache[product_id] = own_stock_base
             return own_stock_base
 
         components = self.components(product_id)
         if not components:
+            own_stock_base = _normalize_decimal_output(own_stock_base)
             self._available_cache[product_id] = own_stock_base
             return own_stock_base
 
@@ -181,6 +193,7 @@ class ProductAvailabilityCalculator:
                 available = min_bundles.to_integral_value(rounding=ROUND_DOWN)
             else:
                 available = min_bundles.quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
+            available = _normalize_decimal_output(available)
             self._available_cache[product_id] = available
             return available
         finally:
@@ -328,15 +341,17 @@ def _build_stock_by_location(
     result: list[schemas.ProductStockLocationView] = []
     for location_id, location_name, location_code in location_rows:
         location_calc = ProductAvailabilityCalculator(db, location_id=location_id)
-        base_quantity = location_calc.available_quantity(db_product.id)
+        base_quantity = _normalize_decimal_output(location_calc.available_quantity(db_product.id))
         unit_quantities = [
             schemas.ProductStockUnitQuantity(
                 unit_id=row.unit_id,
                 unit_code=unit_meta[row.unit_id].code if row.unit_id in unit_meta else str(row.unit_id),
                 ratio_to_base=row.ratio_to_base,
-                quantity=(base_quantity / Decimal(str(row.ratio_to_base))).quantize(Decimal("0.000001"))
-                if Decimal(str(row.ratio_to_base)) > 0
-                else Decimal("0"),
+                quantity=_normalize_decimal_output(
+                    (base_quantity / Decimal(str(row.ratio_to_base))).quantize(Decimal("0.000001"))
+                    if Decimal(str(row.ratio_to_base)) > 0
+                    else Decimal("0")
+                ),
             )
             for row in product_units
         ]
@@ -399,7 +414,7 @@ def serialize_product(
     ]
     product_units = _serialize_product_units(db_product)
 
-    total_stock = calc.available_quantity(db_product.id)
+    total_stock = _normalize_decimal_output(calc.available_quantity(db_product.id))
 
     return schemas.Product(
         id=db_product.id,
@@ -451,7 +466,7 @@ def _build_component_tree(
                 unit_id=comp.unit_id,
                 unit_code=unit.code if unit else None,
                 is_composite=bool(component_product.product_type and component_product.product_type.is_composite),
-                available_quantity=calculator.available_quantity(component_product.id),
+                available_quantity=_normalize_decimal_output(calculator.available_quantity(component_product.id)),
                 is_cycle=is_cycle,
                 children=children,
             )
