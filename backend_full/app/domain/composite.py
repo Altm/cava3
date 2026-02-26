@@ -27,27 +27,40 @@ class ComponentRequirement:
     path: list[int]
 
 
+@dataclass
+class IngredientRequirement:
+    ingredient_id: int
+    ingredient_name: str
+    quantity_base: Decimal
+    unit_code: str
+    substitution_allowed: bool
+    path: list[int]
+
+
 class CompositeDecompositionService:
-    """Decompose composite product into leaf requirements in base units."""
+    """Decompose composite product into ingredient requirements in base units."""
 
     def __init__(self, db: Session):
         self.db = db
-        self._decompose_cache: dict[tuple[int, str], list[ComponentRequirement]] = {}
+        self._decompose_cache: dict[tuple[int, str, Optional[int]], list[IngredientRequirement]] = {}
         self._product_cache: dict[int, models.Product] = {}
+        self._ingredient_cache: dict[int, models.Ingredient] = {}
+        self._ingredient_binding_cache: dict[tuple[int, Optional[str], Optional[int]], list[models.IngredientProductBinding]] = {}
         self._unit_code_cache: dict[int, str] = {}
         self._serial_cache: dict[int, bool] = {}
         self._ratio_cache: dict[tuple[int, int], Decimal] = {}
         self._components_cache: dict[tuple[int, Optional[str]], list] = {}
 
-    def decompose(
+    def decompose_ingredients(
         self,
         *,
         product_id: int,
         quantity_base: Decimal,
+        location_id: Optional[int] = None,
         visited: frozenset[int] = frozenset(),
         path: Optional[list[int]] = None,
         as_of: Optional[datetime] = None,
-    ) -> list[ComponentRequirement]:
+    ) -> list[IngredientRequirement]:
         if quantity_base <= 0:
             return []
 
@@ -55,7 +68,7 @@ class CompositeDecompositionService:
         if product_id in visited:
             raise CompositeCycleError(product_id=product_id, path=current_path + [product_id])
 
-        cache_key = (product_id, self._norm_decimal(quantity_base))
+        cache_key = (product_id, self._norm_decimal(quantity_base), location_id)
         if not visited and cache_key in self._decompose_cache:
             return [self._clone(req) for req in self._decompose_cache[cache_key]]
 
@@ -64,42 +77,102 @@ class CompositeDecompositionService:
         is_composite = bool(product.product_type and product.product_type.is_composite)
 
         if not is_composite or not components:
-            leaf = ComponentRequirement(
-                product_id=product.id,
-                product_name=product.name,
-                quantity_base=quantity_base,
-                unit_code=self._base_unit_code(product.base_unit_id),
-                is_serial=self._is_serial(product),
-                path=current_path + [product.id],
-            )
-            result = [leaf]
-            if not visited:
-                self._decompose_cache[cache_key] = [self._clone(leaf)]
-            return result
+            return []
 
         next_visited = visited | {product.id}
         next_path = current_path + [product.id]
-        requirements: list[ComponentRequirement] = []
+        requirements: list[IngredientRequirement] = []
         for comp in components:
-            component_product = self._get_product(comp.component_product_id)
-            ratio_to_base = self._ratio_to_base(component_product, comp.unit_id)
-            waste_factor = Decimal(str(getattr(comp, "waste_factor", 0) or 0))
-            effective_quantity = Decimal(str(comp.quantity)) * (Decimal("1") + waste_factor)
-            component_qty_base = quantity_base * effective_quantity * ratio_to_base
-            requirements.extend(
-                self.decompose(
-                    product_id=component_product.id,
-                    quantity_base=component_qty_base,
-                    visited=next_visited,
-                    path=next_path,
-                    as_of=as_of,
+            ingredient = self._get_ingredient(comp.ingredient_id)
+            if comp.unit_id != ingredient.base_unit_id:
+                raise ValueError(
+                    f"Ingredient unit mismatch for ingredient={ingredient.id}: "
+                    f"component unit={comp.unit_id}, ingredient base={ingredient.base_unit_id}"
                 )
-            )
+            waste_factor = Decimal(str(getattr(comp, "waste_factor", 0) or 0))
+            ingredient_qty_base = quantity_base * Decimal(str(comp.quantity)) * (Decimal("1") + waste_factor)
+            primary_binding = self._select_primary_binding(ingredient.id, as_of=as_of)
+            primary_binding = self._select_primary_binding(ingredient.id, as_of=as_of, location_id=location_id)
+            binding_product = self._get_product(primary_binding.product_id) if primary_binding else None
+            if binding_product and binding_product.product_type and binding_product.product_type.is_composite:
+                ratio_to_ingredient = Decimal(str(primary_binding.ratio_to_ingredient_base or 0))
+                if ratio_to_ingredient <= 0:
+                    raise ValueError(
+                        f"Invalid ingredient binding ratio for ingredient={ingredient.id}, product={binding_product.id}"
+                    )
+                nested_product_qty_base = ingredient_qty_base / ratio_to_ingredient
+                requirements.extend(
+                    self.decompose_ingredients(
+                        product_id=binding_product.id,
+                        quantity_base=nested_product_qty_base,
+                        location_id=location_id,
+                        visited=next_visited,
+                        path=next_path,
+                        as_of=as_of,
+                    )
+                )
+            else:
+                requirements.append(
+                    IngredientRequirement(
+                        ingredient_id=ingredient.id,
+                        ingredient_name=ingredient.name,
+                        quantity_base=ingredient_qty_base,
+                        unit_code=self._base_unit_code(ingredient.base_unit_id),
+                        substitution_allowed=bool(comp.substitution_allowed),
+                        path=next_path + [ingredient.id],
+                    )
+                )
 
         aggregated = self._aggregate(requirements)
         if not visited:
             self._decompose_cache[cache_key] = [self._clone(req) for req in aggregated]
         return aggregated
+
+    def decompose(
+        self,
+        *,
+        product_id: int,
+        quantity_base: Decimal,
+        location_id: Optional[int] = None,
+        visited: frozenset[int] = frozenset(),
+        path: Optional[list[int]] = None,
+        as_of: Optional[datetime] = None,
+    ) -> list[ComponentRequirement]:
+        ingredient_requirements = self.decompose_ingredients(
+            product_id=product_id,
+            quantity_base=quantity_base,
+            location_id=location_id,
+            visited=visited,
+            path=path,
+            as_of=as_of,
+        )
+        result: list[ComponentRequirement] = []
+        for req in ingredient_requirements:
+            bindings = self._get_ingredient_bindings(
+                req.ingredient_id,
+                as_of=as_of,
+                location_id=location_id,
+            )
+            if not bindings:
+                raise ValueError(f"No active product binding for ingredient={req.ingredient_id}")
+            binding = bindings[0]
+            product = self._get_product(binding.product_id)
+            ratio_to_ingredient = Decimal(str(binding.ratio_to_ingredient_base or 0))
+            if ratio_to_ingredient <= 0:
+                raise ValueError(
+                    f"Invalid ingredient binding ratio for ingredient={req.ingredient_id}, product={product.id}"
+                )
+            result.append(
+                ComponentRequirement(
+                    product_id=product.id,
+                    product_name=product.name,
+                    quantity_base=req.quantity_base / ratio_to_ingredient,
+                    unit_code=self._base_unit_code(product.base_unit_id),
+                    is_serial=self._is_serial(product),
+                    path=list(req.path),
+                )
+            )
+        return self._aggregate_product_requirements(result)
 
     def _get_components(self, *, product_id: int, as_of: Optional[datetime]) -> list:
         as_of_key = as_of.isoformat() if as_of else None
@@ -108,38 +181,82 @@ class CompositeDecompositionService:
         if cached is not None:
             return cached
 
-        if hasattr(models, "ProductRecipe") and hasattr(models, "ProductRecipeComponent"):
-            point_in_time = as_of or datetime.utcnow()
-            rows = (
-                self.db.query(models.ProductRecipeComponent)
-                .join(models.ProductRecipe, models.ProductRecipe.id == models.ProductRecipeComponent.recipe_id)
-                .filter(
-                    models.ProductRecipe.product_id == product_id,
-                    models.ProductRecipe.is_active.is_(True),
-                    models.ProductRecipe.valid_from <= point_in_time,
-                    (models.ProductRecipe.valid_to.is_(None) | (models.ProductRecipe.valid_to > point_in_time)),
-                )
-                .order_by(models.ProductRecipeComponent.id.asc())
-                .all()
-            )
-            if rows:
-                self._components_cache[cache_key] = rows
-                return rows
-
+        point_in_time = as_of or datetime.utcnow()
         rows = (
-            self.db.query(models.ProductComposite)
-            .filter(models.ProductComposite.parent_product_id == product_id)
-            .order_by(models.ProductComposite.id.asc())
+            self.db.query(models.ProductRecipeComponent)
+            .join(models.ProductRecipe, models.ProductRecipe.id == models.ProductRecipeComponent.recipe_id)
+            .filter(
+                models.ProductRecipe.product_id == product_id,
+                models.ProductRecipe.is_active.is_(True),
+                models.ProductRecipe.valid_from <= point_in_time,
+                (models.ProductRecipe.valid_to.is_(None) | (models.ProductRecipe.valid_to > point_in_time)),
+            )
+            .order_by(models.ProductRecipeComponent.id.asc())
             .all()
         )
         self._components_cache[cache_key] = rows
         return rows
 
+    def _get_ingredient(self, ingredient_id: int) -> models.Ingredient:
+        cached = self._ingredient_cache.get(ingredient_id)
+        if cached is not None:
+            return cached
+        ingredient = self.db.get(models.Ingredient, ingredient_id)
+        if ingredient is None:
+            raise ValueError(f"Ingredient not found: {ingredient_id}")
+        self._ingredient_cache[ingredient_id] = ingredient
+        return ingredient
+
+    def _get_ingredient_bindings(
+        self,
+        ingredient_id: int,
+        *,
+        as_of: Optional[datetime],
+        location_id: Optional[int] = None,
+    ) -> list[models.IngredientProductBinding]:
+        as_of_key = as_of.isoformat() if as_of else None
+        cache_key = (ingredient_id, as_of_key, location_id)
+        cached = self._ingredient_binding_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        point_in_time = as_of or datetime.utcnow()
+        rows = (
+            self.db.query(models.IngredientProductBinding)
+            .filter(
+                models.IngredientProductBinding.ingredient_id == ingredient_id,
+                models.IngredientProductBinding.is_active.is_(True),
+                (models.IngredientProductBinding.valid_from.is_(None) | (models.IngredientProductBinding.valid_from <= point_in_time)),
+                (models.IngredientProductBinding.valid_to.is_(None) | (models.IngredientProductBinding.valid_to > point_in_time)),
+                (
+                    models.IngredientProductBinding.location_id.is_(None)
+                    | (models.IngredientProductBinding.location_id == location_id)
+                ),
+            )
+            .order_by(
+                models.IngredientProductBinding.priority.asc(),
+                models.IngredientProductBinding.location_id.desc().nulls_last(),
+                models.IngredientProductBinding.id.asc(),
+            )
+            .all()
+        )
+        self._ingredient_binding_cache[cache_key] = rows
+        return rows
+
+    def _select_primary_binding(
+        self,
+        ingredient_id: int,
+        *,
+        as_of: Optional[datetime],
+        location_id: Optional[int] = None,
+    ) -> models.IngredientProductBinding | None:
+        rows = self._get_ingredient_bindings(ingredient_id, as_of=as_of, location_id=location_id)
+        return rows[0] if rows else None
+
     def _get_product(self, product_id: int) -> models.Product:
         cached = self._product_cache.get(product_id)
         if cached is not None:
             return cached
-        product = self.db.query(models.Product).get(product_id)
+        product = self.db.get(models.Product, product_id)
         if product is None:
             raise ValueError(f"Product not found: {product_id}")
         self._product_cache[product_id] = product
@@ -149,7 +266,7 @@ class CompositeDecompositionService:
         cached = self._unit_code_cache.get(unit_id)
         if cached is not None:
             return cached
-        unit = self.db.query(models.Unit).get(unit_id)
+        unit = self.db.get(models.Unit, unit_id)
         if unit is None:
             return f"unit:{unit_id}"
         self._unit_code_cache[unit_id] = unit.code
@@ -159,7 +276,7 @@ class CompositeDecompositionService:
         cached = self._serial_cache.get(product.id)
         if cached is not None:
             return cached
-        unit = self.db.query(models.Unit).get(product.base_unit_id)
+        unit = self.db.get(models.Unit, product.base_unit_id)
         value = bool(unit and unit.is_discrete)
         self._serial_cache[product.id] = value
         return value
@@ -205,23 +322,42 @@ class CompositeDecompositionService:
         return format(value.normalize(), "f")
 
     @staticmethod
-    def _clone(requirement: ComponentRequirement) -> ComponentRequirement:
-        return ComponentRequirement(
-            product_id=requirement.product_id,
-            product_name=requirement.product_name,
+    def _clone(requirement: IngredientRequirement) -> IngredientRequirement:
+        return IngredientRequirement(
+            ingredient_id=requirement.ingredient_id,
+            ingredient_name=requirement.ingredient_name,
             quantity_base=Decimal(str(requirement.quantity_base)),
             unit_code=requirement.unit_code,
-            is_serial=requirement.is_serial,
+            substitution_allowed=requirement.substitution_allowed,
             path=list(requirement.path),
         )
 
     @staticmethod
-    def _aggregate(requirements: list[ComponentRequirement]) -> list[ComponentRequirement]:
+    def _aggregate(requirements: list[IngredientRequirement]) -> list[IngredientRequirement]:
+        grouped: dict[tuple[int, bool], IngredientRequirement] = {}
+        for req in requirements:
+            key = (req.ingredient_id, req.substitution_allowed)
+            existing = grouped.get(key)
+            if existing is None:
+                grouped[key] = CompositeDecompositionService._clone(req)
+            else:
+                existing.quantity_base += req.quantity_base
+        return list(grouped.values())
+
+    @staticmethod
+    def _aggregate_product_requirements(requirements: list[ComponentRequirement]) -> list[ComponentRequirement]:
         grouped: dict[int, ComponentRequirement] = {}
         for req in requirements:
             existing = grouped.get(req.product_id)
             if existing is None:
-                grouped[req.product_id] = CompositeDecompositionService._clone(req)
+                grouped[req.product_id] = ComponentRequirement(
+                    product_id=req.product_id,
+                    product_name=req.product_name,
+                    quantity_base=Decimal(str(req.quantity_base)),
+                    unit_code=req.unit_code,
+                    is_serial=req.is_serial,
+                    path=list(req.path),
+                )
             else:
                 existing.quantity_base += req.quantity_base
         return list(grouped.values())

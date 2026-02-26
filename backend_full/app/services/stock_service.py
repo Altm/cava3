@@ -25,7 +25,7 @@ class StockService:
         Storage:
         - Stock is stored in product base unit (`product.base_unit_id`).
         """
-        product = self.db.query(Product).get(product_id)
+        product = self.db.get(Product, product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product missing")
 
@@ -48,7 +48,7 @@ class StockService:
         return stock
 
     def _to_base(self, product_id: int, from_unit_id: int, qty: Decimal) -> Decimal:
-        product = self.db.query(Product).get(product_id)
+        product = self.db.get(Product, product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product missing")
         if from_unit_id == product.base_unit_id:

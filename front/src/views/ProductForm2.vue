@@ -313,18 +313,18 @@
             <div class="component-fields">
               <div class="component-row">
                 <div class="component-field">
-                  <label class="component-label">Продукт-компонент</label>
+                  <label class="component-label">Ингредиент</label>
                   <select
-                    v-model.number="comp.componentProductId"
+                    v-model.number="comp.ingredientId"
                     class="form-control"
                   >
-                    <option :value="null">Выберите компонент...</option>
-                    <option 
-                      v-for="product in getComponentCandidates()" 
-                      :key="product.id" 
-                      :value="product.id"
+                    <option :value="null">Выберите ингредиент...</option>
+                    <option
+                      v-for="ingredient in getComponentCandidates()"
+                      :key="ingredient.id"
+                      :value="ingredient.id"
                     >
-                      {{ product.name }} {{ product.isComposite ? '(Составной)' : '' }}
+                      {{ ingredient.name }} ({{ ingredient.code }})
                     </option>
                   </select>
                 </div>
@@ -425,10 +425,10 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type {
-  Product,
   ProductView,
   ProductType,
   Unit,
+  Ingredient,
   ProductAttributeDefinition,
   ProductUsageExample,
   ProductForm as ProductFormType,
@@ -447,7 +447,7 @@ const router = useRouter()
 // State
 const productTypes = ref<ProductType[]>([])
 const units = ref<Unit[]>([])
-const allProducts = ref<Product[]>([])
+const ingredients = ref<Ingredient[]>([])
 const productView = ref<ProductView | null>(null)
 const usageExamples = ref<ProductUsageExample[]>([])
 const saving = ref(false)
@@ -529,8 +529,8 @@ const getAvailableUnits = (currentUnitId: number): Unit[] => {
   return units.value.filter(u => allowedUnitIds.has(u.id) || u.id === currentUnitId)
 }
 
-const getComponentCandidates = (): Product[] => {
-  return allProducts.value.filter(p => p.id !== productIdValue.value)
+const getComponentCandidates = (): Ingredient[] => {
+  return ingredients.value
 }
 
 const getExampleIcon = (type: string): string => {
@@ -609,7 +609,7 @@ const removeUnit = (index: number) => {
 
 const addComponent = () => {
   form.value.components.push({
-    componentProductId: 0,
+    ingredientId: 0,
     quantity: 1,
     unitId: undefined,
     substitutionAllowed: false,
@@ -665,7 +665,7 @@ const loadProductForEdit = async (productId: number) => {
     }
     
     const initialComponents = (product.components || []).map(comp => ({
-      componentProductId: comp.componentProductId,
+      ingredientId: comp.ingredientId,
       quantity: Number(comp.quantity),
       unitId: comp.unitId,
       substitutionAllowed: comp.substitutionAllowed,
@@ -780,15 +780,15 @@ const goToProductView = () => {
 // Lifecycle
 onMounted(async () => {
   try {
-    const [types, unitsData, productsData] = await Promise.all([
+    const [types, unitsData, ingredientsData] = await Promise.all([
       productApi2.getProductTypes(),
       productApi2.getUnits(),
-      productApi2.getProductsForComponentSelection(),
+      productApi2.getIngredients(),
     ])
     
     productTypes.value = types
     units.value = unitsData
-    allProducts.value = productsData
+    ingredients.value = ingredientsData
     
     if (isEditing.value && props.productId) {
       await loadProductForEdit(Number(props.productId))

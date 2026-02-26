@@ -65,7 +65,7 @@
             </thead>
             <tbody>
               <tr v-for="component in version.components" :key="component.id">
-                <td>{{ component.componentProductName }} (#{{ component.componentProductId }})</td>
+                <td>{{ component.ingredientName }} ({{ component.ingredientCode }}, #{{ component.ingredientId }})</td>
                 <td>{{ component.quantity }}</td>
                 <td>{{ component.unitCode }} (#{{ component.unitId }})</td>
                 <td>{{ component.wasteFactor }}</td>

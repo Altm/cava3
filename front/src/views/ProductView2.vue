@@ -198,9 +198,9 @@
             class="component-card"
           >
             <div class="component-card-header">
-              <span class="component-name">{{ component.componentProductName }}</span>
-              <span v-if="component.componentProductSku" class="component-sku">
-                {{ component.componentProductSku }}
+              <span class="component-name">{{ component.ingredientName || `Ингредиент #${component.ingredientId}` }}</span>
+              <span class="component-sku">
+                #{{ component.ingredientId }}
               </span>
             </div>
             <div class="component-card-body">
@@ -220,12 +220,7 @@
               </div>
             </div>
             <div class="component-card-footer">
-              <router-link 
-                :to="`/products2/${component.componentProductId}`" 
-                class="btn btn-sm btn-outline"
-              >
-                👁️ Просмотр
-              </router-link>
+              <span class="muted">Привязанный продукт выбирается через bindings ингредиента</span>
             </div>
           </div>
         </div>

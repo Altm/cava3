@@ -7,6 +7,8 @@ from app.application.simple_catalog.products import (
 )
 from app.infrastructure.db.uow import BoundSessionUnitOfWork
 from app.models.models import (
+    Ingredient,
+    IngredientProductBinding,
     Product,
     ProductRecipe,
     ProductRecipeComponent,
@@ -55,6 +57,40 @@ def _seed_recipe_history(db_session) -> int:
     db_session.add_all([parent, component_a, component_b])
     db_session.flush()
 
+    ingredient_a = Ingredient(
+        code="hist_ing_a",
+        name="Ingredient A",
+        base_unit_id=base_unit.id,
+        is_active=True,
+    )
+    ingredient_b = Ingredient(
+        code="hist_ing_b",
+        name="Ingredient B",
+        base_unit_id=portion_unit.id,
+        is_active=True,
+    )
+    db_session.add_all([ingredient_a, ingredient_b])
+    db_session.flush()
+    db_session.add_all(
+        [
+            IngredientProductBinding(
+                ingredient_id=ingredient_a.id,
+                product_id=component_a.id,
+                ratio_to_ingredient_base=Decimal("1"),
+                priority=100,
+                is_active=True,
+            ),
+            IngredientProductBinding(
+                ingredient_id=ingredient_b.id,
+                product_id=component_b.id,
+                ratio_to_ingredient_base=Decimal("1"),
+                priority=100,
+                is_active=True,
+            ),
+        ]
+    )
+    db_session.flush()
+
     recipe_v1 = ProductRecipe(
         product_id=parent.id,
         version=1,
@@ -78,13 +114,13 @@ def _seed_recipe_history(db_session) -> int:
         [
             ProductRecipeComponent(
                 recipe_id=recipe_v1.id,
-                component_product_id=component_a.id,
+                ingredient_id=ingredient_a.id,
                 quantity=Decimal("0.100000"),
                 unit_id=base_unit.id,
             ),
             ProductRecipeComponent(
                 recipe_id=recipe_v2.id,
-                component_product_id=component_b.id,
+                ingredient_id=ingredient_b.id,
                 quantity=Decimal("20.000000"),
                 unit_id=portion_unit.id,
                 waste_factor=Decimal("0.0500"),
@@ -112,8 +148,8 @@ def test_recipe_history_returns_versions_desc(db_session):
     assert result.product_id == product_id
     assert len(result.versions) == 2
     assert [row.version for row in result.versions] == [2, 1]
-    assert result.versions[0].components[0].component_product_name == "Component B"
-    assert result.versions[1].components[0].component_product_name == "Component A"
+    assert result.versions[0].components[0].ingredient_name == "Ingredient B"
+    assert result.versions[1].components[0].ingredient_name == "Ingredient A"
 
 
 def test_recipe_history_filters_by_active_at(db_session):

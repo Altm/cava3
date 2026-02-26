@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.application.common.uow import AbstractUnitOfWork
 from app.config import get_settings
-from app.domain.composite import CompositeCycleError, CompositeDecompositionService
+from app.domain.composite import CompositeCycleError, CompositeDecompositionService, IngredientRequirement
 from app.domain.events import ProductSoldEvent
 from app.models import models
 from app.schemas import simple as schemas
@@ -495,44 +495,32 @@ class SalesCheckoutHandler:
 
         decomposition = CompositeDecompositionService(db)
         try:
-            component_requirements = decomposition.decompose(product_id=product.id, quantity_base=qty_base)
+            ingredient_requirements = decomposition.decompose_ingredients(
+                product_id=product.id,
+                quantity_base=qty_base,
+                location_id=terminal.location_id,
+            )
         except CompositeCycleError as exc:
             raise HTTPException(status_code=409, detail=f"Composite cycle detected: {' -> '.join(map(str, exc.path))}") from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-        if not component_requirements:
+        if not ingredient_requirements:
             raise HTTPException(status_code=422, detail="Composite product has no components")
 
         resolved_item_ids: list[int] = []
-        for requirement in sorted(component_requirements, key=lambda row: row.product_id):
-            required_base = Decimal(str(requirement.quantity_base))
-            if required_base <= 0:
-                continue
-            component_product = self._get_product(db, requirement.product_id)
-            if requirement.is_serial:
-                try:
-                    consumed_item_ids = self._consume_serial_base_quantity(
-                        db=db,
-                        terminal=terminal,
-                        product=component_product,
-                        base_quantity=required_base,
-                        stock_service=stock_service,
-                        not_enough_detail="Insufficient serialized stock for component",
-                    )
-                except HTTPException as exc:
-                    raise HTTPException(
-                        status_code=exc.status_code,
-                        detail=f"Composite component '{requirement.product_name}': {exc.detail}",
-                    ) from exc
-                resolved_item_ids.extend(consumed_item_ids)
-                continue
-
-            stock_service.adjust_stock(
-                location_id=terminal.location_id,
-                product_id=component_product.id,
-                quantity=-required_base,
-                unit_id=component_product.base_unit_id,
+        for requirement in sorted(
+            ingredient_requirements,
+            key=lambda row: (row.ingredient_id, 0 if row.substitution_allowed else 1),
+        ):
+            resolved_item_ids.extend(
+                self._consume_ingredient_requirement(
+                    db=db,
+                    terminal=terminal,
+                    decomposition=decomposition,
+                    requirement=requirement,
+                    stock_service=stock_service,
+                )
             )
 
         unit_price = self._resolve_unit_price(
@@ -553,6 +541,133 @@ class SalesCheckoutHandler:
             total_price=total_price,
             resolved_item_ids=sorted(set(resolved_item_ids)),
         )
+
+    def _consume_ingredient_requirement(
+        self,
+        *,
+        db: Session,
+        terminal: models.Terminal,
+        decomposition: CompositeDecompositionService,
+        requirement: IngredientRequirement,
+        stock_service: StockService,
+    ) -> list[int]:
+        remaining_ingredient = Decimal(str(requirement.quantity_base))
+        if remaining_ingredient <= 0:
+            return []
+
+        bindings = decomposition._get_ingredient_bindings(  # noqa: SLF001
+            requirement.ingredient_id,
+            as_of=None,
+            location_id=terminal.location_id,
+        )
+        if not bindings:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Missing ingredient binding for '{requirement.ingredient_name}'",
+            )
+        if not requirement.substitution_allowed:
+            bindings = bindings[:1]
+
+        resolved_item_ids: list[int] = []
+        precision = Decimal("0.000001")
+        for binding in bindings:
+            if remaining_ingredient <= precision:
+                break
+
+            component_product = self._get_product(db, binding.product_id)
+            ratio_to_ingredient = Decimal(str(binding.ratio_to_ingredient_base or 0))
+            if ratio_to_ingredient <= 0:
+                continue
+
+            available_base = self._available_stock_base(
+                db=db,
+                location_id=terminal.location_id,
+                product=component_product,
+            )
+            if available_base <= 0:
+                continue
+
+            required_base = remaining_ingredient / ratio_to_ingredient
+            consume_base = min(required_base, available_base)
+            consume_base = consume_base.quantize(precision, rounding=ROUND_DOWN)
+            if consume_base <= 0:
+                continue
+
+            if self._is_serial_product(db, component_product):
+                try:
+                    consumed_item_ids = self._consume_serial_base_quantity(
+                        db=db,
+                        terminal=terminal,
+                        product=component_product,
+                        base_quantity=consume_base,
+                        stock_service=stock_service,
+                        not_enough_detail=(
+                            f"Insufficient serialized stock for ingredient '{requirement.ingredient_name}'"
+                        ),
+                    )
+                except HTTPException as exc:
+                    if requirement.substitution_allowed and exc.status_code in {409, 422}:
+                        continue
+                    raise HTTPException(
+                        status_code=exc.status_code,
+                        detail=f"Ingredient '{requirement.ingredient_name}': {exc.detail}",
+                    ) from exc
+                resolved_item_ids.extend(consumed_item_ids)
+            else:
+                try:
+                    stock_service.adjust_stock(
+                        location_id=terminal.location_id,
+                        product_id=component_product.id,
+                        quantity=-consume_base,
+                        unit_id=component_product.base_unit_id,
+                    )
+                except HTTPException as exc:
+                    if requirement.substitution_allowed and exc.status_code in {409, 422}:
+                        continue
+                    raise HTTPException(
+                        status_code=exc.status_code,
+                        detail=f"Ingredient '{requirement.ingredient_name}': {exc.detail}",
+                    ) from exc
+
+            consumed_ingredient = (consume_base * ratio_to_ingredient).quantize(precision, rounding=ROUND_DOWN)
+            remaining_ingredient = (remaining_ingredient - consumed_ingredient).quantize(
+                precision,
+                rounding=ROUND_DOWN,
+            )
+
+        if remaining_ingredient > precision:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Insufficient stock for ingredient '{requirement.ingredient_name}': "
+                    f"required={requirement.quantity_base}, remaining={remaining_ingredient}"
+                ),
+            )
+        return resolved_item_ids
+
+    def _available_stock_base(
+        self,
+        *,
+        db: Session,
+        location_id: int,
+        product: models.Product,
+    ) -> Decimal:
+        rows = (
+            db.query(models.Stock.quantity, models.Stock.unit_id)
+            .filter(
+                models.Stock.location_id == location_id,
+                models.Stock.product_id == product.id,
+            )
+            .all()
+        )
+        total = Decimal("0")
+        for quantity, unit_id in rows:
+            qty = Decimal(str(quantity or 0))
+            ratio = self._ratio_to_base(db, product, int(unit_id))
+            total += qty * ratio
+        if total < 0:
+            return Decimal("0")
+        return total
 
     def _handle_item_qr_line(
         self,
@@ -1204,14 +1319,14 @@ class SalesCheckoutHandler:
 
     @staticmethod
     def _get_product(db: Session, product_id: int) -> models.Product:
-        product = db.query(models.Product).get(product_id)
+        product = db.get(models.Product, product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
         return product
 
     @staticmethod
     def _get_unit(db: Session, unit_id: int) -> models.Unit:
-        unit = db.query(models.Unit).get(unit_id)
+        unit = db.get(models.Unit, unit_id)
         if not unit:
             raise HTTPException(status_code=404, detail="Unit not found")
         return unit
@@ -1290,7 +1405,7 @@ class SalesCheckoutHandler:
 
     @staticmethod
     def _is_serial_product(db: Session, product: models.Product) -> bool:
-        unit = db.query(models.Unit).get(product.base_unit_id)
+        unit = db.get(models.Unit, product.base_unit_id)
         return bool(unit and unit.is_discrete)
 
     def _resolve_unit_price(

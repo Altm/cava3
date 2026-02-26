@@ -3,7 +3,8 @@ Products 2 API - Enhanced product management with fractional units support.
 """
 from typing import Callable, Optional
 from decimal import Decimal
-from fastapi import APIRouter, Depends, Query, UploadFile, File
+from datetime import datetime
+from fastapi import APIRouter, Depends, Query, UploadFile, File, HTTPException
 from fastapi.encoders import jsonable_encoder
 
 from app.api.v1.deps.auth import PermissionChecker
@@ -32,6 +33,7 @@ from app.models import models
 from app.schemas import simple as schemas
 from sqlalchemy.orm import Session
 from app.infrastructure.db.session import SessionLocal
+from app.application.simple_catalog.common import ProductAvailabilityCalculator, default_location, serialize_product_view
 
 router = APIRouter(prefix="/products2", tags=["products2"])
 
@@ -43,6 +45,21 @@ def get_db_session() -> Session:
         yield db
     finally:
         db.close()
+
+
+def _active_recipe(db: Session, product_id: int) -> models.ProductRecipe | None:
+    now = datetime.utcnow()
+    return (
+        db.query(models.ProductRecipe)
+        .filter(
+            models.ProductRecipe.product_id == product_id,
+            models.ProductRecipe.is_active.is_(True),
+            models.ProductRecipe.valid_from <= now,
+            (models.ProductRecipe.valid_to.is_(None) | (models.ProductRecipe.valid_to > now)),
+        )
+        .order_by(models.ProductRecipe.version.desc(), models.ProductRecipe.id.desc())
+        .first()
+    )
 
 
 @router.get("")
@@ -204,20 +221,17 @@ def get_component_tree(
     Для составных продуктов показывает рекурсивную структуру всех компонентов
     с текущими остатками и доступностью для продажи.
     """
-    product = db.query(models.Product).get(product_id)
+    product = db.get(models.Product, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
-    from app.application.simple_catalog.common import ProductAvailabilityCalculator
-    
     location = default_location(db)
     if location_id:
-        location = db.query(models.Location).get(location_id) or location
+        location = db.get(models.Location, location_id) or location
     
     calculator = ProductAvailabilityCalculator(db, location.id)
-    tree = calculator.build_component_tree(product)
-    
-    return jsonable_encoder(tree)
+    product_view = serialize_product_view(product, db, calculator=calculator)
+    return jsonable_encoder(product_view.component_tree)
 
 
 @router.get("/{product_id}/fractional-units")
@@ -237,7 +251,7 @@ def get_fractional_units(
     - kg (базовая) = 1.0
     - slice = 0.05 (50г от 1кг)
     """
-    product = db.query(models.Product).get(product_id)
+    product = db.get(models.Product, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
@@ -277,11 +291,11 @@ def add_fractional_unit(
     
     Пример: добавить "бокал" к вину с ratio_to_base = 0.1667
     """
-    product = db.query(models.Product).get(product_id)
+    product = db.get(models.Product, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
-    unit = db.query(models.Unit).get(payload.unit_id)
+    unit = db.get(models.Unit, payload.unit_id)
     if not unit:
         raise HTTPException(status_code=404, detail="Unit not found")
     
@@ -342,7 +356,7 @@ def update_fractional_unit(
         raise HTTPException(status_code=404, detail="Product unit not found")
     
     # Нельзя изменить ratio базовой единицы
-    product = db.query(models.Product).get(product_id)
+    product = db.get(models.Product, product_id)
     if product and product.base_unit_id == unit_id:
         raise HTTPException(status_code=400, detail="Cannot change base unit ratio")
     
@@ -371,7 +385,7 @@ def remove_fractional_unit(
     
     Нельзя удалить базовую единицу.
     """
-    product = db.query(models.Product).get(product_id)
+    product = db.get(models.Product, product_id)
     if product and product.base_unit_id == unit_id:
         raise HTTPException(status_code=400, detail="Cannot remove base unit")
     
@@ -405,24 +419,41 @@ def get_components(
     - хлеб: 0.1 кг
     - томатная паста: 0.02 кг
     """
-    product = db.query(models.Product).get(product_id)
+    product = db.get(models.Product, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
     components = (
-        db.query(models.ProductComposite)
-        .filter(models.ProductComposite.parent_product_id == product_id)
+        db.query(models.ProductRecipeComponent)
+        .join(models.ProductRecipe, models.ProductRecipe.id == models.ProductRecipeComponent.recipe_id)
+        .filter(
+            models.ProductRecipe.product_id == product_id,
+            models.ProductRecipe.is_active.is_(True),
+        )
+        .order_by(models.ProductRecipeComponent.id.asc())
         .all()
     )
     
     result = []
     for comp in components:
-        component_product = db.query(models.Product).get(comp.component_product_id)
+        ingredient = db.get(models.Ingredient, comp.ingredient_id)
+        primary_binding = (
+            db.query(models.IngredientProductBinding)
+            .filter(
+                models.IngredientProductBinding.ingredient_id == comp.ingredient_id,
+                models.IngredientProductBinding.is_active.is_(True),
+            )
+            .order_by(models.IngredientProductBinding.priority.asc(), models.IngredientProductBinding.id.asc())
+            .first()
+        )
+        bound_product = db.get(models.Product, primary_binding.product_id) if primary_binding else None
         result.append({
             "id": comp.id,
-            "component_product_id": comp.component_product_id,
-            "component_product_name": component_product.name if component_product else "Unknown",
-            "component_product_sku": component_product.sku if component_product else None,
+            "ingredient_id": comp.ingredient_id,
+            "ingredient_name": ingredient.name if ingredient else "Unknown",
+            "ingredient_code": ingredient.code if ingredient else None,
+            "bound_product_id": bound_product.id if bound_product else None,
+            "bound_product_name": bound_product.name if bound_product else None,
             "quantity": str(comp.quantity),
             "unit_id": comp.unit_id,
             "unit_code": comp.unit.code if comp.unit else None,
@@ -447,56 +478,75 @@ def add_component(
     """
     from app.application.simple_catalog.products import _assert_no_component_cycles
     
-    parent = db.query(models.Product).get(product_id)
+    parent = db.get(models.Product, product_id)
     if not parent:
         raise HTTPException(status_code=404, detail="Parent product not found")
     
-    component = db.query(models.Product).get(payload.component_product_id)
-    if not component:
-        raise HTTPException(status_code=404, detail="Component product not found")
+    ingredient = db.get(models.Ingredient, payload.ingredient_id)
+    if not ingredient:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
     
     # Определение единицы измерения компонента
-    if payload.unit_id:
-        unit = db.query(models.Unit).get(payload.unit_id)
-        if not unit:
-            raise HTTPException(status_code=404, detail="Unit not found")
-    else:
-        # По умолчанию используем базовую единицу компонента
-        unit = db.query(models.Unit).get(component.base_unit_id)
-        if not unit:
-            raise HTTPException(status_code=400, detail="Component base unit not found")
+    unit_id = int(payload.unit_id or ingredient.base_unit_id)
+    if unit_id != ingredient.base_unit_id:
+        raise HTTPException(status_code=400, detail="Ingredient can be used only in its base unit")
     
     # Проверка на циклы
-    _assert_no_component_cycles(db, product_id, [payload.component_product_id])
+    active_recipe = _active_recipe(db, product_id)
+    existing_ingredient_ids: list[int] = []
+    if active_recipe:
+        existing_ingredient_ids = [
+            int(row.ingredient_id)
+            for row in db.query(models.ProductRecipeComponent.ingredient_id)
+            .filter(models.ProductRecipeComponent.recipe_id == active_recipe.id)
+            .all()
+        ]
+    _assert_no_component_cycles(db, product_id, existing_ingredient_ids + [payload.ingredient_id])
     
     # Проверка на дубликат
+    if not active_recipe:
+        max_version = (
+            db.query(models.func.max(models.ProductRecipe.version))
+            .filter(models.ProductRecipe.product_id == product_id)
+            .scalar()
+        )
+        active_recipe = models.ProductRecipe(
+            product_id=product_id,
+            version=int(max_version or 0) + 1,
+            is_active=True,
+            valid_from=datetime.utcnow(),
+            valid_to=None,
+        )
+        db.add(active_recipe)
+        db.flush()
+
     existing = (
-        db.query(models.ProductComposite)
+        db.query(models.ProductRecipeComponent)
         .filter(
-            models.ProductComposite.parent_product_id == product_id,
-            models.ProductComposite.component_product_id == payload.component_product_id,
+            models.ProductRecipeComponent.recipe_id == active_recipe.id,
+            models.ProductRecipeComponent.ingredient_id == payload.ingredient_id,
         )
         .first()
     )
     if existing:
         raise HTTPException(status_code=400, detail="Component already exists")
     
-    product_composite = models.ProductComposite(
-        parent_product_id=product_id,
-        component_product_id=payload.component_product_id,
+    recipe_component = models.ProductRecipeComponent(
+        recipe_id=active_recipe.id,
+        ingredient_id=payload.ingredient_id,
         quantity=Decimal(str(payload.quantity)),
-        unit_id=payload.unit_id or component.base_unit_id,
+        unit_id=unit_id,
         substitution_allowed=payload.substitution_allowed or False,
         rounding=payload.rounding,
     )
-    db.add(product_composite)
+    db.add(recipe_component)
     db.commit()
     
     return jsonable_encoder({
-        "id": product_composite.id,
-        "component_product_id": product_composite.component_product_id,
-        "quantity": str(product_composite.quantity),
-        "unit_id": product_composite.unit_id,
+        "id": recipe_component.id,
+        "ingredient_id": recipe_component.ingredient_id,
+        "quantity": str(recipe_component.quantity),
+        "unit_id": recipe_component.unit_id,
     })
 
 
@@ -516,10 +566,12 @@ def update_component(
     from app.application.simple_catalog.products import _assert_no_component_cycles
     
     component = (
-        db.query(models.ProductComposite)
+        db.query(models.ProductRecipeComponent)
+        .join(models.ProductRecipe, models.ProductRecipe.id == models.ProductRecipeComponent.recipe_id)
         .filter(
-            models.ProductComposite.parent_product_id == product_id,
-            models.ProductComposite.id == component_id,
+            models.ProductRecipe.product_id == product_id,
+            models.ProductRecipe.is_active.is_(True),
+            models.ProductRecipeComponent.id == component_id,
         )
         .first()
     )
@@ -530,6 +582,11 @@ def update_component(
     if payload.quantity is not None:
         component.quantity = Decimal(str(payload.quantity))
     if payload.unit_id is not None:
+        ingredient = db.get(models.Ingredient, component.ingredient_id)
+        if not ingredient:
+            raise HTTPException(status_code=404, detail="Ingredient not found")
+        if int(payload.unit_id) != int(ingredient.base_unit_id):
+            raise HTTPException(status_code=400, detail="Ingredient can be used only in its base unit")
         component.unit_id = payload.unit_id
     if payload.substitution_allowed is not None:
         component.substitution_allowed = payload.substitution_allowed
@@ -554,10 +611,12 @@ def remove_component(
 ):
     """Удаляет компонент из составного продукта."""
     component = (
-        db.query(models.ProductComposite)
+        db.query(models.ProductRecipeComponent)
+        .join(models.ProductRecipe, models.ProductRecipe.id == models.ProductRecipeComponent.recipe_id)
         .filter(
-            models.ProductComposite.parent_product_id == product_id,
-            models.ProductComposite.id == component_id,
+            models.ProductRecipe.product_id == product_id,
+            models.ProductRecipe.is_active.is_(True),
+            models.ProductRecipeComponent.id == component_id,
         )
         .first()
     )
@@ -588,7 +647,7 @@ def get_usage_examples(
     - Продажа ломтиками (дробная единица)
     - Использование в бутербродах (как компонент)
     """
-    product = db.query(models.Product).get(product_id)
+    product = db.get(models.Product, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
@@ -624,12 +683,21 @@ def get_usage_examples(
     
     # 3. Использование как компонента
     parent_products = (
-        db.query(models.ProductComposite, models.Product)
-        .join(models.Product, models.Product.id == models.ProductComposite.parent_product_id)
-        .filter(models.ProductComposite.component_product_id == product_id)
+        db.query(models.ProductRecipeComponent, models.Product, models.IngredientProductBinding)
+        .join(models.ProductRecipe, models.ProductRecipe.id == models.ProductRecipeComponent.recipe_id)
+        .join(models.Product, models.Product.id == models.ProductRecipe.product_id)
+        .join(
+            models.IngredientProductBinding,
+            models.IngredientProductBinding.ingredient_id == models.ProductRecipeComponent.ingredient_id,
+        )
+        .filter(
+            models.IngredientProductBinding.product_id == product_id,
+            models.IngredientProductBinding.is_active.is_(True),
+            models.ProductRecipe.is_active.is_(True),
+        )
         .all()
     )
-    for comp, parent in parent_products:
+    for comp, parent, binding in parent_products:
         examples.append({
             "type": "component_usage",
             "title": f"Компонент в '{parent.name}'",
@@ -638,6 +706,8 @@ def get_usage_examples(
             "parent_product_name": parent.name,
             "quantity": str(comp.quantity),
             "unit_code": comp.unit.code if comp.unit else None,
+            "ingredient_id": comp.ingredient_id,
+            "ingredient_ratio": str(binding.ratio_to_ingredient_base),
         })
     
     return jsonable_encoder(examples)

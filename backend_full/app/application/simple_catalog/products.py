@@ -86,17 +86,47 @@ class SetProductGlassLinkCommand:
     payload: schemas.ProductGlassLinkUpdate
 
 
-def _assert_no_component_cycles(db, parent_product_id: int, component_product_ids: list[int]) -> None:
-    if parent_product_id in component_product_ids:
-        raise HTTPException(status_code=400, detail="Composite product cannot include itself")
+def _active_ingredient_product_ids(db, ingredient_ids: set[int]) -> set[int]:
+    if not ingredient_ids:
+        return set()
+    rows = (
+        db.query(models.IngredientProductBinding.product_id)
+        .filter(
+            models.IngredientProductBinding.ingredient_id.in_(ingredient_ids),
+            models.IngredientProductBinding.is_active.is_(True),
+        )
+        .all()
+    )
+    return {int(row[0]) for row in rows}
 
+
+def _assert_no_component_cycles(db, parent_product_id: int, ingredient_ids: list[int]) -> None:
     edges: dict[int, set[int]] = {}
-    rows = db.query(models.ProductComposite.parent_product_id, models.ProductComposite.component_product_id).all()
+    rows = (
+        db.query(
+            models.ProductRecipe.product_id,
+            models.IngredientProductBinding.product_id,
+        )
+        .join(models.ProductRecipeComponent, models.ProductRecipeComponent.recipe_id == models.ProductRecipe.id)
+        .join(
+            models.IngredientProductBinding,
+            models.IngredientProductBinding.ingredient_id == models.ProductRecipeComponent.ingredient_id,
+        )
+        .filter(
+            models.ProductRecipe.is_active.is_(True),
+            models.IngredientProductBinding.is_active.is_(True),
+        )
+        .all()
+    )
     for parent_id, child_id in rows:
-        if parent_id == parent_product_id:
+        if int(parent_id) == parent_product_id:
             continue
-        edges.setdefault(parent_id, set()).add(child_id)
-    edges[parent_product_id] = set(component_product_ids)
+        edges.setdefault(int(parent_id), set()).add(int(child_id))
+
+    candidate_child_ids = _active_ingredient_product_ids(db, set(ingredient_ids))
+    if parent_product_id in candidate_child_ids:
+        raise HTTPException(status_code=400, detail="Composite product cannot include itself via ingredient bindings")
+    edges[parent_product_id] = set(candidate_child_ids)
 
     def reaches_target(start_id: int, target_id: int) -> bool:
         stack = [start_id]
@@ -111,7 +141,7 @@ def _assert_no_component_cycles(db, parent_product_id: int, component_product_id
             stack.extend(edges.get(node, set()))
         return False
 
-    for component_id in component_product_ids:
+    for component_id in candidate_child_ids:
         if reaches_target(component_id, parent_product_id):
             raise HTTPException(status_code=400, detail="Composite cycle detected")
 
@@ -130,7 +160,7 @@ def _sync_product_units(
     for unit in payload_units:
         if unit.unit_id == base_unit_id:
             continue
-        unit_row = db.query(models.Unit).get(unit.unit_id)
+        unit_row = db.get(models.Unit, unit.unit_id)
         if not unit_row:
             raise HTTPException(status_code=400, detail=f"Unit not found: {unit.unit_id}")
         desired_by_unit_id[unit.unit_id] = (Decimal(str(unit.ratio_to_base)), unit.discrete_step)
@@ -234,32 +264,8 @@ def _ratio_from_product_or_type(
     return None
 
 
-def _component_unit_id(component: schemas.ProductComponentCreate, *, fallback_base_unit_id: int) -> int:
-    return int(component.unit_id or fallback_base_unit_id)
-
-
-def _sync_composite_projection(
-    db,
-    *,
-    parent_product_id: int,
-    components: list[schemas.ProductComponentCreate],
-) -> None:
-    db.query(models.ProductComposite).filter(models.ProductComposite.parent_product_id == parent_product_id).delete()
-    for comp in components:
-        component_product = db.query(models.Product).get(comp.component_product_id)
-        if not component_product:
-            raise HTTPException(status_code=400, detail="Component product not found")
-        db.add(
-            models.ProductComposite(
-                parent_product_id=parent_product_id,
-                component_product_id=comp.component_product_id,
-                quantity=Decimal(str(comp.quantity)),
-                unit_id=_component_unit_id(comp, fallback_base_unit_id=component_product.base_unit_id),
-                substitution_allowed=bool(comp.substitution_allowed),
-                rounding=comp.rounding,
-                waste_factor=Decimal(str(comp.waste_factor or 0)),
-            )
-        )
+def _component_unit_id(component: schemas.ProductComponentCreate, *, ingredient_base_unit_id: int) -> int:
+    return int(component.unit_id or ingredient_base_unit_id)
 
 
 def _append_recipe_version(
@@ -301,15 +307,21 @@ def _append_recipe_version(
     db.flush()
 
     for comp in components:
-        component_product = db.query(models.Product).get(comp.component_product_id)
-        if not component_product:
-            raise HTTPException(status_code=400, detail="Component product not found")
+        ingredient = db.get(models.Ingredient, comp.ingredient_id)
+        if not ingredient:
+            raise HTTPException(status_code=400, detail=f"Ingredient not found: {comp.ingredient_id}")
+        unit_id = _component_unit_id(comp, ingredient_base_unit_id=ingredient.base_unit_id)
+        if unit_id != ingredient.base_unit_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ingredient {ingredient.id} must use base unit {ingredient.base_unit_id}",
+            )
         db.add(
             models.ProductRecipeComponent(
                 recipe_id=recipe.id,
-                component_product_id=comp.component_product_id,
+                ingredient_id=comp.ingredient_id,
                 quantity=Decimal(str(comp.quantity)),
-                unit_id=_component_unit_id(comp, fallback_base_unit_id=component_product.base_unit_id),
+                unit_id=unit_id,
                 substitution_allowed=bool(comp.substitution_allowed),
                 rounding=comp.rounding,
                 waste_factor=Decimal(str(comp.waste_factor or 0)),
@@ -337,17 +349,19 @@ def _serialize_recipe_history(
     *,
     product: models.Product,
     recipes: list[models.ProductRecipe],
-    component_names: dict[int, str],
+    ingredient_by_id: dict[int, tuple[str, str]],
 ) -> schemas.ProductRecipeHistoryOut:
     version_rows: list[schemas.ProductRecipeVersionOut] = []
     for recipe in recipes:
         component_rows: list[schemas.ProductRecipeComponentOut] = []
         for component in recipe.components:
+            ingredient_code, ingredient_name = ingredient_by_id.get(component.ingredient_id, ("", f"#{component.ingredient_id}"))
             component_rows.append(
                 schemas.ProductRecipeComponentOut(
                     id=component.id,
-                    component_product_id=component.component_product_id,
-                    component_product_name=component_names.get(component.component_product_id, f"#{component.component_product_id}"),
+                    ingredient_id=component.ingredient_id,
+                    ingredient_code=ingredient_code,
+                    ingredient_name=ingredient_name,
                     quantity=Decimal(str(component.quantity)),
                     unit_id=component.unit_id,
                     unit_code=(component.unit.code if component.unit else str(component.unit_id)),
@@ -383,11 +397,11 @@ class CreateProductHandler:
         db = uow.session
         product = command.payload
 
-        base_unit = db.query(models.Unit).get(product.base_unit_id)
+        base_unit = db.get(models.Unit, product.base_unit_id)
         if not base_unit:
             raise HTTPException(status_code=400, detail="Base unit not found")
 
-        pt = db.query(models.ProductType).get(product.product_type_id)
+        pt = db.get(models.ProductType, product.product_type_id)
         if not pt:
             raise HTTPException(status_code=400, detail="Product type not found")
         type_default_units = _type_default_units(db, product_type_id=pt.id)
@@ -444,9 +458,8 @@ class CreateProductHandler:
         )
 
         if pt.is_composite:
-            component_ids = [comp.component_product_id for comp in product.components]
-            _assert_no_component_cycles(db, db_product.id, component_ids)
-            _sync_composite_projection(db, parent_product_id=db_product.id, components=product.components)
+            ingredient_ids = [comp.ingredient_id for comp in product.components]
+            _assert_no_component_cycles(db, db_product.id, ingredient_ids)
             _append_recipe_version(db, product_id=db_product.id, components=product.components)
 
         loc = default_location(db)
@@ -469,7 +482,6 @@ class ListProductsHandler:
         query_builder = db.query(models.Product).options(
             joinedload(models.Product.product_type),
             joinedload(models.Product.product_units),
-            joinedload(models.Product.components),
         )
 
         if query.product_type_id:
@@ -518,7 +530,6 @@ class GetProductHandler:
         product = db.query(models.Product).options(
             joinedload(models.Product.product_type),
             joinedload(models.Product.product_units),
-            joinedload(models.Product.components),
         ).get(query.product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
@@ -533,7 +544,6 @@ class GetProductViewHandler:
         product = db.query(models.Product).options(
             joinedload(models.Product.product_type),
             joinedload(models.Product.product_units),
-            joinedload(models.Product.components),
             joinedload(models.Product.meta),
         ).get(query.product_id)
         if not product:
@@ -547,7 +557,7 @@ class GetProductRecipeHistoryHandler:
         from sqlalchemy.orm import joinedload
 
         db = uow.session
-        product = db.query(models.Product).get(query.product_id)
+        product = db.get(models.Product, query.product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
 
@@ -572,24 +582,24 @@ class GetProductRecipeHistoryHandler:
             query_builder = query_builder.filter(models.ProductRecipe.valid_from <= query.date_to)
 
         recipes = query_builder.order_by(models.ProductRecipe.version.desc()).all()
-        component_product_ids = {
-            int(component.component_product_id)
+        ingredient_ids = {
+            int(component.ingredient_id)
             for recipe in recipes
             for component in recipe.components
         }
-        component_names: dict[int, str] = {}
-        if component_product_ids:
-            component_rows = (
-                db.query(models.Product.id, models.Product.name)
-                .filter(models.Product.id.in_(component_product_ids))
+        ingredient_by_id: dict[int, tuple[str, str]] = {}
+        if ingredient_ids:
+            ingredient_rows = (
+                db.query(models.Ingredient.id, models.Ingredient.code, models.Ingredient.name)
+                .filter(models.Ingredient.id.in_(ingredient_ids))
                 .all()
             )
-            component_names = {int(row[0]): str(row[1]) for row in component_rows}
+            ingredient_by_id = {int(row[0]): (str(row[1]), str(row[2])) for row in ingredient_rows}
 
         response = _serialize_recipe_history(
             product=product,
             recipes=recipes,
-            component_names=component_names,
+            ingredient_by_id=ingredient_by_id,
         )
         response.active_at = query.active_at
         response.date_from = query.date_from
@@ -600,7 +610,7 @@ class GetProductRecipeHistoryHandler:
 class UploadProductImageHandler:
     def handle(self, command: UploadProductImageCommand, uow: AbstractUnitOfWork) -> schemas.ProductImageOut:
         db = uow.session
-        product = db.query(models.Product).get(command.product_id)
+        product = db.get(models.Product, command.product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
         if not command.content_type.startswith("image/"):
@@ -633,18 +643,18 @@ class UploadProductImageHandler:
 class UpdateProductHandler:
     def handle(self, command: UpdateProductCommand, uow: AbstractUnitOfWork) -> schemas.Product:
         db = uow.session
-        product = db.query(models.Product).get(command.product_id)
+        product = db.get(models.Product, command.product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
 
         product_update = command.payload
         base_unit_id = product_update.base_unit_id if product_update.base_unit_id is not None else product.base_unit_id
 
-        base_unit = db.query(models.Unit).get(base_unit_id)
+        base_unit = db.get(models.Unit, base_unit_id)
         if not base_unit:
             raise HTTPException(status_code=400, detail="Base unit not found")
 
-        pt = db.query(models.ProductType).get(product_update.product_type_id)
+        pt = db.get(models.ProductType, product_update.product_type_id)
         if not pt:
             raise HTTPException(status_code=400, detail="Product type not found")
         type_default_units = _type_default_units(db, product_type_id=pt.id)
@@ -693,12 +703,10 @@ class UpdateProductHandler:
         )
 
         if pt.is_composite:
-            component_ids = [comp.component_product_id for comp in product_update.components]
-            _assert_no_component_cycles(db, product.id, component_ids)
-            _sync_composite_projection(db, parent_product_id=product.id, components=product_update.components)
+            ingredient_ids = [comp.ingredient_id for comp in product_update.components]
+            _assert_no_component_cycles(db, product.id, ingredient_ids)
             _append_recipe_version(db, product_id=product.id, components=product_update.components)
         else:
-            db.query(models.ProductComposite).filter(models.ProductComposite.parent_product_id == product.id).delete()
             _deactivate_active_recipes(db, product_id=product.id)
 
         loc = default_location(db)
@@ -726,11 +734,10 @@ class UpdateProductHandler:
 class DeleteProductHandler:
     def handle(self, command: DeleteProductCommand, uow: AbstractUnitOfWork) -> dict:
         db = uow.session
-        product = db.query(models.Product).get(command.product_id)
+        product = db.get(models.Product, command.product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
         db.query(models.ProductAttributeValue).filter(models.ProductAttributeValue.product_id == product.id).delete()
-        db.query(models.ProductComposite).filter(models.ProductComposite.parent_product_id == product.id).delete()
         db.delete(product)
         return {"message": "Product deleted successfully"}
 
@@ -738,7 +745,7 @@ class DeleteProductHandler:
 class SetProductGlassLinkHandler:
     def handle(self, command: SetProductGlassLinkCommand, uow: AbstractUnitOfWork) -> schemas.ProductGlassLinkOut:
         db = uow.session
-        product = db.query(models.Product).get(command.product_id)
+        product = db.get(models.Product, command.product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
 
@@ -748,8 +755,8 @@ class SetProductGlassLinkHandler:
         if bottle_unit_id == glass_unit_id:
             raise HTTPException(status_code=422, detail="Bottle unit and glass unit must be different")
 
-        bottle_unit = db.query(models.Unit).get(bottle_unit_id)
-        glass_unit = db.query(models.Unit).get(glass_unit_id)
+        bottle_unit = db.get(models.Unit, bottle_unit_id)
+        glass_unit = db.get(models.Unit, glass_unit_id)
         if not bottle_unit or not glass_unit:
             raise HTTPException(status_code=404, detail="Unit not found")
         if glass_unit.unit_type != "portion":
@@ -824,7 +831,7 @@ class SetProductGlassLinkHandler:
                 )
             )
         db.flush()
-        updated_product = db.query(models.Product).get(product.id)
+        updated_product = db.get(models.Product, product.id)
         serialized_units = serialize_product(updated_product, db).product_units or []
         return schemas.ProductGlassLinkOut(
             product_id=product.id,

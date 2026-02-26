@@ -62,7 +62,7 @@ def _sync_type_units(
 ) -> None:
     desired_by_unit_id: dict[int, tuple[Decimal, Decimal | None]] = {}
     for row in payload_units:
-        unit = db.query(models.Unit).get(row.unit_id)
+        unit = db.get(models.Unit, row.unit_id)
         if not unit:
             raise HTTPException(status_code=400, detail=f"Unit not found: {row.unit_id}")
         desired_by_unit_id[row.unit_id] = (row.ratio_to_base, row.discrete_step)
@@ -115,7 +115,7 @@ class ListProductTypesHandler:
 class GetProductTypeHandler:
     def handle(self, query: GetProductTypeQuery, uow: AbstractUnitOfWork) -> schemas.ProductType:
         db = uow.session
-        t = db.query(models.ProductType).get(query.product_type_id)
+        t = db.get(models.ProductType, query.product_type_id)
         if not t:
             raise HTTPException(status_code=404, detail="Product type not found")
         attrs = db.query(models.ProductAttribute).filter(models.ProductAttribute.product_type_id == t.id).all()
@@ -148,7 +148,7 @@ class CreateProductTypeHandler:
             for attr_data in payload.attributes:
                 unit_id = None
                 if attr_data.unit_id:
-                    unit = db.query(models.Unit).get(attr_data.unit_id)
+                    unit = db.get(models.Unit, attr_data.unit_id)
                     if unit:
                         unit_id = unit.id
                 db.add(
@@ -184,7 +184,7 @@ class CreateProductTypeHandler:
 class UpdateProductTypeHandler:
     def handle(self, command: UpdateProductTypeCommand, uow: AbstractUnitOfWork) -> schemas.ProductType:
         db = uow.session
-        t = db.query(models.ProductType).get(command.product_type_id)
+        t = db.get(models.ProductType, command.product_type_id)
         if not t:
             raise HTTPException(status_code=404, detail="Product type not found")
 
@@ -211,7 +211,7 @@ class UpdateProductTypeHandler:
             for attr_data in payload.attributes:
                 unit_id = None
                 if attr_data.unit_id:
-                    unit = db.query(models.Unit).get(attr_data.unit_id)
+                    unit = db.get(models.Unit, attr_data.unit_id)
                     if unit:
                         unit_id = unit.id
                 db.add(
@@ -247,7 +247,7 @@ class UpdateProductTypeHandler:
 class DeleteProductTypeHandler:
     def handle(self, command: DeleteProductTypeCommand, uow: AbstractUnitOfWork) -> dict:
         db = uow.session
-        t = db.query(models.ProductType).get(command.product_type_id)
+        t = db.get(models.ProductType, command.product_type_id)
         if not t:
             raise HTTPException(status_code=404, detail="Product type not found")
 

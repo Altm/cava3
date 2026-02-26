@@ -1,12 +1,16 @@
 from decimal import Decimal
+from datetime import datetime
 from app.services.sales_service import SalesService
 from app.models.models import (
+    Ingredient,
+    IngredientProductBinding,
     Unit,
     ProductType,
     Product,
     Location,
     Terminal,
-    ProductComposite,
+    ProductRecipe,
+    ProductRecipeComponent,
     Stock,
     ProductUnit,
 )
@@ -48,13 +52,40 @@ def seed_composite(db):
         ]
     )
 
-    comp = ProductComposite(
-        parent_product_id=sandwich.id,
-        component_product_id=wine.id,
+    ingredient = Ingredient(
+        code="cmp_ing_wine",
+        name="Wine ingredient",
+        base_unit_id=glass.id,
+        is_active=True,
+    )
+    db.add(ingredient)
+    db.flush()
+    db.add(
+        IngredientProductBinding(
+            ingredient_id=ingredient.id,
+            product_id=wine.id,
+            ratio_to_ingredient_base=Decimal("5"),
+            priority=100,
+            is_active=True,
+        )
+    )
+
+    recipe = ProductRecipe(
+        product_id=sandwich.id,
+        version=1,
+        is_active=True,
+        valid_from=datetime.utcnow(),
+        valid_to=None,
+    )
+    db.add(recipe)
+    db.flush()
+    component = ProductRecipeComponent(
+        recipe_id=recipe.id,
+        ingredient_id=ingredient.id,
         quantity=Decimal("1"),
         unit_id=glass.id,
     )
-    db.add(comp)
+    db.add(component)
 
     term = Terminal(terminal_id="t2", location_id=loc.id, secret_hash="secret")
     db.add(term)

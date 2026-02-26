@@ -143,12 +143,17 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in flattenedComponentRows" :key="`${row.node.componentProductId}-${row.depth}-${row.node.quantity}`">
+              <tr v-for="row in flattenedComponentRows" :key="`${row.node.ingredientId}-${row.depth}-${row.node.quantity}`">
                 <td>
                   <div class="component-cell" :style="{ paddingLeft: `${row.depth * 20}px` }">
-                    <RouterLink class="component-link" :to="`/product-view/${row.node.componentProductId}`">
-                      {{ row.node.componentName }} ({{ row.node.componentProductId }})
-                    </RouterLink>
+                    <template v-if="row.node.boundProductId">
+                      <RouterLink class="component-link" :to="`/product-view/${row.node.boundProductId}`">
+                        {{ row.node.ingredientName }} → {{ row.node.boundProductName ?? `#${row.node.boundProductId}` }}
+                      </RouterLink>
+                    </template>
+                    <template v-else>
+                      {{ row.node.ingredientName }} (#{{ row.node.ingredientId }})
+                    </template>
                     <span v-if="row.node.isCycle" class="tag tag-danger">Цикл</span>
                   </div>
                 </td>
@@ -156,8 +161,8 @@
                 <td>{{ row.node.unitCode ?? row.node.unitId }}</td>
                 <td>{{ row.node.availableQuantity }}</td>
                 <td>
-                  <span :class="['tag', row.node.isComposite ? 'tag-success' : 'tag-info']">
-                    {{ row.node.isComposite ? 'Составной' : 'Простой' }}
+                  <span :class="['tag', row.node.boundProductIsComposite ? 'tag-success' : 'tag-info']">
+                    {{ row.node.boundProductIsComposite ? 'Составной' : 'Простой/без привязки' }}
                   </span>
                 </td>
               </tr>

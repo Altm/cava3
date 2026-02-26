@@ -12,6 +12,22 @@ from app.application.simple_catalog.attributes import (
     CreateAttributeDefinitionCommand,
     CreateAttributeDefinitionHandler,
 )
+from app.application.simple_catalog.ingredients import (
+    CreateIngredientBindingCommand,
+    CreateIngredientBindingHandler,
+    CreateIngredientCommand,
+    CreateIngredientHandler,
+    DeleteIngredientBindingCommand,
+    DeleteIngredientBindingHandler,
+    ListIngredientBindingsHandler,
+    ListIngredientBindingsQuery,
+    ListIngredientsHandler,
+    ListIngredientsQuery,
+    UpdateIngredientBindingCommand,
+    UpdateIngredientBindingHandler,
+    UpdateIngredientCommand,
+    UpdateIngredientHandler,
+)
 from app.application.simple_catalog.locations import (
     CreateLocationCommand,
     CreateLocationHandler,
@@ -412,6 +428,119 @@ def create_location(
 ):
     """Создаёт новую локацию."""
     return dispatch_command(uow_factory, CreateLocationHandler(), CreateLocationCommand(payload=location))
+
+
+@router.get("/ingredients", response_model=List[schemas.IngredientOut])
+def list_ingredients(
+    name: Optional[str] = None,
+    user=Depends(PermissionChecker(["product.read"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Возвращает список абстрактных ингредиентов для рецептов."""
+    return dispatch_query(
+        uow_factory,
+        ListIngredientsHandler(),
+        ListIngredientsQuery(name=name),
+    )
+
+
+@router.post("/ingredients", response_model=schemas.IngredientOut)
+def create_ingredient(
+    payload: schemas.IngredientCreate,
+    user=Depends(PermissionChecker(["product.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Создаёт новый ингредиент (абстракция для привязки разных SKU)."""
+    return dispatch_command(
+        uow_factory,
+        CreateIngredientHandler(),
+        CreateIngredientCommand(payload=payload),
+    )
+
+
+@router.put("/ingredients/{ingredient_id}", response_model=schemas.IngredientOut)
+def update_ingredient(
+    ingredient_id: int,
+    payload: schemas.IngredientUpdate,
+    user=Depends(PermissionChecker(["product.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Обновляет ингредиент (код, название, базовую единицу и активность)."""
+    return dispatch_command(
+        uow_factory,
+        UpdateIngredientHandler(),
+        UpdateIngredientCommand(ingredient_id=ingredient_id, payload=payload),
+    )
+
+
+@router.get("/ingredients/{ingredient_id}/bindings", response_model=List[schemas.IngredientBindingOut])
+def list_ingredient_bindings(
+    ingredient_id: int,
+    location_id: Optional[int] = None,
+    include_inactive: bool = False,
+    user=Depends(PermissionChecker(["product.read"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Возвращает привязки ингредиента к конкретным товарам (SKU)."""
+    return dispatch_query(
+        uow_factory,
+        ListIngredientBindingsHandler(),
+        ListIngredientBindingsQuery(
+            ingredient_id=ingredient_id,
+            location_id=location_id,
+            include_inactive=include_inactive,
+        ),
+    )
+
+
+@router.post("/ingredients/{ingredient_id}/bindings", response_model=schemas.IngredientBindingOut)
+def create_ingredient_binding(
+    ingredient_id: int,
+    payload: schemas.IngredientBindingCreate,
+    user=Depends(PermissionChecker(["product.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Добавляет привязку ингредиента к товару с коэффициентом пересчёта."""
+    return dispatch_command(
+        uow_factory,
+        CreateIngredientBindingHandler(),
+        CreateIngredientBindingCommand(ingredient_id=ingredient_id, payload=payload),
+    )
+
+
+@router.put("/ingredients/{ingredient_id}/bindings/{binding_id}", response_model=schemas.IngredientBindingOut)
+def update_ingredient_binding(
+    ingredient_id: int,
+    binding_id: int,
+    payload: schemas.IngredientBindingUpdate,
+    user=Depends(PermissionChecker(["product.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Обновляет привязку ингредиента к товару (товар, коэффициент, приоритет, период)."""
+    return dispatch_command(
+        uow_factory,
+        UpdateIngredientBindingHandler(),
+        UpdateIngredientBindingCommand(
+            ingredient_id=ingredient_id,
+            binding_id=binding_id,
+            payload=payload,
+        ),
+    )
+
+
+@router.delete("/ingredients/{ingredient_id}/bindings/{binding_id}")
+def delete_ingredient_binding(
+    ingredient_id: int,
+    binding_id: int,
+    user=Depends(PermissionChecker(["product.write"])),
+    uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
+):
+    """Удаляет привязку ингредиента к товару."""
+    return dispatch_command(
+        uow_factory,
+        DeleteIngredientBindingHandler(),
+        DeleteIngredientBindingCommand(ingredient_id=ingredient_id, binding_id=binding_id),
+    )
 
 
 @router.get("/prices/calculators", response_model=List[schemas.PriceCalculatorOut])

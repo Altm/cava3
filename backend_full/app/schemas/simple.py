@@ -294,8 +294,12 @@ class ProductAttributeValueCreate(BaseModel):
 
 
 class ProductComponentCreate(BaseModel):
-    component_product_id: int
+    ingredient_id: int
     quantity: Decimal
+    unit_id: Optional[int] = None
+    substitution_allowed: bool = False
+    rounding: Optional[str] = None
+    waste_factor: Decimal = Decimal("0")
 
 
 class ProductCreate(BaseModel):
@@ -326,15 +330,6 @@ class ProductUpdate(BaseModel):
     product_units: List[ProductUnitCreate] = []
 
 
-class ProductComponentCreate(BaseModel):
-    component_product_id: int
-    quantity: Decimal
-    unit_id: Optional[int] = None
-    substitution_allowed: bool = False
-    rounding: Optional[str] = None
-    waste_factor: Decimal = Decimal("0")
-
-
 class ProductComponentUpdate(BaseModel):
     quantity: Optional[Decimal] = None
     unit_id: Optional[int] = None
@@ -346,6 +341,7 @@ class ProductComponentUpdate(BaseModel):
 class ProductComponent(ProductComponentCreate):
     id: int
     parent_product_id: int
+    ingredient_name: Optional[str] = None
     unit_id: int
     substitution_allowed: bool = False
     rounding: Optional[str] = None
@@ -356,12 +352,14 @@ class ProductComponent(ProductComponentCreate):
 
 
 class ProductComponentTreeNode(BaseModel):
-    component_product_id: int
-    component_name: str
+    ingredient_id: int
+    ingredient_name: str
     quantity: Decimal
     unit_id: int
     unit_code: Optional[str] = None
-    is_composite: bool = False
+    bound_product_id: Optional[int] = None
+    bound_product_name: Optional[str] = None
+    bound_product_is_composite: bool = False
     available_quantity: Decimal = Decimal("0")
     is_cycle: bool = False
     children: List["ProductComponentTreeNode"] = []
@@ -425,14 +423,68 @@ class ProductImageOut(BaseModel):
 
 class ProductRecipeComponentOut(BaseModel):
     id: int
-    component_product_id: int
-    component_product_name: str
+    ingredient_id: int
+    ingredient_code: str
+    ingredient_name: str
     quantity: Decimal
     unit_id: int
     unit_code: str
     substitution_allowed: bool = False
     rounding: Optional[str] = None
     waste_factor: Decimal = Decimal("0")
+
+
+class IngredientCreate(BaseModel):
+    code: str
+    name: str
+    base_unit_id: int
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class IngredientUpdate(BaseModel):
+    code: str
+    name: str
+    base_unit_id: int
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class IngredientOut(IngredientCreate):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class IngredientBindingCreate(BaseModel):
+    product_id: int
+    ratio_to_ingredient_base: Decimal = Field(..., gt=0)
+    priority: int = Field(default=100, ge=0)
+    location_id: Optional[int] = None
+    valid_from: Optional[datetime] = None
+    valid_to: Optional[datetime] = None
+    is_active: bool = True
+
+
+class IngredientBindingUpdate(BaseModel):
+    product_id: int
+    ratio_to_ingredient_base: Decimal = Field(..., gt=0)
+    priority: int = Field(default=100, ge=0)
+    location_id: Optional[int] = None
+    valid_from: Optional[datetime] = None
+    valid_to: Optional[datetime] = None
+    is_active: bool = True
+
+
+class IngredientBindingOut(IngredientBindingCreate):
+    id: int
+    ingredient_id: int
+    product_name: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class ProductRecipeVersionOut(BaseModel):

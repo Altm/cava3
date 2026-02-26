@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from decimal import Decimal
 from tempfile import NamedTemporaryFile
 
@@ -13,9 +14,12 @@ from app.application.simple_catalog.sales import SaleCheckoutCommand, SalesCheck
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.uow import BoundSessionUnitOfWork
 from app.models.models import (
+    Ingredient,
+    IngredientProductBinding,
     Location,
     Product,
-    ProductComposite,
+    ProductRecipe,
+    ProductRecipeComponent,
     ProductType,
     ProductUnit,
     Terminal,
@@ -81,10 +85,51 @@ def _seed_for_load_test(session):
             ProductUnit(product_id=dish.id, unit_id=plate.id, ratio_to_base=Decimal("1")),
         ]
     )
+    ing1 = Ingredient(code="perf_ing_1", name="Perf Ingredient 1", base_unit_id=bottle.id, is_active=True)
+    ing2 = Ingredient(code="perf_ing_2", name="Perf Ingredient 2", base_unit_id=bottle.id, is_active=True)
+    session.add_all([ing1, ing2])
+    session.flush()
     session.add_all(
         [
-            ProductComposite(parent_product_id=dish.id, component_product_id=c1.id, quantity=Decimal("0.2"), unit_id=bottle.id),
-            ProductComposite(parent_product_id=dish.id, component_product_id=c2.id, quantity=Decimal("0.2"), unit_id=bottle.id),
+            IngredientProductBinding(
+                ingredient_id=ing1.id,
+                product_id=c1.id,
+                ratio_to_ingredient_base=Decimal("1"),
+                priority=100,
+                is_active=True,
+            ),
+            IngredientProductBinding(
+                ingredient_id=ing2.id,
+                product_id=c2.id,
+                ratio_to_ingredient_base=Decimal("1"),
+                priority=100,
+                is_active=True,
+            ),
+        ]
+    )
+    recipe = ProductRecipe(
+        product_id=dish.id,
+        version=1,
+        is_active=True,
+        valid_from=datetime.utcnow(),
+        valid_to=None,
+    )
+    session.add(recipe)
+    session.flush()
+    session.add_all(
+        [
+            ProductRecipeComponent(
+                recipe_id=recipe.id,
+                ingredient_id=ing1.id,
+                quantity=Decimal("0.2"),
+                unit_id=bottle.id,
+            ),
+            ProductRecipeComponent(
+                recipe_id=recipe.id,
+                ingredient_id=ing2.id,
+                quantity=Decimal("0.2"),
+                unit_id=bottle.id,
+            ),
         ]
     )
     session.flush()

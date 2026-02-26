@@ -275,14 +275,14 @@
         <div v-for="(comp, index) in form.components" :key="index" class="component-item">
           <div class="form-row">
             <div class="form-group">
-              <label>Компонент</label>
+              <label>Ингредиент</label>
               <select
-                v-model="comp.componentProductId"
+                v-model="comp.ingredientId"
                 class="form-control"
               >
-                <option value="">Выберите компонент</option>
+                <option value="">Выберите ингредиент</option>
                 <option v-for="p in componentCandidates" :key="p.id" :value="p.id">
-                  {{ p.name }}
+                  {{ p.name }} ({{ p.code }})
                 </option>
               </select>
             </div>
@@ -323,11 +323,11 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type {
   ProductType,
-  Product,
   ProductView,
   ProductAttribute,
   ProductComponent as ApiComponent,
-  Unit
+  Unit,
+  Ingredient
 } from '@/api/productApi'
 import { productApi } from '@/api/productApi'
 
@@ -345,7 +345,7 @@ const productIdValue = computed(() => (props.productId ? Number(props.productId)
 
 // Состояние
 const productTypes = ref<ProductType[]>([])
-const allProducts = ref<Product[]>([])
+const ingredients = ref<Ingredient[]>([])
 const units = ref<Unit[]>([])  // Add units state
 const productView = ref<ProductView | null>(null)
 const selectedImageFile = ref<File | null>(null)
@@ -358,7 +358,7 @@ const form = ref({
   baseUnitId: 0,  // Add base unit ID
   isComposite: false,  // Add the composite flag to the form
   attributes: {} as Record<string, any>,
-  components: [] as Array<{ componentProductId: number; quantity: number }>,
+  components: [] as Array<{ ingredientId: number; quantity: number }>,
   productUnits: [] as Array<{ unit_id: number; ratio_to_base: number; discrete_step: number | null }>
 })
 
@@ -378,9 +378,7 @@ const currentProductTypeIsComposite = computed(() => {
   return selectedType ? selectedType.isComposite : false;
 });
 
-const componentCandidates = computed(() =>
-  allProducts.value.filter((product) => product.id !== productIdValue.value)
-)
+const componentCandidates = computed(() => ingredients.value)
 
 const unitOptionLabel = (unit: Unit) => {
   const description = (unit as any).description ?? (unit as any).name ?? ''
@@ -455,7 +453,7 @@ const onTypeChange = () => {
 }
 
 const addComponent = () => {
-  form.value.components.push({ componentProductId: 0, quantity: 1 })
+  form.value.components.push({ ingredientId: 0, quantity: 1 })
 }
 
 const removeComponent = (index: number) => {
@@ -530,7 +528,7 @@ const loadProductForEdit = async (productId: number) => {
   }
 
   const initialComponents = (product.components || []).map((comp: ApiComponent) => ({
-    componentProductId: comp.componentProductId,
+    ingredientId: comp.ingredientId,
     quantity: comp.quantity
   }))
   const productType = productTypes.value.find(t => t.id === product.productTypeId)
@@ -605,7 +603,7 @@ const handleSubmit = async () => {
         .filter(Boolean) as Array<{ product_attribute_id: number; value: string }>,
       components: isProductTypeComposite  // Use the composite flag from the product type
         ? form.value.components.map(c => ({
-            component_product_id: c.componentProductId,
+            ingredient_id: c.ingredientId,
             quantity: c.quantity
           }))
         : []
@@ -637,10 +635,10 @@ const handleSubmit = async () => {
 // Загрузка данных
 onMounted(async () => {
   try {
-    const [typesRes, productsRes, unitsRes] = await Promise.all([
+    const [typesRes, unitsRes, ingredientsRes] = await Promise.all([
       productApi.getProductTypes(),
-      productApi.getProducts(),
-      productApi.getUnits()
+      productApi.getUnits(),
+      productApi.getIngredients(),
     ])
 
     units.value = unitsRes
@@ -657,7 +655,7 @@ onMounted(async () => {
         discreteStep: row.discreteStep ?? row.discrete_step ?? null,
       })),
     }))
-    allProducts.value = productsRes
+    ingredients.value = ingredientsRes
 
     if (isEditing.value && props.productId) {
       await loadProductForEdit(Number(props.productId))

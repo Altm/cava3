@@ -1,14 +1,18 @@
+from datetime import datetime
 from decimal import Decimal
 import pytest
 from fastapi import HTTPException
 
 from app.models.models import (
+    Ingredient,
+    IngredientProductBinding,
     Unit,
     ProductType,
     Product,
     ProductUnit,
     ProductTypeUnit,
-    ProductComposite,
+    ProductRecipe,
+    ProductRecipeComponent,
     Location,
     Receipt,
     ProductItem,
@@ -122,7 +126,7 @@ def test_transfer_box_pick_receive_and_close(db_session):
     for item in items:
         bs.add_item_by_qr(box.id, item.qr_code)
     bs.seal_box(box.id)
-    assert db_session.query(Box).get(box.id).sealed is True
+    assert db_session.get(Box, box.id).sealed is True
 
     ts = TransferService(db_session)
     doc = ts.create(from_location_id=wh.id, to_location_id=bar.id)
@@ -167,7 +171,7 @@ def test_transfer_close_marks_missing_as_lost(db_session):
 
     close_res = ts.close(doc.id)
     assert close_res["lost_items"] == 1
-    item = db_session.query(ProductItem).get(item.id)
+    item = db_session.get(ProductItem, item.id)
     assert item.status == "lost"
     assert item.lost_reason == "lost_in_transit"
 
@@ -550,11 +554,65 @@ def test_sales_checkout_composite_product_consumes_component_item_fractions(db_s
     )
     db_session.flush()
 
+    ing1 = Ingredient(code="serial_ing_c1", name="Serial ingredient 1", base_unit_id=bottle.id, is_active=True)
+    ing2 = Ingredient(code="serial_ing_c2", name="Serial ingredient 2", base_unit_id=bottle.id, is_active=True)
+    ing3 = Ingredient(code="serial_ing_c3", name="Serial ingredient 3", base_unit_id=bottle.id, is_active=True)
+    db_session.add_all([ing1, ing2, ing3])
+    db_session.flush()
     db_session.add_all(
         [
-            ProductComposite(parent_product_id=dish.id, component_product_id=c1.id, quantity=Decimal("0.2"), unit_id=bottle.id),
-            ProductComposite(parent_product_id=dish.id, component_product_id=c2.id, quantity=Decimal("0.2"), unit_id=bottle.id),
-            ProductComposite(parent_product_id=dish.id, component_product_id=c3.id, quantity=Decimal("0.2"), unit_id=bottle.id),
+            IngredientProductBinding(
+                ingredient_id=ing1.id,
+                product_id=c1.id,
+                ratio_to_ingredient_base=Decimal("1"),
+                priority=100,
+                is_active=True,
+            ),
+            IngredientProductBinding(
+                ingredient_id=ing2.id,
+                product_id=c2.id,
+                ratio_to_ingredient_base=Decimal("1"),
+                priority=100,
+                is_active=True,
+            ),
+            IngredientProductBinding(
+                ingredient_id=ing3.id,
+                product_id=c3.id,
+                ratio_to_ingredient_base=Decimal("1"),
+                priority=100,
+                is_active=True,
+            ),
+        ]
+    )
+    recipe = ProductRecipe(
+        product_id=dish.id,
+        version=1,
+        is_active=True,
+        valid_from=datetime.utcnow(),
+        valid_to=None,
+    )
+    db_session.add(recipe)
+    db_session.flush()
+    db_session.add_all(
+        [
+            ProductRecipeComponent(
+                recipe_id=recipe.id,
+                ingredient_id=ing1.id,
+                quantity=Decimal("0.2"),
+                unit_id=bottle.id,
+            ),
+            ProductRecipeComponent(
+                recipe_id=recipe.id,
+                ingredient_id=ing2.id,
+                quantity=Decimal("0.2"),
+                unit_id=bottle.id,
+            ),
+            ProductRecipeComponent(
+                recipe_id=recipe.id,
+                ingredient_id=ing3.id,
+                quantity=Decimal("0.2"),
+                unit_id=bottle.id,
+            ),
         ]
     )
     db_session.flush()
@@ -666,10 +724,31 @@ def test_sales_checkout_composite_uses_type_unit_conversion_for_components(db_se
             ProductUnit(product_id=dish.id, unit_id=plate.id, ratio_to_base=Decimal("1.0")),
         ]
     )
+    ingredient = Ingredient(code="serial_ing_type", name="Type ingredient", base_unit_id=glass.id, is_active=True)
+    db_session.add(ingredient)
+    db_session.flush()
     db_session.add(
-        ProductComposite(
-            parent_product_id=dish.id,
-            component_product_id=component.id,
+        IngredientProductBinding(
+            ingredient_id=ingredient.id,
+            product_id=component.id,
+            ratio_to_ingredient_base=Decimal("5"),
+            priority=100,
+            is_active=True,
+        )
+    )
+    recipe = ProductRecipe(
+        product_id=dish.id,
+        version=1,
+        is_active=True,
+        valid_from=datetime.utcnow(),
+        valid_to=None,
+    )
+    db_session.add(recipe)
+    db_session.flush()
+    db_session.add(
+        ProductRecipeComponent(
+            recipe_id=recipe.id,
+            ingredient_id=ingredient.id,
             quantity=Decimal("1"),
             unit_id=glass.id,
         )

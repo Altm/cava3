@@ -29,14 +29,14 @@ class SerialStockLedger:
         if delta_base_units == 0:
             stock = self.db.query(Stock).filter_by(location_id=location_id, product_id=product_id).first()
             if not stock:
-                product = self.db.query(Product).get(product_id)
+                product = self.db.get(Product, product_id)
                 if not product:
                     raise HTTPException(status_code=404, detail="Product not found")
                 stock = Stock(location_id=location_id, product_id=product_id, unit_id=product.base_unit_id, quantity=Decimal("0"))
                 self.db.add(stock)
             return stock
 
-        product = self.db.query(Product).get(product_id)
+        product = self.db.get(Product, product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
 

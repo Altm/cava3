@@ -14,7 +14,7 @@ class BoxService:
         self.db = db
 
     def create(self, product_id: int, lot_id: int, location_id: int, sealed: bool = True) -> Box:
-        lot = self.db.query(StockLot).get(lot_id)
+        lot = self.db.get(StockLot, lot_id)
         if not lot:
             raise HTTPException(status_code=404, detail="Lot not found")
         if lot.product_id != product_id:
@@ -82,7 +82,7 @@ class BoxService:
             return {"box_id": box.id, "product_item_id": item.id}
 
         if item.box_id is not None:
-            prev_box = self.db.query(Box).get(item.box_id)
+            prev_box = self.db.get(Box, item.box_id)
             if prev_box and prev_box.quantity > 0:
                 prev_box.quantity -= 1
         item.box_id = box.id
@@ -95,7 +95,7 @@ class BoxService:
         return [box.qr_code]
 
     def _get_box(self, box_id: int) -> Box:
-        box = self.db.query(Box).get(box_id)
+        box = self.db.get(Box, box_id)
         if not box:
             raise HTTPException(status_code=404, detail="Box not found")
         return box

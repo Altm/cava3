@@ -153,7 +153,7 @@ class SalesService:
         if product_ref is None:
             raise ValueError("product_id is required")
         parsed_id = self._to_int(product_ref)
-        product = self.db.query(Product).get(parsed_id) if parsed_id is not None else None
+        product = self.db.get(Product, parsed_id) if parsed_id is not None else None
         if product:
             return product
         product_by_sku = self.db.query(Product).filter(Product.sku == str(product_ref)).first()
@@ -162,7 +162,7 @@ class SalesService:
         return product_by_sku
 
     def _resolve_unit_code(self, unit_id: int) -> str:
-        unit = self.db.query(Unit).get(unit_id)
+        unit = self.db.get(Unit, unit_id)
         if not unit:
             raise ValueError(f"Unknown unit_id: {unit_id}")
         return unit.code
@@ -193,8 +193,8 @@ class SalesService:
         except (TypeError, ValueError):
             return None
 
-    def _expand_components(self, product_id: int, quantity: Decimal, unit_id: int) -> List[dict]:
-        product = self.db.query(Product).get(product_id)
+    def _expand_components(self, product_id: int, quantity: Decimal, unit_id: int, location_id: int | None = None) -> List[dict]:
+        product = self.db.get(Product, product_id)
         if not product:
             return []
         ratio_to_base = Decimal("1")
@@ -202,14 +202,27 @@ class SalesService:
             ratio_to_base = self.stock_service._to_base(product.id, unit_id, Decimal("1"))  # noqa: SLF001
 
         qty_base = Decimal(quantity) * Decimal(str(ratio_to_base))
+        if not (product.product_type and product.product_type.is_composite):
+            return [
+                {
+                    "product_id": product.id,
+                    "quantity": qty_base,
+                    "unit_id": product.base_unit_id,
+                }
+            ]
+
         decomposition = CompositeDecompositionService(self.db)
         try:
-            requirements = decomposition.decompose(product_id=product_id, quantity_base=qty_base)
+            requirements = decomposition.decompose(
+                product_id=product_id,
+                quantity_base=qty_base,
+                location_id=location_id,
+            )
         except CompositeCycleError:
             return []
         result: list[dict] = []
         for req in requirements:
-            leaf = self.db.query(Product).get(req.product_id)
+            leaf = self.db.get(Product, req.product_id)
             if not leaf:
                 continue
             result.append(
@@ -237,7 +250,12 @@ class SalesService:
                 unit = self.db.query(Unit).filter(Unit.code == line["unit"]).first()
                 if not unit:
                     raise ValueError(f"Unknown unit code: {line['unit']}")
-                expanded = self._expand_components(line["product_id"], Decimal(str(line["quantity"])), unit.id)
+                expanded = self._expand_components(
+                    line["product_id"],
+                    Decimal(str(line["quantity"])),
+                    unit.id,
+                    location_id=location_id,
+                )
                 for comp_line in expanded:
                     pid = comp_line["product_id"]
                     delta_counter.setdefault(pid, {"qty": Decimal("0"), "unit_id": comp_line["unit_id"]})

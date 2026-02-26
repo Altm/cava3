@@ -17,16 +17,16 @@
       <span v-else class="toggle-placeholder"></span>
 
       <!-- Node Icon -->
-      <span class="node-icon" :class="node.isComposite ? 'composite' : 'simple'">
-        {{ node.isComposite ? '📦' : '🔹' }}
+      <span class="node-icon" :class="node.boundProductIsComposite ? 'composite' : 'simple'">
+        {{ node.boundProductIsComposite ? '📦' : '🔹' }}
       </span>
 
       <!-- Node Info -->
       <div class="node-info">
         <div class="node-header">
-          <span class="node-name">{{ node.componentName }}</span>
+          <span class="node-name">{{ node.ingredientName }}</span>
           <span v-if="node.isCycle" class="cycle-badge">⚠️ Цикл</span>
-          <span v-if="node.isComposite" class="composite-badge">Составной</span>
+          <span v-if="node.boundProductIsComposite" class="composite-badge">Составной</span>
         </div>
         
         <div class="node-details">
@@ -49,10 +49,11 @@
 
       <!-- Quick Actions -->
       <div class="node-actions">
-        <router-link 
-          :to="`/products2/${node.componentProductId}`" 
+        <router-link
+          v-if="node.boundProductId"
+          :to="`/products2/${node.boundProductId}`"
           class="btn btn-sm btn-outline"
-          title="Просмотр продукта"
+          title="Просмотр связанного продукта"
         >
           👁️
         </router-link>

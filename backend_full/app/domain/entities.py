@@ -29,15 +29,6 @@ class Product:
 
 
 @dataclass
-class ProductComposite:
-    product_id: int
-    quantity: Decimal
-    unit: str
-    substitution_allowed: bool = False
-    rounding: Optional[str] = None
-
-
-@dataclass
 class StockItem:
     product_id: int
     location_id: int
@@ -77,4 +68,3 @@ class User:
     username: str
     is_superuser: bool
     roles: List[Role]
-

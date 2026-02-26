@@ -58,7 +58,8 @@ class Unit(Base):
     transfers: Mapped[list["Transfer"]] = relationship(back_populates="unit")
     sale_lines: Mapped[list["SaleLine"]] = relationship(back_populates="unit")
     attribute_definitions: Mapped[list["ProductAttribute"]] = relationship(back_populates="unit")
-    product_composites: Mapped[list["ProductComposite"]] = relationship(back_populates="unit")
+    ingredient_bases: Mapped[list["Ingredient"]] = relationship(back_populates="base_unit")
+    recipe_components: Mapped[list["ProductRecipeComponent"]] = relationship(back_populates="unit")
 
 
 class ProductUnit(Base):
@@ -168,17 +169,17 @@ class Product(Base):
     
     product_type: Mapped["ProductType"] = relationship()
     attributes: Mapped[list["ProductAttributeValue"]] = relationship(back_populates="product")
-    components: Mapped[list["ProductComposite"]] = relationship(
-        foreign_keys="[ProductComposite.parent_product_id]",
-        back_populates="parent_product"
-    )
-    
     # New relationships for the updated schema
     product_units: Mapped[list["ProductUnit"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     stocks = relationship("Stock", back_populates="product")
     meta: Mapped[list["ProductMeta"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     recipes: Mapped[list["ProductRecipe"]] = relationship(
         "ProductRecipe",
+        back_populates="product",
+        cascade="all, delete-orphan",
+    )
+    ingredient_bindings: Mapped[list["IngredientProductBinding"]] = relationship(
+        "IngredientProductBinding",
         back_populates="product",
         cascade="all, delete-orphan",
     )
@@ -294,40 +295,6 @@ class ProductAttributeValue(Base):
 
 
 
-class ProductComposite(Base):
-    """Components for composite or recipe products."""
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    parent_product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Composite parent product")
-    component_product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), comment="Component product")
-    quantity: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), comment="Quantity of component")
-    unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id"), comment="Unit for component quantity")
-    substitution_allowed: Mapped[bool] = mapped_column(Boolean, default=False, comment="If substitutions allowed")
-    rounding: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, comment="Rounding rule identifier")
-    waste_factor: Mapped[Decimal] = mapped_column(
-        DECIMAL(6, 4),
-        nullable=False,
-        default=Decimal("0"),
-        server_default="0",
-        comment="Expected loss share for this component (0.05 = 5%)",
-    )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
-    __table_args__ = (
-        UniqueConstraint("parent_product_id", "component_product_id", name="uq_component_unique"),
-    )
-    parent_product: Mapped["Product"] = relationship(
-        "Product",
-        foreign_keys=[parent_product_id],
-        back_populates="components"
-    )
-    component_product: Mapped["Product"] = relationship(
-        "Product",
-        foreign_keys=[component_product_id]
-    )
-    unit: Mapped["Unit"] = relationship("Unit", back_populates="product_composites")
-
-
 class ProductRecipe(Base):
     """Versioned recipe for composite product."""
 
@@ -362,7 +329,7 @@ class ProductRecipeComponent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     recipe_id: Mapped[int] = mapped_column(ForeignKey("product_recipe.id", ondelete="CASCADE"), nullable=False)
-    component_product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), nullable=False)
+    ingredient_id: Mapped[int] = mapped_column(ForeignKey("ingredient.id", ondelete="RESTRICT"), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(DECIMAL(18, 6), nullable=False)
     unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id"), nullable=False)
     substitution_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=func.false())
@@ -377,11 +344,69 @@ class ProductRecipeComponent(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     recipe: Mapped["ProductRecipe"] = relationship("ProductRecipe", back_populates="components")
-    unit: Mapped["Unit"] = relationship("Unit")
+    ingredient: Mapped["Ingredient"] = relationship("Ingredient", back_populates="recipe_components")
+    unit: Mapped["Unit"] = relationship("Unit", back_populates="recipe_components")
 
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_product_recipe_component_quantity_positive"),
         CheckConstraint("waste_factor >= 0", name="ck_product_recipe_component_waste_non_negative"),
+    )
+
+
+class Ingredient(Base):
+    """Abstract ingredient used in versioned recipes."""
+
+    __tablename__ = "ingredient"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, comment="Stable ingredient code")
+    name: Mapped[str] = mapped_column(String(255), nullable=False, comment="Ingredient display name")
+    base_unit_id: Mapped[int] = mapped_column(ForeignKey("unit.id"), nullable=False, comment="Ingredient base unit")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Optional description")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=func.true(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    base_unit: Mapped["Unit"] = relationship("Unit", back_populates="ingredient_bases")
+    recipe_components: Mapped[list["ProductRecipeComponent"]] = relationship(
+        "ProductRecipeComponent",
+        back_populates="ingredient",
+    )
+    bindings: Mapped[list["IngredientProductBinding"]] = relationship(
+        "IngredientProductBinding",
+        back_populates="ingredient",
+        cascade="all, delete-orphan",
+    )
+
+
+class IngredientProductBinding(Base):
+    """Binding between abstract ingredient and real products used for write-off."""
+
+    __tablename__ = "ingredient_product_binding"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ingredient_id: Mapped[int] = mapped_column(ForeignKey("ingredient.id", ondelete="CASCADE"), nullable=False)
+    product_id: Mapped[int] = mapped_column(ForeignKey("product.id", ondelete="CASCADE"), nullable=False)
+    ratio_to_ingredient_base: Mapped[Decimal] = mapped_column(
+        DECIMAL(18, 6),
+        nullable=False,
+        comment="How many ingredient base units one product base unit contributes",
+    )
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100, server_default="100")
+    location_id: Mapped[Optional[int]] = mapped_column(ForeignKey("location.id"), nullable=True, comment="Optional location-specific binding")
+    valid_from: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    valid_to: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=func.true())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    ingredient: Mapped["Ingredient"] = relationship("Ingredient", back_populates="bindings")
+    product: Mapped["Product"] = relationship("Product", back_populates="ingredient_bindings")
+
+    __table_args__ = (
+        CheckConstraint("ratio_to_ingredient_base > 0", name="ck_ingredient_binding_ratio_positive"),
+        CheckConstraint("priority >= 0", name="ck_ingredient_binding_priority_non_negative"),
+        UniqueConstraint("ingredient_id", "product_id", "location_id", "valid_from", name="uq_ingredient_binding_scope"),
     )
 
 

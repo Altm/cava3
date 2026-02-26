@@ -76,26 +76,39 @@ export interface ProductUnit {
 
 export interface ProductComponent {
   id: number
-  componentProductId: number
-  componentProductName: string
-  componentProductSku?: string | null
+  ingredientId: number
+  ingredientName?: string | null
   quantity: number
   unitId: number
   unitCode?: string | null
   substitutionAllowed: boolean
   rounding?: string | null
+  wasteFactor?: string | number
 }
 
 export interface ProductComponentTreeNode {
-  componentProductId: number
-  componentName: string
+  ingredientId: number
+  ingredientName: string
   quantity: number
   unitId: number
   unitCode?: string | null
-  isComposite: boolean
+  boundProductId?: number | null
+  boundProductName?: string | null
+  boundProductIsComposite: boolean
   availableQuantity: number
   isCycle: boolean
   children: ProductComponentTreeNode[]
+}
+
+export interface Ingredient {
+  id: number
+  code: string
+  name: string
+  baseUnitId: number
+  description?: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export interface ProductAttributeValue {
@@ -200,7 +213,7 @@ export interface ProductForm {
   isComposite?: boolean
   attributes: Record<string, any>
   components: Array<{
-    componentProductId: number
+    ingredientId: number
     quantity: number
     unitId?: number
     substitutionAllowed?: boolean
@@ -225,7 +238,7 @@ export interface ProductUnitUpdate {
 }
 
 export interface ProductComponentCreate {
-  componentProductId: number
+  ingredientId: number
   quantity: number
   unitId?: number
   substitutionAllowed?: boolean
@@ -427,9 +440,9 @@ export const productApi2 = {
       .filter(Boolean) as Array<{ product_attribute_id: number; value: string }>
 
     const components = (data.components || [])
-      .filter(c => c.componentProductId > 0 && c.quantity > 0)
+      .filter(c => c.ingredientId > 0 && c.quantity > 0)
       .map(c => ({
-        component_product_id: c.componentProductId,
+        ingredient_id: c.ingredientId,
         quantity: c.quantity,
         unit_id: c.unitId,
         substitution_allowed: c.substitutionAllowed,
@@ -453,7 +466,7 @@ export const productApi2 = {
       }))
     }
 
-    const res = await api.post<Product>('', payload)
+    const res = await api.post<Product>('products2', payload)
     return res.data
   },
 
@@ -486,9 +499,9 @@ export const productApi2 = {
       .filter(Boolean) as Array<{ product_attribute_id: number; value: string }>
 
     const components = (data.components || [])
-      .filter(c => c.componentProductId > 0 && c.quantity > 0)
+      .filter(c => c.ingredientId > 0 && c.quantity > 0)
       .map(c => ({
-        component_product_id: c.componentProductId,
+        ingredient_id: c.ingredientId,
         quantity: c.quantity,
         unit_id: c.unitId,
         substitution_allowed: c.substitutionAllowed,
@@ -512,7 +525,7 @@ export const productApi2 = {
       }))
     }
 
-    const res = await api.put<Product>(`/${id}`, payload)
+    const res = await api.put<Product>(`products2/${id}`, payload)
     return res.data
   },
 
@@ -520,7 +533,7 @@ export const productApi2 = {
    * Delete product
    */
   async deleteProduct(id: number): Promise<void> {
-    await api.delete(`/${id}`)
+    await api.delete(`products2/${id}`)
   },
 
   /**
@@ -529,7 +542,7 @@ export const productApi2 = {
   async uploadProductImage(id: number, file: File): Promise<{ image: string; imageUrl: string }> {
     const formData = new FormData()
     formData.append('file', file)
-    const res = await api.post<{ image: string; imageUrl: string }>(`/${id}/image`, formData, {
+    const res = await api.post<{ image: string; imageUrl: string }>(`products2/${id}/image`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
     return res.data
@@ -556,6 +569,12 @@ export const productApi2 = {
    */
   async getLocations(): Promise<Array<{ id: number; name: string; code: string }>> {
     const res = await api.get<Array<{ id: number; name: string; code: string }>>('simple-catalog/locations/')
+    return res.data
+  },
+
+  async getIngredients(name?: string): Promise<Ingredient[]> {
+    const params = name && name.trim() ? { name: name.trim() } : undefined
+    const res = await api.get<Ingredient[]>('simple-catalog/ingredients', { params })
     return res.data
   },
 

@@ -232,7 +232,7 @@ class InventoryService:
         return {"inventory_doc_id": doc.id, "scanned_in_box": len(rows), "box_id": box.id}
 
     def _get_doc(self, inventory_doc_id: int) -> InventoryDoc:
-        doc = self.db.query(InventoryDoc).get(inventory_doc_id)
+        doc = self.db.get(InventoryDoc, inventory_doc_id)
         if not doc:
             raise HTTPException(status_code=404, detail="Inventory doc not found")
         return doc

@@ -85,7 +85,7 @@ export interface ProductForm {
   isComposite?: boolean
   attributes: Record<string, any>
   components: Array<{
-    componentProductId: number
+    ingredientId: number
     quantity: number
   }>
   productUnits: Array<{          // Add product-specific units
@@ -103,11 +103,13 @@ export interface ProductAttributeValue {
 export interface ProductComponent {
   id: number
   parentProductId: number
-  componentProductId: number
+  ingredientId: number
+  ingredientName?: string | null
   quantity: number
   unitId: number
   substitutionAllowed: boolean
   rounding?: string | null
+  wasteFactor?: string | number
 }
 
 export interface SaleRequest {
@@ -298,8 +300,9 @@ export interface ProductView extends Product {
 
 export interface ProductRecipeComponentOut {
   id: number
-  componentProductId: number
-  componentProductName: string
+  ingredientId: number
+  ingredientCode: string
+  ingredientName: string
   quantity: string
   unitId: number
   unitCode: string
@@ -332,15 +335,79 @@ export interface ProductRecipeHistoryOut {
 }
 
 export interface ProductComponentTreeNode {
-  componentProductId: number
-  componentName: string
+  ingredientId: number
+  ingredientName: string
   quantity: number
   unitId: number
   unitCode?: string | null
-  isComposite: boolean
+  boundProductId?: number | null
+  boundProductName?: string | null
+  boundProductIsComposite: boolean
   availableQuantity: number
   isCycle: boolean
   children: ProductComponentTreeNode[]
+}
+
+export interface Ingredient {
+  id: number
+  code: string
+  name: string
+  baseUnitId: number
+  description?: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface IngredientCreateRequest {
+  code: string
+  name: string
+  baseUnitId: number
+  description?: string | null
+  isActive?: boolean
+}
+
+export interface IngredientUpdateRequest {
+  code: string
+  name: string
+  baseUnitId: number
+  description?: string | null
+  isActive?: boolean
+}
+
+export interface IngredientBinding {
+  id: number
+  ingredientId: number
+  productId: number
+  productName?: string | null
+  ratioToIngredientBase: string | number
+  priority: number
+  locationId?: number | null
+  validFrom?: string | null
+  validTo?: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface IngredientBindingCreateRequest {
+  productId: number
+  ratioToIngredientBase: string | number
+  priority?: number
+  locationId?: number | null
+  validFrom?: string | null
+  validTo?: string | null
+  isActive?: boolean
+}
+
+export interface IngredientBindingUpdateRequest {
+  productId: number
+  ratioToIngredientBase: string | number
+  priority?: number
+  locationId?: number | null
+  validFrom?: string | null
+  validTo?: string | null
+  isActive?: boolean
 }
 
 export interface ProductStockUnitQuantity {
@@ -520,7 +587,7 @@ export interface ProductWithStockByLocation {
   baseCost: number
   isComposite: boolean
   attributes: Record<string, any>
-  components: Array<{ componentProductId: number; quantity: number }>
+  components: Array<{ ingredientId: number; quantity: number }>
   stockByLocation: Array<{ locationId: number; quantity: number }>
 }
 
@@ -605,7 +672,7 @@ export const productApi = {
       is_composite: data.isComposite,  // Include the composite flag
       attributes: attributes as Array<{ product_attribute_id: number; value: string }>,
       components: data.components.map(c => ({
-        component_product_id: c.componentProductId,
+        ingredient_id: c.ingredientId,
         quantity: c.quantity
       })),
       product_units: data.productUnits.map(pu => ({
@@ -648,9 +715,9 @@ export const productApi = {
 
   // ✅ Correct component format
   const components = (data.components || [])
-    .filter(c => c.componentProductId > 0 && c.quantity > 0) // filter empty
+    .filter(c => c.ingredientId > 0 && c.quantity > 0) // filter empty
     .map(c => ({
-      component_product_id: c.componentProductId, // ← API keys
+      ingredient_id: c.ingredientId, // ← API keys
       quantity: c.quantity
     }))
 
@@ -878,6 +945,86 @@ export const productApi = {
   async getUnits(): Promise<Unit[]> {
     const res = await api.get<Unit[]>('/units/')
     return res.data
+  },
+
+  async getIngredients(name?: string): Promise<Ingredient[]> {
+    const params = name && name.trim() ? { name: name.trim() } : undefined
+    const res = await api.get<Ingredient[]>('/ingredients', { params })
+    return res.data
+  },
+
+  async createIngredient(payload: IngredientCreateRequest): Promise<Ingredient> {
+    const res = await api.post<Ingredient>('/ingredients', {
+      code: payload.code,
+      name: payload.name,
+      base_unit_id: payload.baseUnitId,
+      description: payload.description ?? null,
+      is_active: payload.isActive ?? true,
+    })
+    return res.data
+  },
+
+  async updateIngredient(ingredientId: number, payload: IngredientUpdateRequest): Promise<Ingredient> {
+    const res = await api.put<Ingredient>(`/ingredients/${ingredientId}`, {
+      code: payload.code,
+      name: payload.name,
+      base_unit_id: payload.baseUnitId,
+      description: payload.description ?? null,
+      is_active: payload.isActive ?? true,
+    })
+    return res.data
+  },
+
+  async getIngredientBindings(
+    ingredientId: number,
+    params?: { locationId?: number; includeInactive?: boolean }
+  ): Promise<IngredientBinding[]> {
+    const queryParams = new URLSearchParams()
+    if (params?.locationId !== undefined) queryParams.append('location_id', String(params.locationId))
+    if (params?.includeInactive !== undefined) queryParams.append('include_inactive', String(params.includeInactive))
+    const queryString = queryParams.toString()
+    const url = queryString
+      ? `/ingredients/${ingredientId}/bindings?${queryString}`
+      : `/ingredients/${ingredientId}/bindings`
+    const res = await api.get<IngredientBinding[]>(url)
+    return res.data
+  },
+
+  async createIngredientBinding(
+    ingredientId: number,
+    payload: IngredientBindingCreateRequest
+  ): Promise<IngredientBinding> {
+    const res = await api.post<IngredientBinding>(`/ingredients/${ingredientId}/bindings`, {
+      product_id: payload.productId,
+      ratio_to_ingredient_base: payload.ratioToIngredientBase,
+      priority: payload.priority ?? 100,
+      location_id: payload.locationId ?? null,
+      valid_from: payload.validFrom ?? null,
+      valid_to: payload.validTo ?? null,
+      is_active: payload.isActive ?? true,
+    })
+    return res.data
+  },
+
+  async updateIngredientBinding(
+    ingredientId: number,
+    bindingId: number,
+    payload: IngredientBindingUpdateRequest
+  ): Promise<IngredientBinding> {
+    const res = await api.put<IngredientBinding>(`/ingredients/${ingredientId}/bindings/${bindingId}`, {
+      product_id: payload.productId,
+      ratio_to_ingredient_base: payload.ratioToIngredientBase,
+      priority: payload.priority ?? 100,
+      location_id: payload.locationId ?? null,
+      valid_from: payload.validFrom ?? null,
+      valid_to: payload.validTo ?? null,
+      is_active: payload.isActive ?? true,
+    })
+    return res.data
+  },
+
+  async deleteIngredientBinding(ingredientId: number, bindingId: number): Promise<void> {
+    await api.delete(`/ingredients/${ingredientId}/bindings/${bindingId}`)
   },
 
   async createUnit(unitData: CreateUnitRequest): Promise<Unit> {

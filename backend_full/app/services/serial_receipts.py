@@ -457,19 +457,19 @@ class ReceiptService:
         )
 
     def _get_receipt(self, receipt_id: int) -> Receipt:
-        receipt = self.db.query(Receipt).get(receipt_id)
+        receipt = self.db.get(Receipt, receipt_id)
         if not receipt:
             raise HTTPException(status_code=404, detail="Receipt not found")
         return receipt
 
     def _get_product(self, product_id: int) -> Product:
-        product = self.db.query(Product).get(product_id)
+        product = self.db.get(Product, product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
         return product
 
     def _assert_product_is_serial(self, product: Product) -> None:
-        unit = self.db.query(Unit).get(product.base_unit_id)
+        unit = self.db.get(Unit, product.base_unit_id)
         if not unit or not unit.is_discrete:
             raise HTTPException(status_code=422, detail="Product base unit is not discrete")
 

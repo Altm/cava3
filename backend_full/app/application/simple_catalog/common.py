@@ -45,6 +45,9 @@ class ProductAvailabilityCalculator:
         self.location_id = location_id
         self._product_cache: dict[int, models.Product] = {}
         self._component_cache: dict[int, list] = {}
+        self._ingredient_cache: dict[int, models.Ingredient] = {}
+        self._ingredient_binding_cache: dict[int, list[models.IngredientProductBinding]] = {}
+        self._ingredient_available_cache: dict[int, Decimal] = {}
         self._ratio_cache: dict[tuple[int, int], Optional[Decimal]] = {}
         self._stock_base_cache: dict[int, Decimal] = {}
         self._available_cache: dict[int, Decimal] = {}
@@ -55,7 +58,7 @@ class ProductAvailabilityCalculator:
         cached = self._unit_cache.get(unit_id)
         if cached is not None:
             return cached
-        unit = self.db.query(models.Unit).get(unit_id)
+        unit = self.db.get(models.Unit, unit_id)
         if unit:
             self._unit_cache[unit_id] = unit
         return unit
@@ -64,40 +67,68 @@ class ProductAvailabilityCalculator:
         cached = self._product_cache.get(product_id)
         if cached is not None:
             return cached
-        product = self.db.query(models.Product).get(product_id)
+        product = self.db.get(models.Product, product_id)
         if product:
             self._product_cache[product_id] = product
         return product
 
-    def components(self, product_id: int) -> list[models.ProductComposite]:
+    def ingredient(self, ingredient_id: int) -> Optional[models.Ingredient]:
+        cached = self._ingredient_cache.get(ingredient_id)
+        if cached is not None:
+            return cached
+        ingredient = self.db.get(models.Ingredient, ingredient_id)
+        if ingredient:
+            self._ingredient_cache[ingredient_id] = ingredient
+        return ingredient
+
+    def ingredient_bindings(self, ingredient_id: int) -> list[models.IngredientProductBinding]:
+        cached = self._ingredient_binding_cache.get(ingredient_id)
+        if cached is not None:
+            return cached
+        now = datetime.utcnow()
+        query_builder = (
+            self.db.query(models.IngredientProductBinding)
+            .filter(
+                models.IngredientProductBinding.ingredient_id == ingredient_id,
+                models.IngredientProductBinding.is_active.is_(True),
+                (models.IngredientProductBinding.valid_from.is_(None) | (models.IngredientProductBinding.valid_from <= now)),
+                (models.IngredientProductBinding.valid_to.is_(None) | (models.IngredientProductBinding.valid_to > now)),
+            )
+        )
+        if self.location_id is not None:
+            query_builder = query_builder.filter(
+                (models.IngredientProductBinding.location_id.is_(None))
+                | (models.IngredientProductBinding.location_id == self.location_id)
+            )
+        rows = (
+            query_builder.order_by(
+                models.IngredientProductBinding.priority.asc(),
+                models.IngredientProductBinding.location_id.desc().nulls_last(),
+                models.IngredientProductBinding.id.asc(),
+            ).all()
+        )
+        self._ingredient_binding_cache[ingredient_id] = rows
+        return rows
+
+    def components(self, product_id: int) -> list[models.ProductRecipeComponent]:
         cached = self._component_cache.get(product_id)
         if cached is not None:
             return cached
-        if hasattr(models, "ProductRecipe") and hasattr(models, "ProductRecipeComponent"):
-            now = datetime.utcnow()
-            recipe_rows = (
-                self.db.query(models.ProductRecipeComponent)
-                .join(models.ProductRecipe, models.ProductRecipe.id == models.ProductRecipeComponent.recipe_id)
-                .filter(
-                    models.ProductRecipe.product_id == product_id,
-                    models.ProductRecipe.is_active.is_(True),
-                    models.ProductRecipe.valid_from <= now,
-                    (models.ProductRecipe.valid_to.is_(None) | (models.ProductRecipe.valid_to > now)),
-                )
-                .order_by(models.ProductRecipeComponent.id.asc())
-                .all()
+        now = datetime.utcnow()
+        recipe_rows = (
+            self.db.query(models.ProductRecipeComponent)
+            .join(models.ProductRecipe, models.ProductRecipe.id == models.ProductRecipeComponent.recipe_id)
+            .filter(
+                models.ProductRecipe.product_id == product_id,
+                models.ProductRecipe.is_active.is_(True),
+                models.ProductRecipe.valid_from <= now,
+                (models.ProductRecipe.valid_to.is_(None) | (models.ProductRecipe.valid_to > now)),
             )
-            if recipe_rows:
-                self._component_cache[product_id] = recipe_rows
-                return recipe_rows
-        rows = (
-            self.db.query(models.ProductComposite)
-            .filter(models.ProductComposite.parent_product_id == product_id)
-            .order_by(models.ProductComposite.id.asc())
+            .order_by(models.ProductRecipeComponent.id.asc())
             .all()
         )
-        self._component_cache[product_id] = rows
-        return rows
+        self._component_cache[product_id] = recipe_rows
+        return recipe_rows
 
     def _ratio_to_base(self, product: models.Product, unit_id: int) -> Optional[Decimal]:
         cache_key = (product.id, unit_id)
@@ -144,6 +175,26 @@ class ProductAvailabilityCalculator:
         self._unit_discrete_cache[product.id] = value
         return value
 
+    def ingredient_available_quantity(self, ingredient_id: int, stack: Optional[set[int]] = None) -> Decimal:
+        if ingredient_id in self._ingredient_available_cache:
+            return self._ingredient_available_cache[ingredient_id]
+        ingredient = self.ingredient(ingredient_id)
+        if not ingredient:
+            return Decimal("0")
+        total = Decimal("0")
+        for binding in self.ingredient_bindings(ingredient_id):
+            product = self.product(binding.product_id)
+            if not product:
+                continue
+            product_available_base = self.available_quantity(product.id, stack=stack)
+            ratio = Decimal(str(binding.ratio_to_ingredient_base or 0))
+            if ratio <= 0:
+                continue
+            total += product_available_base * ratio
+        total = _normalize_decimal_output(total)
+        self._ingredient_available_cache[ingredient_id] = total
+        return total
+
     def available_quantity(self, product_id: int, stack: Optional[set[int]] = None) -> Decimal:
         if product_id in self._available_cache:
             return self._available_cache[product_id]
@@ -170,21 +221,19 @@ class ProductAvailabilityCalculator:
         try:
             min_bundles: Optional[Decimal] = None
             for comp in components:
-                component_product = self.product(comp.component_product_id)
-                if not component_product:
+                ingredient = self.ingredient(comp.ingredient_id)
+                if not ingredient:
                     min_bundles = Decimal("0")
                     break
                 required_qty = Decimal(str(comp.quantity or 0))
                 required_qty *= Decimal("1") + Decimal(str(getattr(comp, "waste_factor", 0) or 0))
                 if required_qty <= 0:
                     continue
-                required_ratio = self._ratio_to_base(component_product, comp.unit_id)
-                if required_ratio is None or required_ratio <= 0:
+                if comp.unit_id != ingredient.base_unit_id:
                     min_bundles = Decimal("0")
                     break
-                required_base = required_qty * required_ratio
-                component_available_base = self.available_quantity(component_product.id, active_stack)
-                bundles = component_available_base / required_base
+                ingredient_available_base = self.ingredient_available_quantity(ingredient.id, stack=active_stack)
+                bundles = ingredient_available_base / required_qty
                 if min_bundles is None or bundles < min_bundles:
                     min_bundles = bundles
             if min_bundles is None:
@@ -309,7 +358,11 @@ def _collect_product_tree_ids(calculator: ProductAvailabilityCalculator, product
         return visited
     visited.add(product_id)
     for component in calculator.components(product_id):
-        _collect_product_tree_ids(calculator, component.component_product_id, visited)
+        ingredient = calculator.ingredient(component.ingredient_id)
+        if not ingredient:
+            continue
+        for binding in calculator.ingredient_bindings(ingredient.id):
+            _collect_product_tree_ids(calculator, binding.product_id, visited)
     return visited
 
 
@@ -402,15 +455,16 @@ def serialize_product(
     components = [
         schemas.ProductComponent(
             id=c.id,
-            parent_product_id=c.parent_product_id,
-            component_product_id=c.component_product_id,
+            parent_product_id=db_product.id,
+            ingredient_id=c.ingredient_id,
+            ingredient_name=(c.ingredient.name if c.ingredient else None),
             quantity=c.quantity,
             unit_id=c.unit_id,
             substitution_allowed=c.substitution_allowed,
             rounding=c.rounding,
             waste_factor=Decimal(str(c.waste_factor or 0)),
         )
-        for c in db_product.components
+        for c in calc.components(db_product.id)
     ]
     product_units = _serialize_product_units(db_product)
 
@@ -443,30 +497,35 @@ def _build_component_tree(
     rows = calculator.components(parent_product_id)
     result: list[schemas.ProductComponentTreeNode] = []
     for comp in rows:
-        component_product = calculator.product(comp.component_product_id)
-        if not component_product:
+        ingredient = calculator.ingredient(comp.ingredient_id)
+        if not ingredient:
             continue
         unit = calculator.unit(comp.unit_id)
-        is_cycle = component_product.id in chain
+        bindings = calculator.ingredient_bindings(ingredient.id)
+        primary_binding = bindings[0] if bindings else None
+        bound_product = calculator.product(primary_binding.product_id) if primary_binding else None
+        is_cycle = bool(bound_product and bound_product.id in chain)
         children: list[schemas.ProductComponentTreeNode] = []
-        if component_product.product_type and component_product.product_type.is_composite and not is_cycle:
+        if bound_product and bound_product.product_type and bound_product.product_type.is_composite and not is_cycle:
             next_chain = set(chain)
-            next_chain.add(component_product.id)
+            next_chain.add(bound_product.id)
             children = _build_component_tree(
-                component_product.id,
+                bound_product.id,
                 db,
                 calculator=calculator,
                 path=next_chain,
             )
         result.append(
             schemas.ProductComponentTreeNode(
-                component_product_id=component_product.id,
-                component_name=component_product.name,
+                ingredient_id=ingredient.id,
+                ingredient_name=ingredient.name,
                 quantity=Decimal(str(comp.quantity or 0)),
                 unit_id=comp.unit_id,
                 unit_code=unit.code if unit else None,
-                is_composite=bool(component_product.product_type and component_product.product_type.is_composite),
-                available_quantity=_normalize_decimal_output(calculator.available_quantity(component_product.id)),
+                bound_product_id=(bound_product.id if bound_product else None),
+                bound_product_name=(bound_product.name if bound_product else None),
+                bound_product_is_composite=bool(bound_product and bound_product.product_type and bound_product.product_type.is_composite),
+                available_quantity=_normalize_decimal_output(calculator.ingredient_available_quantity(ingredient.id, stack=chain)),
                 is_cycle=is_cycle,
                 children=children,
             )

@@ -117,7 +117,7 @@ class TransferService:
             raise HTTPException(status_code=409, detail="Only planned items can be removed")
         ti.state = "removed"
 
-        item = self.db.query(ProductItem).get(product_item_id)
+        item = self.db.get(ProductItem, product_item_id)
         if item and item.reserved_transfer_doc_id == doc.id and item.status == "in_stock":
             item.reserved_transfer_doc_id = None
             item.reserved_at = None
@@ -193,11 +193,11 @@ class TransferService:
             q = q.with_for_update()
         picked_not_received = q.all()
         for ti in picked_not_received:
-            item = self.db.query(ProductItem).get(ti.product_item_id)
+            item = self.db.get(ProductItem, ti.product_item_id)
             if not item:
                 continue
             if item.box_id is not None:
-                box = self.db.query(Box).get(item.box_id)
+                box = self.db.get(Box, item.box_id)
                 if box and box.quantity > 0:
                     box.quantity -= 1
             item.status = "lost"
@@ -393,7 +393,7 @@ class TransferService:
         if not to_remove:
             raise HTTPException(status_code=409, detail="No remaining planned items to replace")
 
-        removed_item = self.db.query(ProductItem).get(to_remove.product_item_id)
+        removed_item = self.db.get(ProductItem, to_remove.product_item_id)
         if removed_item and removed_item.reserved_transfer_doc_id == doc.id and removed_item.status == "in_stock":
             removed_item.reserved_transfer_doc_id = None
             removed_item.reserved_at = None
@@ -419,13 +419,13 @@ class TransferService:
         """
         if not item.box_id:
             return False
-        box = self.db.query(Box).get(item.box_id)
+        box = self.db.get(Box, item.box_id)
         return bool(box and box.sealed)
 
     def _mark_picked(self, doc: TransferDoc, item: ProductItem, ti: TransferItem, detach_from_box: bool) -> dict:
         now = datetime.utcnow()
         if detach_from_box and item.box_id:
-            box = self.db.query(Box).get(item.box_id)
+            box = self.db.get(Box, item.box_id)
             if box and box.sealed:
                 box.sealed = False
             if box and box.quantity > 0:
@@ -524,7 +524,7 @@ class TransferService:
         item.reserved_transfer_doc_id = None
         item.reserved_at = None
         if item.box_id is not None:
-            box = self.db.query(Box).get(item.box_id)
+            box = self.db.get(Box, item.box_id)
             if box and box.location_id != doc.to_location_id:
                 box.location_id = doc.to_location_id
         ti.received_at = now
@@ -576,18 +576,18 @@ class TransferService:
         return {"transfer_doc_id": doc.id, "received_items": received, "box_id": box.id}
 
     def _get_doc(self, transfer_doc_id: int) -> TransferDoc:
-        doc = self.db.query(TransferDoc).get(transfer_doc_id)
+        doc = self.db.get(TransferDoc, transfer_doc_id)
         if not doc:
             raise HTTPException(status_code=404, detail="Transfer not found")
         return doc
 
     def _get_product(self, product_id: int) -> Product:
-        product = self.db.query(Product).get(product_id)
+        product = self.db.get(Product, product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
         return product
 
     def _assert_product_is_serial(self, product: Product) -> None:
-        unit = self.db.query(Unit).get(product.base_unit_id)
+        unit = self.db.get(Unit, product.base_unit_id)
         if not unit or not unit.is_discrete:
             raise HTTPException(status_code=422, detail="Product base unit is not discrete")

@@ -7,7 +7,18 @@ from fastapi import HTTPException
 
 from app.application.common.uow import AbstractUnitOfWork
 from app.models import models
-from app.models.models import Adjustment, PriceList, ProductAttribute, ProductComposite, ProductUnit, SaleLine, Stock, Transfer
+from app.models.models import (
+    Adjustment,
+    Ingredient,
+    IngredientProductBinding,
+    PriceList,
+    ProductAttribute,
+    ProductRecipeComponent,
+    ProductUnit,
+    SaleLine,
+    Stock,
+    Transfer,
+)
 from app.schemas import simple as schemas
 
 
@@ -76,7 +87,7 @@ class CreateUnitHandler:
 class UpdateUnitHandler:
     def handle(self, command: UpdateUnitCommand, uow: AbstractUnitOfWork) -> schemas.Unit:
         db = uow.session
-        db_unit = db.query(models.Unit).get(command.unit_id)
+        db_unit = db.get(models.Unit, command.unit_id)
         if not db_unit:
             raise HTTPException(status_code=404, detail="Unit not found")
 
@@ -106,7 +117,7 @@ class DeleteUnitHandler:
     def handle(self, command: DeleteUnitCommand, uow: AbstractUnitOfWork) -> dict:
         db = uow.session
         unit_id = command.unit_id
-        db_unit = db.query(models.Unit).get(unit_id)
+        db_unit = db.get(models.Unit, unit_id)
         if not db_unit:
             raise HTTPException(status_code=404, detail="Unit not found")
 
@@ -138,9 +149,22 @@ class DeleteUnitHandler:
         if attr_def_count > 0:
             raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by attribute definitions")
 
-        comp_count = db.query(ProductComposite).filter(ProductComposite.unit_id == unit_id).count()
-        if comp_count > 0:
-            raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by composite components")
+        recipe_comp_count = db.query(ProductRecipeComponent).filter(ProductRecipeComponent.unit_id == unit_id).count()
+        if recipe_comp_count > 0:
+            raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by recipe components")
+
+        ingredient_count = db.query(Ingredient).filter(Ingredient.base_unit_id == unit_id).count()
+        if ingredient_count > 0:
+            raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by ingredients")
+
+        usage_binding_count = (
+            db.query(IngredientProductBinding.id)
+            .join(Ingredient, Ingredient.id == IngredientProductBinding.ingredient_id)
+            .filter(Ingredient.base_unit_id == unit_id)
+            .count()
+        )
+        if usage_binding_count > 0:
+            raise HTTPException(status_code=400, detail="Cannot delete unit: it is referenced by ingredient bindings")
 
         db.delete(db_unit)
         return {"message": "Unit deleted successfully"}

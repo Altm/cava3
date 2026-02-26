@@ -29,7 +29,7 @@ class CreateRawProductHandler:
 
 class UpdateRawProductHandler:
     def handle(self, command: UpdateRawProductCommand, uow: AbstractUnitOfWork) -> Product:
-        product = uow.session.query(Product).get(command.product_id)
+        product = uow.session.get(Product, command.product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Not found")
         for key, value in command.payload.items():

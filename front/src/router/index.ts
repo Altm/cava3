@@ -147,6 +147,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/ingredients',
+      name: 'IngredientManagement',
+      component: () => import('@/views/IngredientManagementView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/serial/receipts',
       name: 'SerialReceipts',
       component: () => import('@/views/SerialReceiptsView.vue'),

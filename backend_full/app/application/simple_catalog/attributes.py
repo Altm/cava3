@@ -19,7 +19,7 @@ class CreateAttributeDefinitionHandler:
 
         unit_id = None
         if attr_def.unit_id:
-            unit = db.query(models.Unit).get(attr_def.unit_id)
+            unit = db.get(models.Unit, attr_def.unit_id)
             if unit:
                 unit_id = unit.id
 
