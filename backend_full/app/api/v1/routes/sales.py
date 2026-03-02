@@ -3,6 +3,7 @@ from typing import Callable
 
 from fastapi import APIRouter, Depends, Header, Request
 
+from app.api.v1.deps.auth import PermissionChecker
 from app.api.v1.deps.uow import get_uow_factory
 from app.audit.context import reset_audit_user_id, set_audit_user_id
 from app.application.common import dispatch_command, dispatch_query
@@ -162,6 +163,7 @@ async def register_sales_transactions(
 
 @router.get("/generate-curl-example")
 async def generate_curl_example(
+    user=Depends(PermissionChecker(["sale.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
     """Возвращает пример curl для интеграции с sales API."""
@@ -170,6 +172,7 @@ async def generate_curl_example(
 
 @router.get("/generate-curl-command")
 async def generate_curl_command(
+    #user=Depends(PermissionChecker(["sale.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
     """Возвращает готовую команду curl для текущих настроек."""

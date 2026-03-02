@@ -14,6 +14,7 @@ from app.application.products.commands import (
     UpdateRawProductHandler,
 )
 from app.application.products.queries import ListRawProductsHandler, ListRawProductsQuery
+from app.schemas.legacy import RawProductCreateIn, RawProductUpdateIn
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -30,7 +31,7 @@ def list_products(
 
 @router.post("")
 def create_product(
-    payload: dict,
+    payload: RawProductCreateIn,
     user=Depends(PermissionChecker(["product.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
@@ -42,7 +43,7 @@ def create_product(
 @router.put("/{product_id}")
 def update_product(
     product_id: int,
-    payload: dict,
+    payload: RawProductUpdateIn,
     user=Depends(PermissionChecker(["product.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):

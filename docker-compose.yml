@@ -4,10 +4,13 @@ services:
     build:
       context: ./backend_full
     environment:
-      DATABASE_URL: postgresql+psycopg2://cavina:cavina@db:5432/cavina
-      JWT_SECRET_KEY: changeme
-      SWAGGER_ENABLED: "true"
-      STRUCTLOG_JSON: "false"
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-cavina}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-cavina}
+      JWT_SECRET_KEYS: ${JWT_SECRET_KEYS:?JWT_SECRET_KEYS is required}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
+      STRUCTLOG_JSON: ${STRUCTLOG_JSON:-false}
+      BOOTSTRAP_DEFAULT_ADMIN: ${BOOTSTRAP_DEFAULT_ADMIN:-false}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     depends_on:
       - db
     ports:
@@ -20,26 +23,16 @@ services:
   db:
     image: postgres:18
     environment:
-      POSTGRES_USER: cavina
-      POSTGRES_PASSWORD: cavina
-      POSTGRES_DB: cavina
+      POSTGRES_USER: ${POSTGRES_USER:-cavina}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-cavina}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql
       - ./data:/docker-entrypoint-initdb.d:rw
 
-  db_simple:
-    image: postgres:18
-    environment:
-      POSTGRES_DB: product_catalog
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-    ports:
-      - "55444:5432"
-    volumes:
-      - pgdata_simple:/var/lib/postgresql
-  #
+
 
   #frontend:
   #  build:

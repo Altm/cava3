@@ -20,6 +20,7 @@ from app.application.simple_catalog.common import (
 from app.models import models
 from app.models.models import ProductAttribute, ProductAttributeValue, ProductMeta
 from app.schemas import simple as schemas
+from app.security.uploads import validate_image_upload
 
 
 @dataclass(frozen=True)
@@ -613,21 +614,17 @@ class UploadProductImageHandler:
         product = db.get(models.Product, command.product_id)
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
-        if not command.content_type.startswith("image/"):
-            raise HTTPException(status_code=422, detail="Only image files are allowed")
-
-        suffix = Path(command.filename).suffix.lower()
-        allowed_suffixes = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-        if suffix not in allowed_suffixes:
-            suffix = ".jpg"
+        suffix = validate_image_upload(
+            filename=command.filename,
+            content_type=command.content_type,
+            content=command.content,
+        )
 
         images_dir = Path("/app/data/product_images")
         images_dir.mkdir(parents=True, exist_ok=True)
         filename = f"{command.product_id}_{uuid4().hex}{suffix}"
         output_path = images_dir / filename
 
-        if not command.content:
-            raise HTTPException(status_code=422, detail="Empty file")
         output_path.write_bytes(command.content)
 
         meta = db.query(ProductMeta).filter(ProductMeta.product_id == command.product_id).first()

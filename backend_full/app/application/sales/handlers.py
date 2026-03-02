@@ -136,20 +136,16 @@ class GenerateCurlExampleHandler:
             raise HTTPException(status_code=404, detail="Endpoint not available in production")
 
         method = "POST"
-        path = "/api/v1/sales/deduct-stock"
+        path = "/api/v1/sales/register-sales-transactions"
         data = {
-            "sales": [
-                {"product_id": "ABC123", "quantity": 5},
-                {"product_id": "DEF456", "quantity": 2},
-            ],
+            "sales": [{"sale_id": 456, "terminal_id": "T-1", "user_id": 12, "timestamp": "2026-01-01T10:00:00Z", "items": []}],
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
 
         body = json.dumps(data, separators=(",", ":"))
-        timestamp = str(int(time.time()))
-        terminal_id = "T-1"
-        terminal_secret = "secret"
-        signature = _generate_hmac_signature(method, path, body, terminal_secret, timestamp)
+        timestamp = "<UNIX_TIMESTAMP>"
+        terminal_id = "<TERMINAL_ID>"
+        signature = "<HMAC_SIGNATURE>"
 
         data_formatted = json.dumps(data, separators=(",", ":"))
         curl_command = (
@@ -176,10 +172,9 @@ class GenerateCurlExampleHandler:
                 "path": path,
                 "timestamp": timestamp,
                 "terminal_id": terminal_id,
-                "terminal_secret_used": terminal_secret,
                 "body_hash": hashlib.sha256(body.encode()).hexdigest(),
-                "canonical_string": f"{method.upper()}|{path}|{timestamp}|{hashlib.sha256(body.encode()).hexdigest()}",
-                "generated_signature": signature,
+                "canonical_string": f"{method.upper()}|{path}|<UNIX_TIMESTAMP>|{hashlib.sha256(body.encode()).hexdigest()}",
+                "generated_signature": "<HMAC_SIGNATURE>",
             },
         }
 

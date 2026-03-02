@@ -13,6 +13,15 @@ import structlog
 logger = structlog.get_logger()
 _registered = False
 _PENDING_INSERT_AUDITS_KEY = "pending_insert_audits"
+_SENSITIVE_FIELDS = {
+    "password",
+    "password_hash",
+    "secret",
+    "secret_hash",
+    "token",
+    "access_token",
+    "refresh_token",
+}
 
 
 def _json_friendly(value: Any) -> Any:
@@ -29,7 +38,11 @@ def as_dict(obj: Any) -> Dict[str, Any]:
     state = {}
     for attr in inspect(obj).mapper.column_attrs:
         key = attr.key
-        state[key] = _json_friendly(getattr(obj, key))
+        value = _json_friendly(getattr(obj, key))
+        if key.lower() in _SENSITIVE_FIELDS:
+            state[key] = "***"
+        else:
+            state[key] = value
     return state
 
 

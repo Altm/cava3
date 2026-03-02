@@ -34,6 +34,7 @@ from app.schemas import simple as schemas
 from sqlalchemy.orm import Session
 from app.infrastructure.db.session import SessionLocal
 from app.application.simple_catalog.common import ProductAvailabilityCalculator, default_location, serialize_product_view
+from app.security.uploads import read_upload_file_limited
 
 router = APIRouter(prefix="/products2", tags=["products2"])
 
@@ -188,7 +189,7 @@ def delete_product(
 
 
 @router.post("/{product_id}/image")
-def upload_product_image(
+async def upload_product_image(
     product_id: int,
     file: UploadFile = File(...),
     user=Depends(PermissionChecker(["product.write"])),
@@ -196,7 +197,7 @@ def upload_product_image(
     db: Session = Depends(get_db_session),
 ):
     """Загружает изображение продукта."""
-    content = file.file.read()
+    content = await read_upload_file_limited(file)
     command = UploadProductImageCommand(
         product_id=product_id,
         filename=file.filename or "image.jpg",

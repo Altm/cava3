@@ -116,6 +116,7 @@ from app.application.simple_catalog.units import (
     UpdateUnitCommand,
     UpdateUnitHandler,
 )
+from app.security.uploads import read_upload_file_limited
 from app.schemas import simple as schemas
 
 logger = logging.getLogger(__name__)
@@ -314,7 +315,7 @@ async def upload_product_image(
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
     """Загружает/обновляет изображение товара."""
-    content = await file.read()
+    content = await read_upload_file_limited(file)
     return dispatch_command(
         uow_factory,
         UploadProductImageHandler(),

@@ -8,13 +8,14 @@ from app.application.common import dispatch_command, dispatch_query
 from app.application.common.uow import AbstractUnitOfWork
 from app.application.users.commands import CreateUserCommand, CreateUserHandler
 from app.application.users.queries import ListUsersHandler, ListUsersQuery
+from app.schemas.users import UserCreateIn, UserOut
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.post("")
+@router.post("", response_model=UserOut)
 def create_user(
-    payload: dict,
+    payload: UserCreateIn,
     user=Depends(PermissionChecker(["user.write"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),
 ):
@@ -22,7 +23,7 @@ def create_user(
     return dispatch_command(uow_factory, CreateUserHandler(), CreateUserCommand(payload=payload))
 
 
-@router.get("")
+@router.get("", response_model=list[UserOut])
 def list_users(
     user=Depends(PermissionChecker(["user.read"])),
     uow_factory: Callable[[], AbstractUnitOfWork] = Depends(get_uow_factory),

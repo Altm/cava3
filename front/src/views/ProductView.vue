@@ -180,7 +180,7 @@
           <div><b>SEO title:</b> {{ product.meta?.seoTitle ?? '-' }}</div>
           <div><b>SEO description:</b> {{ product.meta?.seoDescription ?? '-' }}</div>
         </div>
-        <div v-if="product.meta?.bodyHtml" class="body-html" v-html="product.meta.bodyHtml"></div>
+        <pre v-if="product.meta?.bodyHtml" class="body-html">{{ product.meta.bodyHtml }}</pre>
       </div>
     </template>
   </div>

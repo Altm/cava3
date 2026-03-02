@@ -21,6 +21,7 @@ from app.api.v1.routes import (
 )
 from app.audit.middleware import RequestLoggingMiddleware
 from app.audit.listeners import register_listeners
+from app.security.rate_limit_middleware import RateLimitMiddleware
 import app.domain.subscribers  # noqa: F401  # register domain event subscribers
 from app.infrastructure.db.session import SessionLocal
 from app.security.auth import get_password_hash
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(RateLimitMiddleware)
 
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(products.router, prefix="/api/v1")
@@ -64,7 +66,11 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     def ensure_default_admin():
-        """Bootstrap admin user if missing."""
+        """Bootstrap admin user if explicitly enabled."""
+        if not settings.bootstrap_default_admin:
+            return
+        if not settings.admin_password:
+            raise RuntimeError("BOOTSTRAP_DEFAULT_ADMIN=true requires ADMIN_PASSWORD")
         with SessionLocal() as session:
             user = session.query(User).filter(User.username == settings.admin_username).first()
             if not user:

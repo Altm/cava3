@@ -40,36 +40,43 @@ def verify_hmac_signature(
     timestamp: str,
 ) -> None:
     settings = get_settings()
-    logger.info(f"HMAC verification: terminal_id={terminal_id}, path={path}, timestamp={timestamp}")
+    logger.info("hmac_verification_start terminal_id=%s path=%s", terminal_id, path)
 
     with SessionLocal() as session:
         terminal: Optional[Terminal] = session.query(Terminal).filter_by(terminal_id=terminal_id).first()
         if not terminal:
-            logger.warning(f"No terminal found with ID: {terminal_id}")
+            logger.warning("hmac_terminal_not_found terminal_id=%s", terminal_id)
             raise HTTPException(status_code=401, detail="Invalid terminal")
-
-        logger.info(f"Found terminal: {terminal.terminal_id}, secret_hash: {terminal.secret_hash}")
+        if (terminal.status or "").lower() != "active":
+            logger.warning("hmac_terminal_inactive terminal_id=%s status=%s", terminal_id, terminal.status)
+            raise HTTPException(status_code=401, detail="Terminal is inactive")
         secret = terminal.secret_hash.encode()
 
     body_hash = _hash_body(body)
-    logger.info(f"Body hash: {body_hash}")
 
     message = _canonical_string(method, path, timestamp, body_hash)
-    logger.info(f"Canonical string: {message.decode()}")
 
     computed = hmac.new(secret, message, hashlib.sha256).hexdigest()
-    logger.info(f"Computed signature: {computed}, provided signature: {signature}")
 
     now = int(time.time())
-    if abs(now - int(timestamp)) > settings.hmac_clock_skew_seconds:
-        logger.warning(f"Timestamp out of range: now={now}, timestamp={timestamp}, skew={settings.hmac_clock_skew_seconds}")
+    try:
+        ts_value = int(timestamp)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=401, detail="Invalid timestamp format") from exc
+    if abs(now - ts_value) > settings.hmac_clock_skew_seconds:
+        logger.warning(
+            "hmac_timestamp_out_of_range terminal_id=%s now=%s skew=%s",
+            terminal_id,
+            now,
+            settings.hmac_clock_skew_seconds,
+        )
         raise HTTPException(status_code=401, detail="Timestamp out of range")
 
     if not hmac.compare_digest(computed, signature):
-        logger.warning(f"Invalid signature: computed={computed}, provided={signature}")
+        logger.warning("hmac_invalid_signature terminal_id=%s path=%s", terminal_id, path)
         raise HTTPException(status_code=401, detail="Invalid signature")
 
-    logger.info("HMAC verification successful")
+    logger.info("hmac_verification_ok terminal_id=%s path=%s", terminal_id, path)
 
 
 async def hmac_dependency(

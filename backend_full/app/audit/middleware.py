@@ -4,11 +4,11 @@ from typing import Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 import structlog
-from jose import jwt, JWTError
+from jose import JWTError
 from app.infrastructure.db.session import SessionLocal
 from app.models.models import RequestLog, Terminal, User
-from app.config import get_settings
 from app.audit.context import set_audit_user_id, reset_audit_user_id
+from app.security.auth import decode_access_token
 
 logger = structlog.get_logger()
 
@@ -61,9 +61,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         if auth_header.startswith("Bearer "):
             token = auth_header[7:].strip()
             if token:
-                settings = get_settings()
                 try:
-                    payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+                    payload = decode_access_token(token)
                     username = payload.get("sub")
                     if username:
                         user = session.query(User).filter(User.username == username, User.is_active == True).first()  # noqa: E712
