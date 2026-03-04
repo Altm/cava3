@@ -8,6 +8,7 @@
 - Swagger: `http://localhost:8001/docs`
 - Frontend dev: `http://localhost:8090` (проксирует `/api` на backend)
 - Миграции: `docker compose exec backend_full alembic upgrade head`
+- Seed: `docker exec -it cavina_3-backend_full-1 python scripts/seed.py`
 
 ### Локально (без Docker)
 - `cd backend_full`

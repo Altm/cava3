@@ -56,7 +56,7 @@ def upgrade():
         "product_category",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("product_id", sa.Integer, sa.ForeignKey("product.id")),
-        sa.Column("category", sa.String(length=64), nullable=False),
+        sa.Column("category", sa.String(length=128), nullable=False),
         sa.UniqueConstraint("product_id", "category", name="uq_product_category"),
         comment="Product categories table",
     )

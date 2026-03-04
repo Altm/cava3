@@ -1,261 +1,830 @@
-from decimal import Decimal
-from sqlalchemy.orm import Session
-from app.infrastructure.db.session import SessionLocal
+"""Base seed script for Cavina.
+
+Creates baseline entities for local/dev environments:
+- units, locations;
+- users, roles, permissions;
+- terminals;
+- products from CSV with product types/categories/meta/attributes;
+- stock and prices for imported products.
+
+The script is idempotent and can be re-run safely.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+import os
+from pathlib import Path
+
+import pandas as pd
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.config import get_settings
 from app.models.models import (
-    Unit,
-    ProductType,
-    Product,
-    ProductComposite,
     Location,
-    PriceList,
-    Terminal,
-    User,
-    Stock,
-    Role,
     Permission,
-    RolePermission,
-    UserRole,
-    InventorySnapshot,
-    Adjustment,
-    Transfer,
-    SaleEvent,
-    SaleLine,
+    PriceList,
+    Product,
     ProductAttribute,
     ProductAttributeValue,
+    ProductCategory,
+    ProductMeta,
+    ProductType,
+    ProductTypeUnit,
     ProductUnit,
+    Role,
+    RolePermission,
+    Stock,
+    Terminal,
+    Unit,
+    User,
+    UserRole,
 )
 from app.security.auth import get_password_hash
 
 
-def upsert(session: Session, model, defaults=None, **kwargs):
-    defaults = defaults or {}
-    instance = session.query(model).filter_by(**kwargs).first()
+# ============================================================
+# SETTINGS: what to create
+# ============================================================
+
+CREATE_UNITS = True
+CREATE_LOCATIONS = True
+CREATE_RBAC = True
+CREATE_TERMINALS = True
+CREATE_PRODUCTS_FROM_CSV = True
+CREATE_STOCK = True
+CREATE_PRICE_LIST = True
+
+# CSV import settings
+CSV_FILE = (os.getenv("SEED_CSV_FILE") or "").strip() or None
+CSV_FILE_NAME = "products_normalized.csv"
+DEFAULT_PRODUCT_TYPE_NAME = "General"
+DEFAULT_BASE_UNIT_CODE = "bottle"
+DEFAULT_CURRENCY = "EUR"
+
+# Category import switches
+IMPORT_WINE = True
+IMPORT_BEER = True
+IMPORT_SPIRITS = True
+IMPORT_LIQUEURS = True
+IMPORT_COCKTAILS = True
+IMPORT_LOW_ALCOHOL_WINE = True
+IMPORT_WATER = True
+IMPORT_OLIVES = True
+IMPORT_FOOD = True
+IMPORT_OTHER = False
+
+# Default users/roles
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "admin"
+MANAGER_USERNAME = "manager"
+MANAGER_PASSWORD = "manager"
+
+# Location/terminal setup
+WAREHOUSE_LOCATION_NAME = "Main Warehouse"
+WAREHOUSE_LOCATION_CODE = "warehouse"
+BAR_LOCATION_NAME = "Main Bar"
+BAR_LOCATION_CODE = "bar"
+
+TERMINALS = [
+    {"terminal_id": "T-1", "location_code": BAR_LOCATION_CODE, "secret": "secret", "status": "active"},
+]
+
+# Minimal unit catalog
+UNITS = [
+    {"code": "bottle", "description": "Бутылка", "unit_type": "base", "is_discrete": True},
+    {"code": "box", "description": "Коробка", "unit_type": "package", "is_discrete": True},
+    {"code": "piece", "description": "Штука", "unit_type": "base", "is_discrete": True},
+    {"code": "glass", "description": "Бокал", "unit_type": "portion", "is_discrete": False},
+    {"code": "liter", "description": "Литр", "unit_type": "base", "is_discrete": False},
+    {"code": "ml", "description": "Миллилитр", "unit_type": "portion", "is_discrete": False},
+    {"code": "kg", "description": "Килограмм", "unit_type": "base", "is_discrete": False},
+    {"code": "gram", "description": "Грамм", "unit_type": "portion", "is_discrete": False},
+]
+
+LOCATIONS = [
+    {"name": WAREHOUSE_LOCATION_NAME, "code": WAREHOUSE_LOCATION_CODE, "is_active": True},
+    {"name": BAR_LOCATION_NAME, "code": BAR_LOCATION_CODE, "is_active": True},
+]
+
+PERMISSION_CODES = [
+    "attribute_definition.write",
+    "boxes.read",
+    "boxes.write",
+    "catalog.read",
+    "inventories.write",
+    "location.read",
+    "location.write",
+    "product.delete",
+    "product.read",
+    "product.write",
+    "product_type.delete",
+    "product_type.read",
+    "product_type.write",
+    "qr.scan",
+    "receipts.read",
+    "receipts.write",
+    "sale.write",
+    "stock.write",
+    "transfers.write",
+    "unit.delete",
+    "unit.read",
+    "unit.write",
+    "unit_conversion.read",
+    "unit_conversion.write",
+    "user.read",
+    "user.write",
+]
+
+MANAGER_PERMISSION_CODES = [
+    "catalog.read",
+    "product.read",
+    "product.write",
+    "product_type.read",
+    "product_type.write",
+    "receipts.read",
+    "receipts.write",
+    "boxes.read",
+    "boxes.write",
+    "transfers.write",
+    "inventories.write",
+    "sale.write",
+    "stock.write",
+    "location.read",
+    "unit.read",
+    "unit.write",
+    "user.read",
+]
+
+# Attribute mappings by product type.
+# format: "attribute_code": {"type": "...", "columns": ("csv_column", "legacy_column")}
+ATTRIBUTE_MAPPING_COMMON = {
+    "display_in": {"type": "string", "columns": ("display_in_custom_display_in",)},
+    "warehouse_bin": {"type": "string", "columns": ("warehouse_bin_custom_warehouse_bin",)},
+    "status": {"type": "string", "columns": ("status",)},
+    "cost_per_item": {"type": "number", "columns": ("cost_per_item",)},
+}
+
+ATTRIBUTE_MAPPING_WINE = {
+    "alcohol": {"type": "number", "columns": ("alcohol_content_custom_alcohol",)},
+    "appellation_area": {"type": "string", "columns": ("appellation_area_custom_appellation",)},
+    "bio": {"type": "boolean", "columns": ("bio_filter_bio",)},
+    "country": {"type": "string", "columns": ("country_filter_country",)},
+    "grapes": {"type": "string", "columns": ("grapes_filter_grapes",)},
+    "grapes_dominant": {"type": "string", "columns": ("grapes_dominant_filter_grapes-dominant", "grapes_dominant_filter_grapes_dominant")},
+    "type": {"type": "string", "columns": ("type_filter_type",)},
+    "region": {"type": "string", "columns": ("region_filters_region",)},
+    "pais": {"type": "string", "columns": ("pais_shopify_country",)},
+    "preferencias_alimentarias": {
+        "type": "string",
+        "columns": ("preferencias_alimentarias_shopify_dietary-preferences", "preferencias_alimentarias_shopify_dietary_preferences"),
+    },
+    "region_shopify": {"type": "string", "columns": ("region_shopify_region",)},
+    "dulzura_del_vino": {"type": "string", "columns": ("dulzura_del_vino_shopify_wine-sweetness", "dulzura_del_vino_shopify_wine_sweetness")},
+    "variedad_de_vino": {"type": "string", "columns": ("variedad_de_vino_shopify_wine-variety", "variedad_de_vino_shopify_wine_variety")},
+    "variant_weight_unit": {"type": "string", "columns": ("variant_weight_unit",)},
+}
+
+ATTRIBUTE_MAPPING_BEER = {
+    "alcohol": {"type": "number", "columns": ("alcohol_content_custom_alcohol",)},
+    "country": {"type": "string", "columns": ("country_filter_country",)},
+    "type": {"type": "string", "columns": ("type_filter_type",)},
+    "region": {"type": "string", "columns": ("region_filters_region",)},
+    "variant_weight_unit": {"type": "string", "columns": ("variant_weight_unit",)},
+}
+
+ATTRIBUTE_MAPPING_SPIRITS = {
+    "alcohol": {"type": "number", "columns": ("alcohol_content_custom_alcohol",)},
+    "country": {"type": "string", "columns": ("country_filter_country",)},
+    "type": {"type": "string", "columns": ("type_filter_type",)},
+    "region": {"type": "string", "columns": ("region_filters_region",)},
+    "variant_weight_unit": {"type": "string", "columns": ("variant_weight_unit",)},
+}
+
+ATTRIBUTE_MAPPING_OLIVES = {
+    "country": {"type": "string", "columns": ("country_filter_country",)},
+    "bio": {"type": "boolean", "columns": ("bio_filter_bio",)},
+    "type": {"type": "string", "columns": ("type_filter_type",)},
+}
+
+ATTRIBUTE_MAPPING_DEFAULT = {
+    "type": {"type": "string", "columns": ("type_filter_type", "type")},
+    "variant_weight_unit": {"type": "string", "columns": ("variant_weight_unit",)},
+}
+
+
+@dataclass
+class SeedContext:
+    units: dict[str, Unit]
+    locations: dict[str, Location]
+    permissions: dict[str, Permission]
+    roles: dict[str, Role]
+    users: dict[str, User]
+
+
+def get_database_session() -> Session:
+    settings = get_settings()
+    engine = create_engine(settings.database_url)
+    SessionLocal = sessionmaker(bind=engine)
+    return SessionLocal()
+
+
+def upsert(session: Session, model, lookup: dict, updates: dict | None = None):
+    updates = updates or {}
+    instance = session.query(model).filter_by(**lookup).first()
     if instance:
-        for k, v in defaults.items():
-            setattr(instance, k, v)
+        for key, value in updates.items():
+            setattr(instance, key, value)
         return instance
-    params = dict(kwargs, **defaults)
+    params = {**lookup, **updates}
     instance = model(**params)
     session.add(instance)
     session.flush()
     return instance
 
 
-def seed(db: Session):
-    # Units
-    liter = upsert(db, Unit, code="liter", defaults={"description": "Литр"})
-    kg = upsert(db, Unit, code="kg", defaults={"description": "Килограмм"})
-    bottle = upsert(db, Unit, code="bottle", defaults={"description": "Бутылка"})
-    glass = upsert(db, Unit, code="glass", defaults={"description": "Бокал", "ratio_to_base": Decimal("0.1667")})
-    piece = upsert(db, Unit, code="piece", defaults={"description": "Штука"})
-    # Note: UnitConversion table was replaced with ProductUnit table in migration 0004
-    # Unit conversions are now product-specific. For seeding purposes, we would need to create
-    # ProductUnit entries for specific products, but for now we'll skip this legacy conversion
+def normalize_text(value: object, default: str = "") -> str:
+    text = str(value or "").strip()
+    return text if text and text.lower() != "nan" else default
 
-    # Product types
-    wine_type = upsert(db, ProductType, name="Вино", defaults={"description": "Wine", "is_composite": False})
-    olives_type = upsert(db, ProductType, name="Оливки", defaults={"description": "Olives", "is_composite": False})
-    bread_type = upsert(db, ProductType, name="Хлеб", defaults={"description": "Bread", "is_composite": False})
-    tomato_paste_type = upsert(db, ProductType, name="Томатная паста", defaults={"description": "Tomato paste", "is_composite": False})
-    wine_basket_type = upsert(db, ProductType, name="Корзина вин", defaults={"description": "Wine basket", "is_composite": True})
-    sandwich_type = upsert(db, ProductType, name="Бутерброд", defaults={"description": "Sandwich", "is_composite": True})
-    tasting_set_type = upsert(db, ProductType, name="Дегустационный набор", defaults={"description": "Tasting set", "is_composite": True})
 
-    # Attribute definitions
-    volume_attr = upsert(
-        db,
-        ProductAttribute,
-        product_type_id=wine_type.id,
-        code="volume",
-        defaults={"name": "Объём", "data_type": "number", "unit_code": "liter", "is_required": True},
-    )
-    strength_attr = upsert(
-        db,
-        ProductAttribute,
-        product_type_id=wine_type.id,
-        code="strength",
-        defaults={"name": "Крепость", "data_type": "number", "is_required": True},
-    )
-    glasses_per_bottle_attr = upsert(
-        db,
-        ProductAttribute,
-        product_type_id=wine_type.id,
-        code="glasses_per_bottle",
-        defaults={"name": "Бокалов в бутылке", "data_type": "number", "is_required": False, "sort_order": 1},
-    )
-    weight_attr = upsert(
-        db,
-        ProductAttribute,
-        product_type_id=olives_type.id,
-        code="weight",
-        defaults={"name": "Вес", "data_type": "number", "unit_code": "kg", "is_required": True},
-    )
-    calories_attr = upsert(
-        db,
-        ProductAttribute,
-        product_type_id=olives_type.id,
-        code="calories",
-        defaults={"name": "Калорийность", "data_type": "number", "is_required": True},
-    )
-    has_pit_attr = upsert(
-        db,
-        ProductAttribute,
-        product_type_id=olives_type.id,
-        code="has_pit",
-        defaults={"name": "С косточкой", "data_type": "boolean", "is_required": True},
-    )
-    bread_weight_attr = upsert(
-        db,
-        ProductAttribute,
-        product_type_id=bread_type.id,
-        code="weight",
-        defaults={"name": "Вес", "data_type": "number", "unit_code": "kg", "is_required": True},
-    )
-    paste_weight_attr = upsert(
-        db,
-        ProductAttribute,
-        product_type_id=tomato_paste_type.id,
-        code="weight",
-        defaults={"name": "Вес", "data_type": "number", "unit_code": "kg", "is_required": True},
-    )
+def decimal_or(value: object, default: Decimal) -> Decimal:
+    raw = normalize_text(value)
+    if not raw:
+        return default
+    try:
+        return Decimal(raw)
+    except (InvalidOperation, ValueError):
+        return default
 
-    def create_product(name: str, sku: str, ptype: ProductType, base_unit: str, base_cost: Decimal, stock_qty: Decimal, attrs: dict):
-        prod = upsert(
-            db,
-            Product,
-            sku=sku,
-            defaults={
-                "name": name,
-                "primary_category": ptype.name,
-                "product_type_id": ptype.id,
-                "base_unit_code": base_unit,
-                "is_composite": ptype.is_composite,
-                "base_cost": base_cost,
+
+def int_or_none(value: object) -> int | None:
+    raw = normalize_text(value)
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def maybe_bool(value: object) -> bool | None:
+    raw = normalize_text(value).lower()
+    if raw in {"", "none"}:
+        return None
+    if raw in {"1", "true", "yes"}:
+        return True
+    if raw in {"0", "false", "no"}:
+        return False
+    return None
+
+
+IMPORT_FLAGS_BY_KEY = {
+    "WINE": IMPORT_WINE,
+    "BEER": IMPORT_BEER,
+    "SPIRITS": IMPORT_SPIRITS,
+    "LIQUEURS": IMPORT_LIQUEURS,
+    "COCKTAILS": IMPORT_COCKTAILS,
+    "LOW_ALCOHOL_WINE": IMPORT_LOW_ALCOHOL_WINE,
+    "WATER": IMPORT_WATER,
+    "OLIVES": IMPORT_OLIVES,
+    "FOOD": IMPORT_FOOD,
+    "OTHER": IMPORT_OTHER,
+}
+
+
+def _split_category_path(raw_category: str) -> list[str]:
+    parts = [part.strip() for part in raw_category.split(">") if part.strip()]
+    if parts:
+        return parts
+    fallback = raw_category.strip()
+    return [fallback] if fallback else [DEFAULT_PRODUCT_TYPE_NAME]
+
+
+def _category_import_key(raw_category: str, leaf: str) -> str:
+    category = raw_category.lower()
+    leaf_lower = leaf.lower()
+
+    if "low alcohol" in category and "wine" in category:
+        return "LOW_ALCOHOL_WINE"
+    if "beer" in leaf_lower:
+        return "BEER"
+    if "liqueur" in leaf_lower:
+        return "LIQUEURS"
+    if "cocktail" in leaf_lower:
+        return "COCKTAILS"
+    if "spirit" in leaf_lower or "liquor" in leaf_lower:
+        return "SPIRITS"
+    if "wine" in leaf_lower:
+        return "WINE"
+    if "water" in leaf_lower:
+        return "WATER"
+    if "olive" in leaf_lower:
+        return "OLIVES"
+    if "food" in category:
+        return "FOOD"
+    return "OTHER"
+
+
+def _should_import_category(import_key: str) -> bool:
+    return bool(IMPORT_FLAGS_BY_KEY.get(import_key, IMPORT_OTHER))
+
+
+def _attribute_mapping_for_key(import_key: str) -> dict[str, dict]:
+    if import_key in {"WINE", "LOW_ALCOHOL_WINE"}:
+        return {**ATTRIBUTE_MAPPING_COMMON, **ATTRIBUTE_MAPPING_WINE}
+    if import_key == "BEER":
+        return {**ATTRIBUTE_MAPPING_COMMON, **ATTRIBUTE_MAPPING_BEER}
+    if import_key in {"SPIRITS", "LIQUEURS", "COCKTAILS"}:
+        return {**ATTRIBUTE_MAPPING_COMMON, **ATTRIBUTE_MAPPING_SPIRITS}
+    if import_key == "OLIVES":
+        return {**ATTRIBUTE_MAPPING_COMMON, **ATTRIBUTE_MAPPING_OLIVES}
+    return {**ATTRIBUTE_MAPPING_COMMON, **ATTRIBUTE_MAPPING_DEFAULT}
+
+
+def _base_unit_code_for_key(import_key: str) -> str:
+    if import_key in {"WINE", "LOW_ALCOHOL_WINE", "BEER", "SPIRITS", "LIQUEURS", "COCKTAILS", "WATER"}:
+        return "bottle"
+    if import_key in {"OLIVES", "FOOD"}:
+        return "piece"
+    return DEFAULT_BASE_UNIT_CODE
+
+
+def _value_from_row(row: pd.Series, columns: tuple[str, ...]) -> str:
+    for column in columns:
+        value = normalize_text(row.get(column))
+        if value:
+            return value
+    return ""
+
+
+def resolve_csv_file() -> tuple[Path | None, list[Path]]:
+    checked: list[Path] = []
+    if CSV_FILE:
+        explicit = Path(CSV_FILE)
+        checked.append(explicit)
+        if explicit.exists():
+            return explicit, checked
+
+    script_path = Path(__file__).resolve()
+    candidates = [
+        Path("/app/data") / CSV_FILE_NAME,
+        script_path.parents[2] / "data" / CSV_FILE_NAME,
+        script_path.parents[1] / "data" / CSV_FILE_NAME,
+        Path.cwd() / "data" / CSV_FILE_NAME,
+    ]
+    for candidate in candidates:
+        checked.append(candidate)
+        if candidate.exists():
+            return candidate, checked
+    return None, checked
+
+
+def slug_for_sku(value: str) -> str:
+    allowed = []
+    for char in value.upper():
+        if char.isalnum():
+            allowed.append(char)
+        elif char in {" ", "-", "_", "."}:
+            allowed.append("_")
+    sku = "".join(allowed).strip("_")
+    while "__" in sku:
+        sku = sku.replace("__", "_")
+    return sku[:64] if sku else "ITEM"
+
+
+def ensure_units(session: Session) -> dict[str, Unit]:
+    units: dict[str, Unit] = {}
+    for unit_data in UNITS:
+        code = unit_data["code"]
+        unit = upsert(
+            session,
+            Unit,
+            lookup={"code": code},
+            updates={
+                "description": unit_data["description"],
+                "unit_type": unit_data["unit_type"],
+                "is_discrete": unit_data["is_discrete"],
             },
         )
-        db.query(ProductAttributeValue).filter(ProductAttributeValue.product_id == prod.id).delete()
-        for attr_def, val in attrs.items():
-            pav = ProductAttributeValue(
-                product_id=prod.id,
-                product_attribute_id=attr_def.id,
-                value_number=Decimal(str(val)) if attr_def.data_type == "number" else None,
-                value_boolean=bool(val) if attr_def.data_type == "boolean" else None,
-                value_string=str(val) if attr_def.data_type == "string" else None,
+        units[code] = unit
+    session.flush()
+    print(f"✅ Units: {len(units)}")
+    return units
+
+
+def ensure_locations(session: Session) -> dict[str, Location]:
+    locations: dict[str, Location] = {}
+    for location_data in LOCATIONS:
+        location = upsert(
+            session,
+            Location,
+            lookup={"code": location_data["code"]},
+            updates={"name": location_data["name"], "is_active": bool(location_data["is_active"])},
+        )
+        locations[location.code] = location
+    session.flush()
+    print(f"✅ Locations: {len(locations)}")
+    return locations
+
+
+def ensure_permissions(session: Session) -> dict[str, Permission]:
+    permissions: dict[str, Permission] = {}
+    for code in PERMISSION_CODES:
+        permissions[code] = upsert(session, Permission, lookup={"code": code}, updates={"description": code})
+    session.flush()
+    print(f"✅ Permissions: {len(permissions)}")
+    return permissions
+
+
+def ensure_roles_and_users(
+    session: Session,
+    permissions: dict[str, Permission],
+) -> tuple[dict[str, Role], dict[str, User]]:
+    admin_role = upsert(session, Role, lookup={"name": "admin"}, updates={"scope": "global", "location_id": None})
+    manager_role = upsert(session, Role, lookup={"name": "manager"}, updates={"scope": "global", "location_id": None})
+
+    for permission in permissions.values():
+        upsert(
+            session,
+            RolePermission,
+            lookup={"role_id": admin_role.id, "permission_id": permission.id},
+        )
+
+    for code in MANAGER_PERMISSION_CODES:
+        permission = permissions.get(code)
+        if permission:
+            upsert(
+                session,
+                RolePermission,
+                lookup={"role_id": manager_role.id, "permission_id": permission.id},
             )
-            db.add(pav)
-        return prod, stock_qty
 
-    wines = []
-    wines.append(create_product("Красное сухое вино", "WINE_R1", wine_type, "bottle", Decimal("500"), Decimal("10"), {volume_attr: 0.75, strength_attr: 12.5, glasses_per_bottle_attr: 6}))
-    wines.append(create_product("Белое полусладкое вино", "WINE_W1", wine_type, "bottle", Decimal("400"), Decimal("5"), {volume_attr: 0.75, strength_attr: 11.0, glasses_per_bottle_attr: 6}))
-    wines.append(create_product("Розовое вино", "WINE_P1", wine_type, "bottle", Decimal("450"), Decimal("8"), {volume_attr: 0.75, strength_attr: 13.0, glasses_per_bottle_attr: 6}))
-    wines.append(create_product("Игристое вино", "WINE_S1", wine_type, "bottle", Decimal("600"), Decimal("6"), {volume_attr: 0.75, strength_attr: 12.0, glasses_per_bottle_attr: 6}))
-    wines.append(create_product("Десертное вино", "WINE_D1", wine_type, "bottle", Decimal("700"), Decimal("4"), {volume_attr: 0.5, strength_attr: 15.0, glasses_per_bottle_attr: 4}))
-
-    olives, olives_stock = create_product("Чёрные оливки", "OLIVE001", olives_type, "kg", Decimal("200"), Decimal("20"), {weight_attr: 0.5, calories_attr: 150.0, has_pit_attr: False})
-    bread, bread_stock = create_product("Багет", "BREAD001", bread_type, "kg", Decimal("50"), Decimal("15"), {bread_weight_attr: 0.4})
-    tomato_paste, tomato_stock = create_product("Томатная паста", "PASTE001", tomato_paste_type, "kg", Decimal("80"), Decimal("30"), {paste_weight_attr: 0.2})
-
-    wine_basket = upsert(
-        db,
-        Product,
-        sku="SET_WINE",
-        defaults={
-            "name": "Корзина из 5 вин",
-            "primary_category": "Корзина вин",
-            "product_type_id": wine_basket_type.id,
-            "base_unit_code": "piece",
-            "is_composite": True,
-            "base_cost": Decimal("2000"),
+    admin = upsert(
+        session,
+        User,
+        lookup={"username": ADMIN_USERNAME},
+        updates={
+            "password_hash": get_password_hash(ADMIN_PASSWORD),
+            "is_active": True,
+            "is_superuser": True,
         },
     )
-    sandwich = upsert(
-        db,
-        Product,
-        sku="SNACK001",
-        defaults={
-            "name": "Бутерброд",
-            "primary_category": "Бутерброд",
-            "product_type_id": sandwich_type.id,
-            "base_unit_code": "piece",
-            "is_composite": True,
-            "base_cost": Decimal("30"),
-        },
-    )
-    tasting_set = upsert(
-        db,
-        Product,
-        sku="SET001",
-        defaults={
-            "name": "Дегустационный набор",
-            "primary_category": "Дегустационный набор",
-            "product_type_id": tasting_set_type.id,
-            "base_unit_code": "piece",
-            "is_composite": True,
-            "base_cost": Decimal("500"),
+    manager = upsert(
+        session,
+        User,
+        lookup={"username": MANAGER_USERNAME},
+        updates={
+            "password_hash": get_password_hash(MANAGER_PASSWORD),
+            "is_active": True,
+            "is_superuser": False,
         },
     )
 
-    for wine_prod, _ in wines:
+    upsert(session, UserRole, lookup={"user_id": admin.id, "role_id": admin_role.id})
+    upsert(session, UserRole, lookup={"user_id": manager.id, "role_id": manager_role.id})
+    session.flush()
+    print("✅ Users/Roles seeded")
+    return {"admin": admin_role, "manager": manager_role}, {"admin": admin, "manager": manager}
+
+
+def ensure_terminals(session: Session, locations: dict[str, Location]) -> None:
+    created = 0
+    for terminal_data in TERMINALS:
+        location = locations.get(terminal_data["location_code"])
+        if not location:
+            print(f"⚠️ Skip terminal {terminal_data['terminal_id']}: unknown location_code={terminal_data['location_code']}")
+            continue
         upsert(
-            db,
-            ProductComposite,
-            parent_product_id=wine_basket.id,
-            component_product_id=wine_prod.id,
-            defaults={"quantity": Decimal("1"), "unit_code": "bottle"},
+            session,
+            Terminal,
+            lookup={"terminal_id": terminal_data["terminal_id"]},
+            updates={
+                "location_id": location.id,
+                "secret_hash": terminal_data["secret"],
+                "status": terminal_data.get("status", "active"),
+            },
         )
-    upsert(db, ProductComposite, parent_product_id=sandwich.id, component_product_id=bread.id, defaults={"quantity": Decimal("0.1"), "unit_code": "kg"})
-    upsert(db, ProductComposite, parent_product_id=sandwich.id, component_product_id=tomato_paste.id, defaults={"quantity": Decimal("0.02"), "unit_code": "kg"})
-    for wine_prod, _ in wines:
+        created += 1
+    session.flush()
+    print(f"✅ Terminals: {created}")
+
+
+def _row_category_context(row: pd.Series) -> tuple[str, str, list[str], str]:
+    raw_category = normalize_text(row.get("product_category")) or normalize_text(row.get("type")) or DEFAULT_PRODUCT_TYPE_NAME
+    categories = _split_category_path(raw_category)
+    leaf = categories[-1][:100]
+    import_key = _category_import_key(raw_category, leaf)
+    return leaf, import_key, categories, raw_category
+
+
+def _ensure_product_type(session: Session, leaf: str, raw_category: str) -> ProductType:
+    product_type = upsert(
+        session,
+        ProductType,
+        lookup={"name": leaf},
+        updates={"description": raw_category[:255], "is_composite": False, "strict_units_by_type": False},
+    )
+    return product_type
+
+
+def _ensure_type_attributes(
+    session: Session,
+    product_type: ProductType,
+    mapping: dict[str, dict],
+    units: dict[str, Unit],
+    import_key: str,
+) -> dict[str, ProductAttribute]:
+    attrs: dict[str, ProductAttribute] = {}
+    default_unit_code = _base_unit_code_for_key(import_key)
+    default_unit = units.get(default_unit_code) or units.get(DEFAULT_BASE_UNIT_CODE)
+    if not default_unit:
+        raise RuntimeError(f"Unit not found for product type attributes: {default_unit_code}")
+    for idx, (attr_code, attr_meta) in enumerate(mapping.items(), start=1):
+        attribute = upsert(
+            session,
+            ProductAttribute,
+            lookup={"product_type_id": product_type.id, "code": attr_code},
+            updates={
+                "name": attr_code.replace("_", " ").title(),
+                "data_type": attr_meta["type"],
+                "unit_id": default_unit.id,
+                "is_required": False,
+                "sort_order": idx,
+            },
+        )
+        attrs[attr_code] = attribute
+    return attrs
+
+
+def _ensure_type_units(
+    session: Session,
+    product_type: ProductType,
+    import_key: str,
+    units: dict[str, Unit],
+) -> None:
+    base_unit_code = _base_unit_code_for_key(import_key)
+    base_unit = units.get(base_unit_code) or units.get(DEFAULT_BASE_UNIT_CODE)
+    if not base_unit:
+        return
+    upsert(
+        session,
+        ProductTypeUnit,
+        lookup={"product_type_id": product_type.id, "unit_id": base_unit.id},
+        updates={"ratio_to_base": Decimal("1"), "discrete_step": None},
+    )
+    if import_key in {"WINE", "LOW_ALCOHOL_WINE"} and units.get("glass"):
         upsert(
-            db,
-            ProductComposite,
-            parent_product_id=tasting_set.id,
-            component_product_id=wine_prod.id,
-            defaults={"quantity": Decimal("0.167"), "unit_code": "bottle"},
+            session,
+            ProductTypeUnit,
+            lookup={"product_type_id": product_type.id, "unit_id": units["glass"].id},
+            updates={"ratio_to_base": Decimal("0.2"), "discrete_step": Decimal("1")},
         )
-    upsert(db, ProductComposite, parent_product_id=tasting_set.id, component_product_id=sandwich.id, defaults={"quantity": Decimal("1"), "unit_code": "piece"})
-
-    default_loc = upsert(db, Location, name="Main", defaults={"code": "bar"})
-    stock_items = []
-    for prod, qty in wines:
-        stock_items.append((prod, qty, "bottle"))
-    stock_items.append((olives, olives_stock, "kg"))
-    stock_items.append((bread, bread_stock, "kg"))
-    stock_items.append((tomato_paste, tomato_stock, "kg"))
-    stock_items.append((wine_basket, Decimal("5"), "piece"))
-    stock_items.append((sandwich, Decimal("50"), "piece"))
-    stock_items.append((tasting_set, Decimal("10"), "piece"))
-    for prod, qty, unit in stock_items:
-        upsert(db, Stock, location_id=default_loc.id, product_id=prod.id, defaults={"quantity": qty, "unit_code": unit})
-        upsert(db, PriceList, location_id=default_loc.id, product_id=prod.id, unit_code=unit, defaults={"currency": "EUR", "amount": prod.base_cost})
-
-    upsert(db, Terminal, terminal_id="T-1", defaults={"location_id": default_loc.id, "secret_hash": "secret"})
-
-    admin = upsert(db, User, username="admin", defaults={"password_hash": get_password_hash("admin"), "is_superuser": True, "is_active": True})
-    manager = upsert(db, User, username="manager", defaults={"password_hash": get_password_hash("manager"), "is_superuser": False, "is_active": True})
-    perm_codes = ["product.read", "product.write", "stock.write", "user.read", "user.write"]
-    perms = {code: upsert(db, Permission, code=code) for code in perm_codes}
-    role_mgr = upsert(db, Role, name="manager", defaults={"scope": "global"})
-    for p in perms.values():
-        upsert(db, RolePermission, role_id=role_mgr.id, permission_id=p.id)
-    upsert(db, UserRole, user_id=manager.id, role_id=role_mgr.id)
-
-    upsert(db, Adjustment, location_id=default_loc.id, product_id=wines[0][0].id, defaults={"delta": Decimal("1"), "unit_code": "bottle", "reason": "Initial count"})
-    upsert(db, Transfer, from_location_id=default_loc.id, to_location_id=default_loc.id, product_id=wines[0][0].id, defaults={"quantity": Decimal("0"), "unit_code": "bottle"})
-    upsert(db, InventorySnapshot, location_id=default_loc.id, defaults={"data": {"note": "Initial snapshot", "items": []}})
-
-    sale_event = upsert(db, SaleEvent, event_id="seed-sale-1", defaults={"terminal_id": 1, "location_id": default_loc.id, "payload": {"lines": []}, "status": "pending"})
-    upsert(db, SaleLine, sale_event_id=sale_event.id, product_id=wines[0][0].id, defaults={"quantity": Decimal("1"), "unit_code": "bottle", "currency": "EUR", "price": Decimal("25")})
-
-    db.commit()
 
 
-def init_sample_data(db: Session):
-    seed(db)
+def _upsert_product(
+    session: Session,
+    row: pd.Series,
+    product_type: ProductType,
+    import_key: str,
+    category_labels: list[str],
+    base_unit: Unit,
+    warehouse: Location,
+    units: dict[str, Unit],
+) -> Product:
+    title = normalize_text(row.get("title"), default="Unnamed product")
+    old_id = int_or_none(row.get("old_id"))
+    source_sku = normalize_text(row.get("variant_sku"))
+    fallback_sku = slug_for_sku(f"{title}_{old_id or 'x'}")
+    sku = (source_sku or fallback_sku)[:64]
+    base_cost = decimal_or(row.get("variant_price"), default=Decimal("0"))
+
+    product: Product | None = None
+    meta_by_old_id = None
+    if old_id is not None:
+        meta_by_old_id = session.query(ProductMeta).filter(ProductMeta.old_id == old_id).first()
+    if meta_by_old_id:
+        product = session.query(Product).filter(Product.id == meta_by_old_id.product_id).first()
+    if not product:
+        product = session.query(Product).filter(Product.sku == sku).first()
+    if not product:
+        product = Product(
+            name=title,
+            sku=sku,
+            primary_category=product_type.name[:64],
+            product_type_id=product_type.id,
+            base_unit_id=base_unit.id,
+            is_active=True,
+            base_cost=base_cost,
+        )
+        session.add(product)
+        session.flush()
+    else:
+        product.name = title
+        product.primary_category = product_type.name[:64]
+        product.product_type_id = product_type.id
+        product.base_unit_id = base_unit.id
+        product.base_cost = base_cost
+        product.is_active = True
+
+    upsert(
+        session,
+        ProductUnit,
+        lookup={"product_id": product.id, "unit_id": base_unit.id},
+        updates={"ratio_to_base": Decimal("1"), "discrete_step": None},
+    )
+
+    upsert(
+        session,
+        ProductCategory,
+        lookup={"product_id": product.id, "category": product_type.name[:64]},
+    )
+    for category in category_labels:
+        category_name = category[:64]
+        if category_name:
+            upsert(
+                session,
+                ProductCategory,
+                lookup={"product_id": product.id, "category": category_name},
+            )
+
+    if import_key in {"WINE", "LOW_ALCOHOL_WINE"} and units.get("glass"):
+        upsert(
+            session,
+            ProductUnit,
+            lookup={"product_id": product.id, "unit_id": units["glass"].id},
+            updates={"ratio_to_base": Decimal("0.2"), "discrete_step": Decimal("1")},
+        )
+
+    if CREATE_STOCK:
+        stock_qty = decimal_or(row.get("variant_inventory_qty"), default=Decimal("0"))
+        upsert(
+            session,
+            Stock,
+            lookup={"location_id": warehouse.id, "product_id": product.id},
+            updates={"quantity": stock_qty, "unit_id": base_unit.id},
+        )
+
+    if CREATE_PRICE_LIST:
+        amount = base_cost if base_cost > 0 else Decimal("0")
+        upsert(
+            session,
+            PriceList,
+            lookup={"location_id": warehouse.id, "product_id": product.id, "unit_id": base_unit.id},
+            updates={"currency": DEFAULT_CURRENCY, "amount": amount},
+        )
+
+    meta_payload = {
+        "old_id": old_id,
+        "handle": normalize_text(row.get("handle")) or None,
+        "body_html": normalize_text(row.get("body_html")) or None,
+        "vendor": normalize_text(row.get("vendor")) or None,
+        "type": normalize_text(row.get("type")) or None,
+        "tags": normalize_text(row.get("tags")) or None,
+        "published": maybe_bool(row.get("published")),
+        "variant_barcode": normalize_text(row.get("variant_barcode")) or None,
+        "seo_title": normalize_text(row.get("seo_title")) or None,
+        "seo_description": normalize_text(row.get("seo_description")) or None,
+        "google_shopping": normalize_text(row.get("google_shopping_google_product_category")) or None,
+        "image": normalize_text(row.get("downloaded_image")) or None,
+    }
+    product_meta = session.query(ProductMeta).filter(ProductMeta.product_id == product.id).first()
+    if not product_meta:
+        product_meta = ProductMeta(product_id=product.id)
+        session.add(product_meta)
+        session.flush()
+    for key, value in meta_payload.items():
+        setattr(product_meta, key, value)
+
+    return product
+
+
+def _sync_product_attributes(
+    session: Session,
+    product: Product,
+    row: pd.Series,
+    attrs_by_code: dict[str, ProductAttribute],
+    mapping: dict[str, dict],
+) -> None:
+    existing_values = {
+        item.product_attribute_id: item
+        for item in session.query(ProductAttributeValue).filter(ProductAttributeValue.product_id == product.id).all()
+    }
+
+    for attr_code, attr_meta in mapping.items():
+        value = _value_from_row(row, tuple(attr_meta["columns"]))
+        if not value:
+            continue
+        attr = attrs_by_code.get(attr_code)
+        if not attr:
+            continue
+
+        pav = existing_values.get(attr.id)
+        if not pav:
+            pav = ProductAttributeValue(product_id=product.id, product_attribute_id=attr.id)
+            session.add(pav)
+            existing_values[attr.id] = pav
+        attr_type = attr_meta["type"]
+        pav.value_number = None
+        pav.value_boolean = None
+        pav.value_string = None
+        if attr_type == "number":
+            pav.value_number = float(decimal_or(value, Decimal("0")))
+        elif attr_type == "boolean":
+            bool_value = maybe_bool(value)
+            pav.value_boolean = bool_value
+        else:
+            pav.value_string = value
+
+
+def seed_products_from_csv(session: Session, units: dict[str, Unit], locations: dict[str, Location]) -> None:
+    csv_file, checked_paths = resolve_csv_file()
+    if not csv_file:
+        checked = ", ".join(str(path) for path in checked_paths)
+        print(f"⚠️ CSV not found, skip products. Checked: {checked}")
+        return
+
+    base_unit = units.get(DEFAULT_BASE_UNIT_CODE)
+    if not base_unit:
+        raise RuntimeError(f"Base unit not found: {DEFAULT_BASE_UNIT_CODE}")
+    warehouse = locations.get(WAREHOUSE_LOCATION_CODE)
+    if not warehouse:
+        raise RuntimeError(f"Warehouse location not found: {WAREHOUSE_LOCATION_CODE}")
+
+    df = pd.read_csv(csv_file, dtype=str).fillna("")
+    created_or_updated = 0
+    for _, row in df.iterrows():
+        leaf, import_key, category_labels, raw_category = _row_category_context(row)
+        if not _should_import_category(import_key):
+            continue
+
+        product_type = _ensure_product_type(session, leaf, raw_category)
+        mapping = _attribute_mapping_for_key(import_key)
+        attrs = _ensure_type_attributes(session, product_type, mapping, units, import_key)
+        _ensure_type_units(session, product_type, import_key, units)
+
+        product_base_unit_code = _base_unit_code_for_key(import_key)
+        product_base_unit = units.get(product_base_unit_code) or base_unit
+        product = _upsert_product(
+            session=session,
+            row=row,
+            product_type=product_type,
+            import_key=import_key,
+            category_labels=category_labels,
+            base_unit=product_base_unit,
+            warehouse=warehouse,
+            units=units,
+        )
+        _sync_product_attributes(session, product, row, attrs, mapping)
+        created_or_updated += 1
+    session.flush()
+    print(f"✅ Products processed: {created_or_updated}")
+
+
+def run_seed(session: Session) -> None:
+    units: dict[str, Unit] = {}
+    locations: dict[str, Location] = {}
+    permissions: dict[str, Permission] = {}
+    roles: dict[str, Role] = {}
+    users: dict[str, User] = {}
+
+    if CREATE_UNITS:
+        units = ensure_units(session)
+
+    if CREATE_LOCATIONS:
+        locations = ensure_locations(session)
+
+    if CREATE_RBAC:
+        permissions = ensure_permissions(session)
+        roles, users = ensure_roles_and_users(session, permissions)
+
+    if CREATE_TERMINALS:
+        if not locations:
+            locations = ensure_locations(session)
+        ensure_terminals(session, locations)
+
+    if CREATE_PRODUCTS_FROM_CSV:
+        if not units:
+            units = ensure_units(session)
+        if not locations:
+            locations = ensure_locations(session)
+        seed_products_from_csv(session, units, locations)
+
+    session.commit()
+    context = SeedContext(units=units, locations=locations, permissions=permissions, roles=roles, users=users)
+    print(
+        "✅ Seed base completed "
+        f"(units={len(context.units)}, locations={len(context.locations)}, "
+        f"permissions={len(context.permissions)}, roles={len(context.roles)}, users={len(context.users)})"
+    )
+
+
+def main() -> None:
+    with get_database_session() as session:
+        run_seed(session)
 
 
 if __name__ == "__main__":
-    with SessionLocal() as session:
-        seed(session)
-        print("Seed completed")
+    main()

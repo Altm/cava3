@@ -1,7 +1,7 @@
 """Rename attribute_definition table to product_attribute and remove old product_attribute table
 
 Revision ID: 20260202_230000
-Revises: 5012f843c2f3
+Revises: 0004_update_units_structure
 Create Date: 2026-02-02 23:00:00.000000
 
 """
@@ -13,7 +13,7 @@ from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision: str = '20260202_230000'
-down_revision: Union[str, None] = '5012f843c2f3'
+down_revision: Union[str, None] = '0004_update_units_structure'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
