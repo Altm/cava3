@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     swagger_enabled: bool = Field(True, env="SWAGGER_ENABLED")
     log_level: str = Field("INFO", env="LOG_LEVEL")
     structlog_json: bool = Field(True, env="STRUCTLOG_JSON")
-    hmac_clock_skew_seconds: int = 30
+    hmac_clock_skew_seconds: int = 3600
     default_currency: str = "EUR"
     sales_terminal_id: str = Field("T-1", env="SALES_TERMINAL_ID")
     sales_terminal_user_id: Optional[int] = Field(None, env="SALES_TERMINAL_USER_ID")

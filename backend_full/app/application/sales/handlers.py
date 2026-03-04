@@ -200,8 +200,7 @@ class GenerateCurlCommandHandler:
                     "user_id": 12,
                     "timestamp": "2026-01-01T10:00:00Z",
                     "items": [
-                        {"product_id": "ABC123", "quantity": 5, "price": 24.85},
-                        {"product_id": "DEF456", "quantity": 2, "price": 15.50},
+                        {"product_id": "44", "quantity": 1, "price": 24.85}
                     ],
                 },
                 {
@@ -210,8 +209,7 @@ class GenerateCurlCommandHandler:
                     "user_id": 12,
                     "timestamp": "2026-01-01T14:15:23Z",
                     "items": [
-                        {"product_id": "CCC425", "quantity": 1, "price": 12.85},
-                        {"product_id": "DDD456", "quantity": 3, "price": 12.50},
+                        {"product_id": 44, "quantity": 1, "price": 12.85}
                     ],
                 },
             ],

@@ -80,6 +80,15 @@ class SalesService:
         return sale
 
     def register_sales_transactions(self, terminal: Terminal, payload: dict, default_status: str) -> dict:
+        """
+        Регистрирует пакет sales transactions с идемпотентностью.
+        
+        Идемпотентность обеспечивается на двух уровнях:
+        1. По event_id (идентификатор события продажи)
+        2. По хешу позиции (product_id + quantity + unit_id + timestamp)
+        
+        Одинаковые позиции не дублируются, даже если отправлены повторно.
+        """
         sales = payload.get("sales")
         if not isinstance(sales, list):
             raise ValueError("Field 'sales' must be a list")
@@ -87,12 +96,16 @@ class SalesService:
         normalized_status = self._normalize_status(default_status)
         created_event_ids: list[str] = []
         skipped_event_ids: list[str] = []
+        duplicate_positions: list[str] = []
 
         for sale_payload in sales:
             if not isinstance(sale_payload, dict):
                 continue
+            
+            # Level 1: Идемпотентность по event_id
             event_id = self._build_event_id(terminal.terminal_id, sale_payload)
-            if self.db.query(SaleEvent).filter(SaleEvent.event_id == event_id).first():
+            existing_event = self.db.query(SaleEvent).filter(SaleEvent.event_id == event_id).first()
+            if existing_event:
                 skipped_event_ids.append(event_id)
                 continue
 
@@ -102,23 +115,51 @@ class SalesService:
             if not isinstance(item_rows, list):
                 item_rows = []
 
-            lines: list[dict] = []
+            # Level 2: Идемпотентность на уровне позиций
+            # Фильтруем дубликаты позиций внутри одной продажи
+            seen_positions = set()
+            unique_lines: list[dict] = []
+            
             for row in item_rows:
                 if not isinstance(row, dict):
                     continue
+                
                 product = self._resolve_product(row.get("product_id"))
                 quantity = Decimal(str(row.get("quantity", "0")))
                 if quantity <= 0:
                     continue
+                    
+                # Создаём уникальный хеш для позиции
+                position_key = self._build_position_hash(
+                    terminal_id=terminal.terminal_id,
+                    sale_id=sale_id,
+                    product_id=product.id,
+                    quantity=quantity,
+                    timestamp=sale_payload.get("timestamp", ""),
+                )
+                
+                # Проверяем, не была ли уже зарегистрирована такая позиция
+                if position_key in seen_positions:
+                    duplicate_positions.append(position_key)
+                    continue  # Пропускаем дубликат
+                
+                seen_positions.add(position_key)
+                
                 price = Decimal(str(row.get("price", "0")))
-                lines.append(
+                unique_lines.append(
                     {
                         "product_id": product.id,
                         "quantity": quantity,
                         "unit": self._resolve_unit_code(product.base_unit_id),
                         "price": price * quantity,
+                        "position_hash": position_key,  # Сохраняем хеш для аудита
                     }
                 )
+
+            # Если все позиции были дубликатами, пропускаем всю продажу
+            if not unique_lines:
+                skipped_event_ids.append(event_id)
+                continue
 
             event_payload = {
                 "sale": self._convert_decimal_in_payload(sale_payload),
@@ -130,7 +171,7 @@ class SalesService:
                 user_id=user_id,
                 terminal_id=terminal.id,
                 location_id=terminal.location_id,
-                lines=lines,
+                lines=unique_lines,
                 status=normalized_status,
                 payload=event_payload,
             )
@@ -141,13 +182,34 @@ class SalesService:
             terminal_id=terminal.terminal_id,
             created=len(created_event_ids),
             skipped=len(skipped_event_ids),
+            duplicates=len(duplicate_positions),
         )
         return {
             "status": "success",
             "created_event_ids": created_event_ids,
             "skipped_event_ids": skipped_event_ids,
+            "duplicate_positions": duplicate_positions,
             "received_sales_count": len(sales),
+            "processed_positions_count": len(unique_lines) if 'unique_lines' in locals() else 0,
         }
+
+    @staticmethod
+    def _build_position_hash(
+        terminal_id: str,
+        sale_id: int | None,
+        product_id: int,
+        quantity: Decimal,
+        timestamp: str,
+    ) -> str:
+        """
+        Создаёт уникальный хеш для позиции продажи.
+        
+        Используется для предотвращения дублирования одинаковых позиций
+        при повторной отправке данных за тот же период.
+        """
+        import hashlib
+        position_data = f"{terminal_id}:{sale_id}:{product_id}:{quantity}:{timestamp}"
+        return hashlib.sha256(position_data.encode()).hexdigest()[:32]
 
     def _resolve_product(self, product_ref) -> Product:
         if product_ref is None:
